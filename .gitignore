@@ -1,0 +1,9 @@
+.venv/
+.env
+__pycache__/
+wallet/
+*.pem
+*.sso
+*.p12
+tablas_a_usar.sql
+*.dmp
