@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./wallet:/app/wallet:ro
+    environment:
+      ORACLE_WALLET_DIR: /app/wallet
+      ALLOWED_HOSTS: "localhost,127.0.0.1"
