@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 
-from usuarios.permisos import EsAnalistaOAdministrador
+from usuarios.permisos import EsAdministrador, EsAnalistaOAdministrador
 from parametros import servicios
 from parametros.serializers import (
     ConceptoReportableSerializer,
@@ -13,8 +13,12 @@ from parametros.serializers import (
 
 
 class ConceptoViewSet(viewsets.ViewSet):
-    permission_classes = [EsAnalistaOAdministrador]
     lookup_value_regex = r"\d+"
+
+    def get_permissions(self):
+        if self.action in ("create", "partial_update"):
+            return [EsAdministrador()]
+        return [EsAnalistaOAdministrador()]
 
     def list(self, request):
         param = request.query_params.get("activo")
@@ -57,8 +61,12 @@ class ConceptoViewSet(viewsets.ViewSet):
 
 
 class GrupoConceptoViewSet(viewsets.ViewSet):
-    permission_classes = [EsAnalistaOAdministrador]
     lookup_value_regex = r"\d+"
+
+    def get_permissions(self):
+        if self.action in ("create", "partial_update", "destroy"):
+            return [EsAdministrador()]
+        return [EsAnalistaOAdministrador()]
 
     def list(self, request):
         grupos = servicios.listar_grupos()

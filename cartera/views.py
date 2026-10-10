@@ -44,7 +44,15 @@ class ExtraccionViewSet(viewsets.ViewSet):
             )
         except servicios.BorradorOtraFecha as exc:
             return Response(
-                {"detail": f"Ya existe un corte en BORRADOR con fecha {exc.fecha}. Debe completarlo o eliminarlo primero."},
+                {"detail": (
+                    f"Ya existe un corte en BORRADOR con fecha {exc.fecha}. "
+                    f"Elimínelo con DELETE /api/extracciones/{exc.corte_id}/ o complételo primero."
+                )},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except servicios.FechaAnteriorAlUltimoEnviado:
+            return Response(
+                {"detail": "La fecha de corte debe ser posterior a la del último corte enviado."},
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(CorteResumenSerializer(resumen).data, status=status.HTTP_201_CREATED)
@@ -110,6 +118,20 @@ class ExtraccionViewSet(viewsets.ViewSet):
         except servicios.FechaInvalida as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(CorteResumenSerializer(corte).data)
+
+    def destroy(self, request, pk=None):
+        try:
+            servicios.eliminar_borrador(int(pk))
+        except ValueError:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except servicios.CorteNoEncontrado:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except servicios.CorteNoEsBorrador:
+            return Response(
+                {"detail": "Solo se puede eliminar un corte en estado BORRADOR."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="obligaciones")
     def obligaciones(self, request, pk=None):

@@ -443,3 +443,16 @@ def test_buscar_deudores_tiene_order_by():
         servicios.buscar_deudores(cliente_id=900001)
     select_sql = mock_cursor.execute.call_args[0][0]
     assert "ORDER BY o.OBLIGACION_ID" in select_sql
+
+
+# ── C2 — Enmascaramiento de numero_identificacion ────────────────────────────
+
+def test_listar_detalle_reporte_enmascara_identificacion():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(1,), (1,)]
+    fila = ("OBL001", "Juan", "12345678", "01", 2, "01", "00",
+            _FECHA_CORTE, 0, 100000, 0, 500000, 50000, 0, "SIN_MORA", 1, None)
+    mock_cursor.fetchall.return_value = [fila]
+    with patch("historial.servicios.connection", mock_conn):
+        resultado = servicios.listar_detalle_reporte(1)
+    assert resultado["resultados"][0]["numero_identificacion"] == "******5678"
