@@ -1,4 +1,4 @@
-# NexoVolt API
+# NexoVolt API — Referencia para el frontend
 
 ## Información general
 
@@ -6,10 +6,14 @@
 |---|---|
 | URL base | `/api/` |
 | Formato | JSON |
-| Autenticación | Pendiente de RF25 |
+| Autenticación | Pendiente (RF25) |
 | Roles disponibles | `ANALISTA_CARTERA`, `ADMINISTRADOR` |
 
-## Formato de errores (estándar DRF)
+## Autenticación — estado actual
+
+RF25 no está implementado. Todos los endpoints de negocio requieren el permiso `EsAnalistaOAdministrador` (rol `ANALISTA_CARTERA` o `ADMINISTRADOR` en `request.user.rol`). Hasta que RF25 esté disponible no hay login, tokens ni cabeceras de sesión.
+
+## Formato de errores
 
 Error simple:
 
@@ -17,29 +21,63 @@ Error simple:
 {"detail": "Mensaje de error."}
 ```
 
-Error de validación:
+Error con lista (solo `/validar/` y `/registrar-envio/`):
 
 ```json
-{"campo": ["Mensaje de error."]}
+{"detail": "El corte tiene errores correctivos que deben resolverse.", "errores": [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta el tipo o el número de identificación"}]}
 ```
+
+Error de validación de campo (DRF estándar):
+
+```json
+{"campo": ["Este campo es requerido."]}
+```
+
+## Pendiente / Provisional
+
+- Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
+- `ejecutada_por` siempre es `null` hasta RF25.
+- No hay paginación automática en los listados de cortes ni deudores (máximo 50 en deudores, sin límite en cortes).
+
+---
 
 ## Endpoints
 
 ### Utilidades
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| GET | `/api/salud/` | Ninguno | Verifica disponibilidad del servidor |
+#### GET /api/salud/
+
+Verifica disponibilidad del servidor. No requiere autenticación.
+
+**Respuesta 200**
+
+```json
+{"estado": "ok"}
+```
+
+---
 
 ### Conceptos de energía
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| GET | `/api/conceptos/` | ANALISTA_CARTERA, ADMINISTRADOR | Lista conceptos; filtro opcional `?activo=true\|false` |
-| POST | `/api/conceptos/` | ANALISTA_CARTERA, ADMINISTRADOR | Crea un concepto; `409` si el código ya existe |
-| PATCH | `/api/conceptos/{codigo}/` | ANALISTA_CARTERA, ADMINISTRADOR | Actualiza `descripcion`, `observacion` y/o `activo` |
+#### GET /api/conceptos/
 
-**Cuerpo POST**
+Lista conceptos de energía. Filtro opcional: `?activo=true|false`.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**
+
+```json
+[{"codigo": 1, "descripcion": "Energía activa", "activo": true, "observacion": null}]
+```
+
+#### POST /api/conceptos/
+
+Crea un concepto.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Cuerpo**
 
 ```json
 {"codigo": 1, "descripcion": "Energía activa", "activo": true, "observacion": "Opcional"}
@@ -47,74 +85,137 @@ Error de validación:
 
 `activo` es opcional (defecto `true`). `observacion` es opcional.
 
-**Cuerpo PATCH** (todos los campos son opcionales)
-
-```json
-{"descripcion": "Nuevo nombre", "activo": false, "observacion": "Nueva obs"}
-```
-
-**Respuesta 200/201**
+**Respuesta 201**
 
 ```json
 {"codigo": 1, "descripcion": "Energía activa", "activo": true, "observacion": null}
 ```
 
-**Errores específicos**
+**Errores**
 
-- `409 Conflict` — el código de concepto ya existe (POST)
-- `404 Not Found` — código no encontrado (PATCH)
+- `409 Conflict` — el código ya existe
+
+#### PATCH /api/conceptos/{codigo}/
+
+Actualiza `descripcion`, `observacion` y/o `activo`. Todos los campos son opcionales.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Cuerpo**
+
+```json
+{"descripcion": "Nuevo nombre", "activo": false, "observacion": "Nueva obs"}
+```
+
+**Respuesta 200**
+
+```json
+{"codigo": 1, "descripcion": "Nuevo nombre", "activo": false, "observacion": "Nueva obs"}
+```
+
+**Errores**
+
+- `404 Not Found` — código no encontrado
+
+---
 
 ### Grupos de conceptos de energía
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| GET | `/api/grupos-conceptos/` | ANALISTA_CARTERA, ADMINISTRADOR | Lista todos los grupos con sus conceptos |
-| POST | `/api/grupos-conceptos/` | ANALISTA_CARTERA, ADMINISTRADOR | Crea un grupo; `409` si el nombre ya existe |
-| GET | `/api/grupos-conceptos/{id}/` | ANALISTA_CARTERA, ADMINISTRADOR | Detalle de un grupo |
-| PATCH | `/api/grupos-conceptos/{id}/` | ANALISTA_CARTERA, ADMINISTRADOR | Actualiza nombre, activo y/o lista de conceptos |
-| DELETE | `/api/grupos-conceptos/{id}/` | ANALISTA_CARTERA, ADMINISTRADOR | Elimina el grupo; `409` si hay un corte en BORRADOR |
+#### GET /api/grupos-conceptos/
 
-**Cuerpo POST**
+Lista todos los grupos con sus conceptos.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**
+
+```json
+[
+  {
+    "id": 1,
+    "nombre": "Grupo A",
+    "activo": true,
+    "conceptos": [{"codigo": 30, "descripcion": "Energía activa"}],
+    "creado": "2026-10-10"
+  }
+]
+```
+
+#### GET /api/grupos-conceptos/{id}/
+
+Detalle de un grupo.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**: igual que un elemento del listado.
+
+**Errores**
+
+- `404 Not Found` — grupo no encontrado
+
+#### POST /api/grupos-conceptos/
+
+Crea un grupo.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Cuerpo**
 
 ```json
 {"nombre": "Grupo A", "conceptos": [30, 61]}
 ```
 
-**Cuerpo PATCH** (todos los campos son opcionales; `conceptos` reemplaza la lista completa)
+**Respuesta 201**: igual que GET detalle.
+
+**Errores**
+
+- `400 Bad Request` — concepto inexistente o sin `REPORTABLE='S'`
+- `409 Conflict` — nombre de grupo duplicado
+
+#### PATCH /api/grupos-conceptos/{id}/
+
+Actualiza nombre, activo y/o lista de conceptos. `conceptos` reemplaza la lista completa.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Cuerpo** (todos los campos son opcionales)
 
 ```json
 {"nombre": "Nuevo nombre", "activo": false, "conceptos": [30]}
 ```
 
-**Respuesta 200/201**
+**Respuesta 200**: igual que GET detalle.
 
-```json
-{
-  "id": 1,
-  "nombre": "Grupo A",
-  "activo": true,
-  "conceptos": [{"codigo": 30, "descripcion": "Energía activa"}],
-  "creado": "2026-10-10"
-}
-```
+**Errores**
 
-**Errores específicos**
+- `400 Bad Request` — concepto inexistente o sin `REPORTABLE='S'`
+- `404 Not Found` — grupo no encontrado
+- `409 Conflict` — nombre de grupo duplicado
 
-- `400 Bad Request` — concepto inexistente o sin `REPORTABLE='S'` (mensaje incluye el código problemático)
-- `409 Conflict` — nombre de grupo duplicado (POST/PATCH) o grupo en uso por corte en BORRADOR (DELETE)
-- `404 Not Found` — grupo no encontrado (GET, PATCH, DELETE)
+#### DELETE /api/grupos-conceptos/{id}/
+
+Elimina el grupo.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `404 Not Found` — grupo no encontrado
+- `409 Conflict` — hay un corte en BORRADOR que usa este grupo
+
+---
 
 ### Extracción de cartera (RF44)
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| POST | `/api/extracciones/` | ANALISTA_CARTERA, ADMINISTRADOR | Genera un corte de cartera |
-| GET | `/api/extracciones/` | ANALISTA_CARTERA, ADMINISTRADOR | Lista cortes (excluye ANULADO), del más reciente al más antiguo |
-| GET | `/api/extracciones/ultima/` | ANALISTA_CARTERA, ADMINISTRADOR | Devuelve el corte más reciente; `204` si no hay ninguno |
-| GET | `/api/extracciones/{id}/` | ANALISTA_CARTERA, ADMINISTRADOR | Detalle de un corte |
-| GET | `/api/extracciones/{id}/obligaciones/` | ANALISTA_CARTERA, ADMINISTRADOR | Obligaciones del corte con paginación |
+#### POST /api/extracciones/
 
-**Cuerpo POST**
+Genera un corte de cartera.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Cuerpo**
 
 ```json
 {"fecha_corte": "2026-09-30", "grupo_id": 1}
@@ -122,7 +223,7 @@ Error de validación:
 
 `grupo_id` es opcional. Sin él se usan todos los conceptos con `REPORTABLE='S'`.
 
-**Respuesta 200/201 — Resumen de corte**
+**Respuesta 201**
 
 ```json
 {
@@ -137,16 +238,58 @@ Error de validación:
 }
 ```
 
-`grupo` es `null` cuando no se usó grupo. `ejecutada_por` es `null` hasta que se implemente RF25 (autenticación).
+`grupo` es `null` cuando no se usó grupo.
 
-**Parámetros de paginación en `/obligaciones/`**
+**Errores**
+
+- `400 Bad Request` — `fecha_corte` ausente o futura
+- `404 Not Found` — grupo no encontrado
+- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha
+
+#### GET /api/extracciones/
+
+Lista todos los cortes (excluye ANULADO), del más reciente al más antiguo.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**: lista de objetos con la misma estructura que POST 201.
+
+#### GET /api/extracciones/ultima/
+
+Devuelve el corte más reciente (excluye ANULADO).
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**: objeto con la misma estructura que POST 201.
+
+**Respuesta 204**: sin cuerpo si no hay ningún corte.
+
+#### GET /api/extracciones/{id}/
+
+Detalle de un corte.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**: objeto con la misma estructura que POST 201.
+
+**Errores**
+
+- `404 Not Found` — corte no encontrado
+
+#### GET /api/extracciones/{id}/obligaciones/
+
+Obligaciones del corte con paginación.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Parámetros query**
 
 | Parámetro | Tipo | Defecto | Descripción |
 |---|---|---|---|
 | `limite` | entero | 20 | Máximo de filas a devolver |
 | `desplazamiento` | entero | 0 | Cuántas filas saltarse |
 
-**Respuesta 200 — Obligaciones**
+**Respuesta 200**
 
 ```json
 {
@@ -168,79 +311,90 @@ Error de validación:
 }
 ```
 
-**Errores específicos**
+**Errores**
 
-- `400 Bad Request` — `fecha_corte` ausente o futura
-- `404 Not Found` — grupo o corte no encontrado
-- `409 Conflict` — grupo inactivo; corte de esa fecha en estado distinto de BORRADOR **[pendiente de decisión del equipo]**; ya existe un BORRADOR con distinta fecha **[pendiente de decisión del equipo]**
+- `400 Bad Request` — `limite` o `desplazamiento` no son enteros
+- `404 Not Found` — corte no encontrado
 
-**Notas sobre reglas de corte [pendiente de decisión del equipo]**
+---
 
-- Si ya existe un corte con la misma `fecha_corte` en estado `BORRADOR`, se reemplaza: se borran su detalle (`NV_REPORTE_DETALLE`) y sus inconsistencias (`NV_INCONSISTENCIA`), y se actualiza el mismo registro.
-- Si existe un corte con esa fecha en cualquier otro estado (`VALIDADO`, `ENVIADO`, `ANULADO`), se devuelve `409`.
-- Si existe un `BORRADOR` de otra fecha, se devuelve `409` con un mensaje que indica la fecha en conflicto.
+### Ciclo de corte
 
-### Ciclo mínimo de corte (RF6 parcial)
+#### POST /api/extracciones/{id}/validar/
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| POST | `/api/extracciones/{id}/validar/` | ANALISTA_CARTERA, ADMINISTRADOR | Valida el corte en BORRADOR y lo pasa a VALIDADO |
-| POST | `/api/extracciones/{id}/registrar-envio/` | ANALISTA_CARTERA, ADMINISTRADOR | Registra el envío a TransUnion y pasa a ENVIADO |
+Valida el corte en BORRADOR y lo pasa a VALIDADO. No requiere cuerpo.
 
-**POST /validar/**
+Si hay filas con `SEVERIDAD='CORRECTIVA'` en `V_VALIDACION_CORTE`, responde `409` sin cambiar el estado. Si no hay errores correctivos, cambia el estado a `VALIDADO` y devuelve el corte con advertencias informativas.
 
-No requiere cuerpo. Si hay filas con `SEVERIDAD='CORRECTIVA'` en `V_VALIDACION_CORTE`, responde `409` y **no** cambia el estado. Si no hay errores correctivos, cambia el estado a `VALIDADO` y devuelve el corte con las advertencias informativas.
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
 
-Respuesta `200`:
+**Respuesta 200**
+
 ```json
 {
   "id": 1,
   "fecha_corte": "2026-09-30",
+  "fecha_ejecucion": "2026-10-10T12:00:00",
+  "grupo": null,
+  "obligaciones": 150,
+  "saldo_consolidado": 45000000,
   "estado": "VALIDADO",
+  "ejecutada_por": null,
   "advertencias": [
-    {"regla": "SIN_FECHA_LIMITE_PAGO", "mensaje": "No se encontró una factura..."}
+    {"regla": "SIN_FECHA_LIMITE_PAGO", "mensaje": "No se encontró una factura con fecha de vencimiento."}
   ]
 }
 ```
 
-Respuesta `409` con errores:
+`advertencias` puede ser lista vacía `[]`.
+
+**Respuesta 409 con errores correctivos**
+
 ```json
 {
   "detail": "El corte tiene errores correctivos que deben resolverse.",
-  "errores": [
-    {"regla": "SIN_IDENTIFICACION", "mensaje": "Falta el tipo o el número de identificación"}
-  ]
+  "errores": [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta el tipo o el número de identificación"}]
 }
 ```
 
-**Errores específicos /validar/**
+**Errores**
+
 - `404 Not Found` — corte no encontrado
 - `409 Conflict` — corte no está en BORRADOR; o tiene errores correctivos
 
-**POST /registrar-envio/**
+#### POST /api/extracciones/{id}/registrar-envio/
 
-Cuerpo opcional:
+Registra el envío a TransUnion y pasa el corte a ENVIADO. El archivo se carga manualmente en el portal de TransUnion.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Cuerpo** (opcional)
+
 ```json
 {"fecha_envio": "2026-10-01"}
 ```
 
-`fecha_envio` no puede ser futura. Si no se envía, se usa la fecha de hoy. El archivo se carga a mano en el portal de TransUnion; no hay integración automática.
+`fecha_envio` no puede ser futura. Si no se envía, se usa la fecha de hoy.
 
-Respuesta `200`: resumen del corte con `"estado": "ENVIADO"`.
+**Respuesta 200**: objeto con la misma estructura que POST /extracciones/ con `"estado": "ENVIADO"`.
 
-**Errores específicos /registrar-envio/**
+**Errores**
+
 - `400 Bad Request` — `fecha_envio` futura
 - `404 Not Found` — corte no encontrado
 - `409 Conflict` — corte no está en VALIDADO
 
+---
+
 ### Historial de reportes enviados (RF6)
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| GET | `/api/historial/reportes/` | ANALISTA_CARTERA, ADMINISTRADOR | Lista cortes enviados; filtros opcionales `?desde=` y `?hasta=` (fecha en AAAA-MM-DD) |
-| GET | `/api/historial/reportes/{id}/detalle/` | ANALISTA_CARTERA, ADMINISTRADOR | Detalle de obligaciones de un reporte enviado con paginación |
+#### GET /api/historial/reportes/
 
-**Respuesta 200 — Lista de reportes**
+Lista cortes en estado ENVIADO. Filtros opcionales: `?desde=AAAA-MM-DD` y `?hasta=AAAA-MM-DD` (filtran por `fecha_envio`).
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**
 
 ```json
 [
@@ -256,16 +410,26 @@ Respuesta `200`: resumen del corte con `"estado": "ENVIADO"`.
 ]
 ```
 
-`grupo` es el nombre del grupo usado en el corte, o `null` si no se usó grupo.
+`grupo` es el nombre del grupo o `null` si no se usó grupo.
 
-**Parámetros de paginación en `/detalle/`**
+**Errores**
+
+- `400 Bad Request` — `desde` o `hasta` con formato inválido
+
+#### GET /api/historial/reportes/{id}/detalle/
+
+Detalle de obligaciones de un reporte enviado con paginación.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Parámetros query**
 
 | Parámetro | Tipo | Defecto |
 |---|---|---|
 | `limite` | entero | 20 |
 | `desplazamiento` | entero | 0 |
 
-**Respuesta 200 — Detalle de reporte**
+**Respuesta 200**
 
 ```json
 {
@@ -294,18 +458,28 @@ Respuesta `200`: resumen del corte con `"estado": "ENVIADO"`.
 }
 ```
 
-**Errores específicos**
-- `400 Bad Request` — fechas `desde`/`hasta` con formato inválido
-- `404 Not Found` — corte no encontrado o no está en estado ENVIADO (detalle)
+**Errores**
+
+- `404 Not Found` — reporte no encontrado o no está en estado ENVIADO
+
+---
 
 ### Historial de deudores (RF8)
 
-| Método | URL | Rol requerido | Descripción |
-|---|---|---|---|
-| GET | `/api/historial/deudores/` | ANALISTA_CARTERA, ADMINISTRADOR | Busca obligaciones; requiere `?cliente_id=` y/o `?numero_obligacion=`; máximo 50 resultados |
-| GET | `/api/historial/deudores/{id}/` | ANALISTA_CARTERA, ADMINISTRADOR | Línea de tiempo de una obligación |
+#### GET /api/historial/deudores/
 
-**Respuesta 200 — Lista de deudores**
+Busca obligaciones. Requiere al menos uno de: `?cliente_id=` o `?numero_obligacion=`. Devuelve máximo 50 resultados.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Parámetros query**
+
+| Parámetro | Tipo | Descripción |
+|---|---|---|
+| `cliente_id` | entero | ID del cliente |
+| `numero_obligacion` | texto | Número de obligación TU |
+
+**Respuesta 200**
 
 ```json
 [
@@ -323,7 +497,17 @@ Respuesta `200`: resumen del corte con `"estado": "ENVIADO"`.
 
 `ultimo_estado_tu` y `ultimo_valor_saldo` son `null` si la obligación no tiene reportes aún.
 
-**Respuesta 200 — Línea de tiempo**
+**Errores**
+
+- `400 Bad Request` — ningún parámetro proporcionado; `cliente_id` no es entero
+
+#### GET /api/historial/deudores/{id}/
+
+Línea de tiempo de una obligación: todos los cortes no anulados en los que aparece, ordenados por fecha de corte.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**
 
 ```json
 [
@@ -340,17 +524,21 @@ Respuesta `200`: resumen del corte con `"estado": "ENVIADO"`.
 ]
 ```
 
-Incluye todos los cortes no anulados en los que aparece la obligación, ordenados por fecha de corte.
+**Errores**
 
-**Errores específicos**
-- `400 Bad Request` — ningún parámetro de búsqueda proporcionado; `cliente_id` no es entero
-- `404 Not Found` — obligación no encontrada (línea de tiempo)
+- `404 Not Found` — obligación no encontrada
 
-### Procesos programados
+---
 
-| Comando | Descripción |
-|---|---|
-| `actualizar_estados_mensual` | Genera el corte mensual de cartera (RF9) |
+### Procesos programados (RF9)
+
+No es un endpoint HTTP; es un comando de gestión de Django.
+
+**Comando**
+
+```
+python manage.py actualizar_estados_mensual
+```
 
 **Argumentos**
 
@@ -358,9 +546,9 @@ Incluye todos los cortes no anulados en los que aparece la obligación, ordenado
 |---|---|---|---|
 | `--fecha-corte` | YYYY-MM-DD | Último día del mes anterior | Fecha del corte a generar |
 | `--grupo` | entero | (ninguno) | ID del grupo de conceptos; sin él se usan todos los conceptos reportables |
-| `--simular` | flag | false | Ejecuta la lógica completa dentro de una transacción y la revierte |
+| `--simular` | flag | false | Ejecuta la lógica dentro de una transacción y la revierte al final |
 
-**Salida stdout (ejemplo)**
+**Salida stdout**
 
 ```
 Fecha de corte : 2026-09-30
@@ -372,18 +560,11 @@ Estado           : BORRADOR
 Corte 7 generado correctamente.
 ```
 
-**NV_BITACORA**: ACCION=`ACTUALIZACION_MENSUAL`, ENTIDAD=`NV_CORTE`, ENTIDAD_ID=id del corte, DETALLE con obligaciones/saldo/grupo. No se registra en modo `--simular`.
+En modo `--simular` la línea de modo dice `SIMULACIÓN` y no se registra en `NV_BITACORA`.
 
-**Código de salida**: `0` en éxito; `1` en cualquier error (fecha inválida, grupo inexistente, conflicto de estado, etc.).
+**Código de salida**: `0` en éxito; `1` en cualquier error.
 
-**Cron (Linux)**
-
-```
-# Día 1 de cada mes a las 02:00
-0 2 1 * * /ruta/venv/bin/python /ruta/proyecto/manage.py actualizar_estados_mensual >> /var/log/nexovolt.log 2>&1
-```
-
-**Render Cron Job**
+**Cron (Render)**
 
 ```
 Command : python manage.py actualizar_estados_mensual
