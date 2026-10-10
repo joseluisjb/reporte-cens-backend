@@ -3,7 +3,9 @@ from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from tests.ayudas import usuario_con_rol
 
 from cartera import servicios
 from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer
@@ -43,12 +45,6 @@ _RESUMEN = {
     "estado": "BORRADOR",
     "ejecutada_por": None,
 }
-
-
-def _usuario_analista():
-    user = MagicMock()
-    user.rol = "ANALISTA_CARTERA"
-    return user
 
 
 # ── Serializer GenerarCorteSerializer ─────────────────────────────────────────
@@ -305,7 +301,7 @@ def test_post_201_genera_corte():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte", return_value=_RESUMEN):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 201
@@ -318,7 +314,7 @@ def test_post_400_fecha_futura():
         {"fecha_corte": str(_FECHA_FUTURA)},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.FechaInvalida("La fecha de corte no puede ser futura.")):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -332,7 +328,7 @@ def test_post_404_grupo_inexistente():
         {"fecha_corte": "2026-09-30", "grupo_id": 99},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.GrupoNoEncontrado):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -345,7 +341,7 @@ def test_post_409_grupo_inactivo():
         {"fecha_corte": "2026-09-30", "grupo_id": 5},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.GrupoInactivo):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -358,7 +354,7 @@ def test_post_409_borrador_otra_fecha():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.BorradorOtraFecha(date(2026, 8, 31))):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -372,7 +368,7 @@ def test_post_409_estado_fijo():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.CorteEnEstadoFijo):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -381,7 +377,7 @@ def test_post_409_estado_fijo():
 
 def test_get_list_200():
     request = factory.get("/api/extracciones/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.listar_cortes", return_value=[_RESUMEN]):
         response = ExtraccionViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
@@ -390,7 +386,7 @@ def test_get_list_200():
 
 def test_get_ultima_200():
     request = factory.get("/api/extracciones/ultima/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_ultimo_corte", return_value=_RESUMEN):
         response = ExtraccionViewSet.as_view({"get": "ultima"})(request)
     assert response.status_code == 200
@@ -399,7 +395,7 @@ def test_get_ultima_200():
 
 def test_get_ultima_204_sin_cortes():
     request = factory.get("/api/extracciones/ultima/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_ultimo_corte", return_value=None):
         response = ExtraccionViewSet.as_view({"get": "ultima"})(request)
     assert response.status_code == 204
@@ -407,7 +403,7 @@ def test_get_ultima_204_sin_cortes():
 
 def test_get_id_200():
     request = factory.get("/api/extracciones/1/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_corte", return_value=_RESUMEN):
         response = ExtraccionViewSet.as_view({"get": "retrieve"})(request, pk="1")
     assert response.status_code == 200
@@ -415,7 +411,7 @@ def test_get_id_200():
 
 def test_get_id_404():
     request = factory.get("/api/extracciones/999/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_corte", return_value=None):
         response = ExtraccionViewSet.as_view({"get": "retrieve"})(request, pk="999")
     assert response.status_code == 404
@@ -426,7 +422,7 @@ def test_get_obligaciones_200():
         "/api/extracciones/1/obligaciones/",
         {"limite": "10", "desplazamiento": "0"},
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     payload = {
         "total": 2,
         "resultados": [
@@ -452,7 +448,7 @@ def test_get_obligaciones_200():
 
 def test_get_obligaciones_404():
     request = factory.get("/api/extracciones/999/obligaciones/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.listar_obligaciones",
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"get": "obligaciones"})(request, pk="999")
@@ -559,7 +555,7 @@ def test_registrar_envio_usa_hoy_sin_fecha():
 
 def test_post_validar_200_sin_errores():
     request = factory.post("/api/extracciones/1/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     corte_mock = {**_RESUMEN, "estado": "VALIDADO"}
     resultado = {"corte": corte_mock, "advertencias": []}
     with patch("cartera.views.servicios.validar_corte", return_value=resultado):
@@ -571,7 +567,7 @@ def test_post_validar_200_sin_errores():
 
 def test_post_validar_409_correctivas():
     request = factory.post("/api/extracciones/1/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     errores = [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta identificación"}]
     with patch("cartera.views.servicios.validar_corte",
                side_effect=servicios.CorteConErroresCorrectivos(errores)):
@@ -582,7 +578,7 @@ def test_post_validar_409_correctivas():
 
 def test_post_validar_404():
     request = factory.post("/api/extracciones/999/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.validar_corte",
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="999")
@@ -591,7 +587,7 @@ def test_post_validar_404():
 
 def test_post_validar_409_no_borrador():
     request = factory.post("/api/extracciones/1/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.validar_corte",
                side_effect=servicios.CorteNoEsBorrador):
         response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
@@ -600,7 +596,7 @@ def test_post_validar_409_no_borrador():
 
 def test_post_registrar_envio_200():
     request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     corte_mock = {**_RESUMEN, "estado": "ENVIADO"}
     with patch("cartera.views.servicios.registrar_envio", return_value=corte_mock):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
@@ -610,7 +606,7 @@ def test_post_registrar_envio_200():
 
 def test_post_registrar_envio_404():
     request = factory.post("/api/extracciones/999/registrar-envio/", {}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.registrar_envio",
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="999")
@@ -619,7 +615,7 @@ def test_post_registrar_envio_404():
 
 def test_post_registrar_envio_409_no_validado():
     request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.registrar_envio",
                side_effect=servicios.CorteNoEsValidado):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
@@ -629,8 +625,15 @@ def test_post_registrar_envio_409_no_validado():
 def test_post_registrar_envio_400_fecha_futura():
     request = factory.post("/api/extracciones/1/registrar-envio/",
                            {"fecha_envio": "2099-01-01"}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.registrar_envio",
                side_effect=servicios.FechaInvalida("fecha futura")):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
     assert response.status_code == 400
+
+
+def test_extraccion_sin_permiso_403():
+    request = factory.get("/api/extracciones/")
+    force_authenticate(request, user=usuario_con_rol("OTRO_ROL"))
+    response = ExtraccionViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 403

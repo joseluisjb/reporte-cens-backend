@@ -6,7 +6,9 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from tests.ayudas import usuario_con_rol
 
 from historial import servicios
 from historial.serializers import ReporteEnviadoSerializer, DeudorSerializer
@@ -64,12 +66,6 @@ _RESULTADO_MOCK = {
     "saldo_consolidado": 45000000,
     "grupo": None,
 }
-
-
-def _usuario_analista():
-    user = MagicMock()
-    user.rol = "ANALISTA_CARTERA"
-    return user
 
 
 factory = APIRequestFactory()
@@ -227,7 +223,7 @@ def test_linea_tiempo_devuelve_lista():
 
 def test_reportes_list_200():
     request = factory.get("/api/historial/reportes/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("historial.views.servicios.listar_reportes_enviados", return_value=[_REPORTE]):
         response = ReporteViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
@@ -236,14 +232,14 @@ def test_reportes_list_200():
 
 def test_reportes_list_filtro_fecha_invalida():
     request = factory.get("/api/historial/reportes/", {"desde": "no-es-fecha"})
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     response = ReporteViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 400
 
 
 def test_reportes_detalle_200():
     request = factory.get("/api/historial/reportes/1/detalle/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     payload = {"total": 3, "resultados": []}
     with patch("historial.views.servicios.listar_detalle_reporte", return_value=payload):
         response = ReporteViewSet.as_view({"get": "detalle"})(request, pk="1")
@@ -253,7 +249,7 @@ def test_reportes_detalle_200():
 
 def test_reportes_detalle_404():
     request = factory.get("/api/historial/reportes/999/detalle/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("historial.views.servicios.listar_detalle_reporte",
                side_effect=servicios.ReporteNoEncontrado):
         response = ReporteViewSet.as_view({"get": "detalle"})(request, pk="999")
@@ -264,14 +260,14 @@ def test_reportes_detalle_404():
 
 def test_deudores_list_sin_params_400():
     request = factory.get("/api/historial/deudores/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     response = DeudorViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 400
 
 
 def test_deudores_list_200():
     request = factory.get("/api/historial/deudores/", {"cliente_id": "900001"})
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("historial.views.servicios.buscar_deudores", return_value=[_DEUDOR]):
         response = DeudorViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
@@ -280,14 +276,14 @@ def test_deudores_list_200():
 
 def test_deudores_list_cliente_id_no_entero_400():
     request = factory.get("/api/historial/deudores/", {"cliente_id": "abc"})
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     response = DeudorViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 400
 
 
 def test_deudores_retrieve_200():
     request = factory.get("/api/historial/deudores/10/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     linea = [
         {"fecha_corte": _FECHA_CORTE, "estado_tu": "01", "edad_mora": "00",
          "dias_mora": 0, "cuotas_mora": 0, "valor_mora": 0, "valor_saldo": 500000,
@@ -301,11 +297,18 @@ def test_deudores_retrieve_200():
 
 def test_deudores_retrieve_404():
     request = factory.get("/api/historial/deudores/999/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("historial.views.servicios.linea_tiempo_deudor",
                side_effect=servicios.ObligacionNoEncontrada):
         response = DeudorViewSet.as_view({"get": "retrieve"})(request, pk="999")
     assert response.status_code == 404
+
+
+def test_historial_sin_permiso_403():
+    request = factory.get("/api/historial/reportes/")
+    force_authenticate(request, user=usuario_con_rol("OTRO_ROL"))
+    response = ReporteViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 403
 
 
 # ── Comando actualizar_estados_mensual ────────────────────────────────────────

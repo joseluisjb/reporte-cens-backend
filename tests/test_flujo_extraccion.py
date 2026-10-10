@@ -1,7 +1,9 @@
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from tests.ayudas import usuario_con_rol
 
 from cartera.views import ExtraccionViewSet
 
@@ -32,12 +34,6 @@ _OBLIGACION = {
 }
 
 
-def _usuario_analista():
-    user = MagicMock()
-    user.rol = "ANALISTA_CARTERA"
-    return user
-
-
 factory = APIRequestFactory()
 
 
@@ -47,7 +43,7 @@ def test_flujo_extraccion_sin_grupo():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte", return_value=_RESUMEN):
         r1 = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert r1.status_code == 201
@@ -55,14 +51,14 @@ def test_flujo_extraccion_sin_grupo():
     corte_id = r1.data["id"]
 
     request2 = factory.get(f"/api/extracciones/{corte_id}/")
-    request2.user = _usuario_analista()
+    force_authenticate(request2, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_corte", return_value=_RESUMEN):
         r2 = ExtraccionViewSet.as_view({"get": "retrieve"})(request2, pk=str(corte_id))
     assert r2.status_code == 200
     assert r2.data["id"] == corte_id
 
     request3 = factory.get("/api/extracciones/ultima/")
-    request3.user = _usuario_analista()
+    force_authenticate(request3, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_ultimo_corte", return_value=_RESUMEN):
         r3 = ExtraccionViewSet.as_view({"get": "ultima"})(request3)
     assert r3.status_code == 200
@@ -70,7 +66,7 @@ def test_flujo_extraccion_sin_grupo():
 
     payload_obs = {"total": 1, "resultados": [_OBLIGACION]}
     request4 = factory.get(f"/api/extracciones/{corte_id}/obligaciones/")
-    request4.user = _usuario_analista()
+    force_authenticate(request4, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.listar_obligaciones", return_value=payload_obs):
         r4 = ExtraccionViewSet.as_view({"get": "obligaciones"})(request4, pk=str(corte_id))
     assert r4.status_code == 200
@@ -85,7 +81,7 @@ def test_flujo_extraccion_con_grupo():
         {"fecha_corte": "2026-09-30", "grupo_id": 1},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte", return_value=resumen_con_grupo):
         r = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert r.status_code == 201
