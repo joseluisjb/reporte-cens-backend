@@ -457,3 +457,180 @@ def test_get_obligaciones_404():
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"get": "obligaciones"})(request, pk="999")
     assert response.status_code == 404
+
+
+# ── Servicios — validar_corte ─────────────────────────────────────────────────
+
+def test_validar_corte_no_encontrado():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = None
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteNoEncontrado):
+            servicios.validar_corte(99)
+
+
+def test_validar_corte_no_es_borrador():
+    mock_conn, mock_cursor = _mock_conn(fetchone=("VALIDADO",))
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteNoEsBorrador):
+            servicios.validar_corte(1)
+
+
+def test_validar_corte_con_correctivas_lanza_excepcion():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchall.return_value = [
+        ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación"),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
+            servicios.validar_corte(1)
+    assert len(exc_info.value.errores) == 1
+    assert exc_info.value.errores[0]["regla"] == "SIN_IDENTIFICACION"
+
+
+def test_validar_corte_sin_errores_actualiza_estado():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("BORRADOR",),   # SELECT ESTADO
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),  # obtener_corte
+    ]
+    mock_cursor.fetchall.return_value = []   # V_VALIDACION_CORTE → sin errores
+    with patch("cartera.servicios.connection", mock_conn):
+        servicios.validar_corte(1)
+    sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
+    assert any("ESTADO = 'VALIDADO'" in s for s in sqls)
+
+
+def test_validar_corte_devuelve_advertencias():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("BORRADOR",),
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),
+    ]
+    mock_cursor.fetchall.return_value = [
+        ("SIN_FECHA_LIMITE_PAGO", "INFORMATIVA", "No se encontró una factura"),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        resultado = servicios.validar_corte(1)
+    assert len(resultado["advertencias"]) == 1
+    assert resultado["advertencias"][0]["regla"] == "SIN_FECHA_LIMITE_PAGO"
+
+
+# ── Servicios — registrar_envio ───────────────────────────────────────────────
+
+def test_registrar_envio_no_encontrado():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = None
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteNoEncontrado):
+            servicios.registrar_envio(99)
+
+
+def test_registrar_envio_no_es_validado():
+    mock_conn, mock_cursor = _mock_conn(fetchone=("BORRADOR",))
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteNoEsValidado):
+            servicios.registrar_envio(1)
+
+
+def test_registrar_envio_fecha_futura():
+    from datetime import timedelta
+    mock_conn, mock_cursor = _mock_conn()
+    fecha_futura = date.today() + timedelta(days=1)
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.FechaInvalida):
+            servicios.registrar_envio(1, fecha_envio=fecha_futura)
+
+
+def test_registrar_envio_usa_hoy_sin_fecha():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("VALIDADO",),
+        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        servicios.registrar_envio(1)
+    sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
+    assert any("ESTADO = 'ENVIADO'" in s for s in sqls)
+
+
+# ── Vistas — ciclo mínimo ─────────────────────────────────────────────────────
+
+def test_post_validar_200_sin_errores():
+    request = factory.post("/api/extracciones/1/validar/")
+    request.user = _usuario_analista()
+    corte_mock = {**_RESUMEN, "estado": "VALIDADO"}
+    resultado = {"corte": corte_mock, "advertencias": []}
+    with patch("cartera.views.servicios.validar_corte", return_value=resultado):
+        response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
+    assert response.status_code == 200
+    assert response.data["estado"] == "VALIDADO"
+    assert response.data["advertencias"] == []
+
+
+def test_post_validar_409_correctivas():
+    request = factory.post("/api/extracciones/1/validar/")
+    request.user = _usuario_analista()
+    errores = [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta identificación"}]
+    with patch("cartera.views.servicios.validar_corte",
+               side_effect=servicios.CorteConErroresCorrectivos(errores)):
+        response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
+    assert response.status_code == 409
+    assert "errores" in response.data
+
+
+def test_post_validar_404():
+    request = factory.post("/api/extracciones/999/validar/")
+    request.user = _usuario_analista()
+    with patch("cartera.views.servicios.validar_corte",
+               side_effect=servicios.CorteNoEncontrado):
+        response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="999")
+    assert response.status_code == 404
+
+
+def test_post_validar_409_no_borrador():
+    request = factory.post("/api/extracciones/1/validar/")
+    request.user = _usuario_analista()
+    with patch("cartera.views.servicios.validar_corte",
+               side_effect=servicios.CorteNoEsBorrador):
+        response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
+    assert response.status_code == 409
+
+
+def test_post_registrar_envio_200():
+    request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
+    request.user = _usuario_analista()
+    corte_mock = {**_RESUMEN, "estado": "ENVIADO"}
+    with patch("cartera.views.servicios.registrar_envio", return_value=corte_mock):
+        response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
+    assert response.status_code == 200
+    assert response.data["estado"] == "ENVIADO"
+
+
+def test_post_registrar_envio_404():
+    request = factory.post("/api/extracciones/999/registrar-envio/", {}, format="json")
+    request.user = _usuario_analista()
+    with patch("cartera.views.servicios.registrar_envio",
+               side_effect=servicios.CorteNoEncontrado):
+        response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="999")
+    assert response.status_code == 404
+
+
+def test_post_registrar_envio_409_no_validado():
+    request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
+    request.user = _usuario_analista()
+    with patch("cartera.views.servicios.registrar_envio",
+               side_effect=servicios.CorteNoEsValidado):
+        response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
+    assert response.status_code == 409
+
+
+def test_post_registrar_envio_400_fecha_futura():
+    request = factory.post("/api/extracciones/1/registrar-envio/",
+                           {"fecha_envio": "2099-01-01"}, format="json")
+    request.user = _usuario_analista()
+    with patch("cartera.views.servicios.registrar_envio",
+               side_effect=servicios.FechaInvalida("fecha futura")):
+        response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
+    assert response.status_code == 400
