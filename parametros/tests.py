@@ -286,7 +286,7 @@ def test_grupo_repr_activo_s_es_true():
     data = GrupoConceptoSerializer(_GRUPO_DICT).data
     assert data["activo"] is True
     assert data["id"] == 1
-    assert data["creado"] == "2026-10-10"
+    assert data["creado"] == "2026-10-10T00:00:00-05:00"
     assert data["conceptos"][0]["codigo"] == 30
 
 
@@ -641,3 +641,59 @@ def test_conceptos_sin_permiso_403():
     force_authenticate(request, user=usuario_con_rol("OTRO_ROL"))
     response = ConceptoViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 403
+
+
+# ── Corrección 1 — pk no numérico → 404 ──────────────────────────────────────
+
+def test_retrieve_grupo_pk_no_numerico_404():
+    request = factory.get("/api/grupos-conceptos/abc/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"get": "retrieve"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_partial_update_grupo_pk_no_numerico_404():
+    request = factory.patch("/api/grupos-conceptos/abc/", {"nombre": "X"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_destroy_grupo_pk_no_numerico_404():
+    request = factory.delete("/api/grupos-conceptos/abc/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_partial_update_concepto_pk_no_numerico_404():
+    request = factory.patch("/api/conceptos/abc/", {"descripcion": "X"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+# ── Corrección 5 — Conceptos duplicados en grupos ────────────────────────────
+
+def test_crear_grupo_conceptos_duplicados_400():
+    request = factory.post(
+        "/api/grupos-conceptos/",
+        {"nombre": "G", "conceptos": [30, 30]},
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 400
+    assert "No se permiten códigos repetidos." in str(response.data)
+
+
+def test_actualizar_grupo_conceptos_duplicados_400():
+    request = factory.patch(
+        "/api/grupos-conceptos/1/",
+        {"conceptos": [30, 61, 30]},
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
+    assert response.status_code == 400
+    assert "No se permiten códigos repetidos." in str(response.data)

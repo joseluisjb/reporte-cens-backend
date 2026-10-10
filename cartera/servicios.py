@@ -1,6 +1,6 @@
-from datetime import date
-
 from django.db import connection, transaction
+
+from config.formatos import ahora_bogota, hoy_bogota
 
 
 # ── Excepciones ───────────────────────────────────────────────────────────────
@@ -126,18 +126,18 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "INSERT INTO NEXOVOLT.NV_CORTE "
                 "(CORTE_ID, FECHA_CORTE, TIPO_REPORTE, ESTADO, FECHA_GENERACION, "
                 "USUARIO_ID, TOTAL_REGISTROS, GRUPO_ID, GRUPO_NOMBRE, CONCEPTOS_USADOS) "
-                "VALUES (:1, :2, '01', 'BORRADOR', SYSDATE, NULL, 0, :3, :4, :5)",
-                [corte_id, fecha_corte, grupo_id, grupo_nombre, conceptos_usados],
+                "VALUES (:1, :2, '01', 'BORRADOR', :3, NULL, 0, :4, :5, :6)",
+                [corte_id, fecha_corte, ahora_bogota(), grupo_id, grupo_nombre, conceptos_usados],
             )
         return corte_id
     else:
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE NEXOVOLT.NV_CORTE "
-                "SET FECHA_GENERACION = SYSDATE, TOTAL_REGISTROS = 0, "
-                "GRUPO_ID = :1, GRUPO_NOMBRE = :2, CONCEPTOS_USADOS = :3 "
-                "WHERE CORTE_ID = :4",
-                [grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
+                "SET FECHA_GENERACION = :1, TOTAL_REGISTROS = 0, "
+                "GRUPO_ID = :2, GRUPO_NOMBRE = :3, CONCEPTOS_USADOS = :4 "
+                "WHERE CORTE_ID = :5",
+                [ahora_bogota(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
             )
         return corte_id_existente
 
@@ -242,7 +242,7 @@ def _fila_a_resumen(row):
 
 def generar_corte(fecha_corte, grupo_id=None):
     with transaction.atomic():
-        if fecha_corte > date.today():
+        if fecha_corte > hoy_bogota():
             raise FechaInvalida("La fecha de corte no puede ser futura.")
 
         if grupo_id is not None:
@@ -341,8 +341,8 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
             "edad_mora":            row[4],
             "dias_mora":            row[5],
             "cuotas_mora":          row[6],
-            "valor_mora":           int(row[7]),
-            "valor_saldo":          int(row[8]),
+            "valor_mora":           int(row[7]) if row[7] is not None else None,
+            "valor_saldo":          int(row[8]) if row[8] is not None else None,
             "n_creditos":           row[9],
         }
         for row in filas
@@ -387,8 +387,8 @@ def validar_corte(corte_id):
 
 def registrar_envio(corte_id, fecha_envio=None):
     if fecha_envio is None:
-        fecha_envio = date.today()
-    if fecha_envio > date.today():
+        fecha_envio = hoy_bogota()
+    if fecha_envio > hoy_bogota():
         raise FechaInvalida("La fecha de envío no puede ser futura.")
 
     with connection.cursor() as cursor:

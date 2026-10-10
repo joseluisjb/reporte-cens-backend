@@ -89,8 +89,8 @@ def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
             "fecha_inicio":          row[7],
             "cuotas_mora":           row[8],
             "valor_inicial":         int(row[9]) if row[9] is not None else None,
-            "valor_mora":            int(row[10]),
-            "valor_saldo":           int(row[11]),
+            "valor_mora":            int(row[10]) if row[10] is not None else None,
+            "valor_saldo":           int(row[11]) if row[11] is not None else None,
             "valor_cuota":           int(row[12]) if row[12] is not None else None,
             "dias_mora":             row[13],
             "origen_dias_mora":      row[14],
@@ -102,31 +102,44 @@ def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
     return {"total": total, "resultados": resultados}
 
 
-def buscar_deudores(cliente_id=None, numero_obligacion=None):
-    sql = (
-        "SELECT o.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, o.CLIENTE_ID, o.NUMERO_PROCESO, "
-        "o.FECHA_INICIO, rd.ESTADO_TU, rd.VALOR_SALDO "
+def buscar_deudores(cliente_id=None, numero_obligacion=None, limite=20, desplazamiento=0):
+    where = "WHERE 1=1"
+    params = []
+    if cliente_id is not None:
+        params.append(cliente_id)
+        where += f" AND o.CLIENTE_ID = :{len(params)}"
+    if numero_obligacion is not None:
+        params.append(numero_obligacion)
+        where += f" AND o.NUMERO_OBLIGACION_TU = :{len(params)}"
+
+    sql_base = (
         "FROM NEXOVOLT.NV_OBLIGACION o "
         "LEFT JOIN NEXOVOLT.NV_REPORTE_DETALLE rd "
         "  ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
         "  AND rd.CORTE_ID = ("
         "    SELECT MAX(rd2.CORTE_ID) FROM NEXOVOLT.NV_REPORTE_DETALLE rd2 "
-        "    WHERE rd2.OBLIGACION_ID = o.OBLIGACION_ID"
+        "    JOIN NEXOVOLT.NV_CORTE c2 ON rd2.CORTE_ID = c2.CORTE_ID "
+        "    WHERE rd2.OBLIGACION_ID = o.OBLIGACION_ID AND c2.ESTADO != 'ANULADO'"
         "  ) "
-        "WHERE 1=1"
+        + where
     )
-    params = []
-    if cliente_id is not None:
-        params.append(cliente_id)
-        sql += f" AND o.CLIENTE_ID = :{len(params)}"
-    if numero_obligacion is not None:
-        params.append(numero_obligacion)
-        sql += f" AND o.NUMERO_OBLIGACION_TU = :{len(params)}"
-    sql += " FETCH FIRST 50 ROWS ONLY"
+
     with connection.cursor() as cursor:
-        cursor.execute(sql, params)
+        cursor.execute(f"SELECT COUNT(*) {sql_base}", params)
+        total = cursor.fetchone()[0]
+
+        params_pag = params + [desplazamiento, limite]
+        cursor.execute(
+            "SELECT o.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, o.CLIENTE_ID, "
+            "o.NUMERO_PROCESO, o.FECHA_INICIO, rd.ESTADO_TU, rd.VALOR_SALDO "
+            f"{sql_base} "
+            f"ORDER BY o.OBLIGACION_ID "
+            f"OFFSET :{len(params_pag) - 1} ROWS FETCH NEXT :{len(params_pag)} ROWS ONLY",
+            params_pag,
+        )
         filas = cursor.fetchall()
-    return [
+
+    resultados = [
         {
             "obligacion_id":      row[0],
             "numero_obligacion":  row[1],
@@ -138,6 +151,7 @@ def buscar_deudores(cliente_id=None, numero_obligacion=None):
         }
         for row in filas
     ]
+    return {"total": total, "resultados": resultados}
 
 
 def linea_tiempo_deudor(obligacion_id):
@@ -167,8 +181,8 @@ def linea_tiempo_deudor(obligacion_id):
             "edad_mora":    row[2],
             "dias_mora":    row[3],
             "cuotas_mora":  row[4],
-            "valor_mora":   int(row[5]),
-            "valor_saldo":  int(row[6]),
+            "valor_mora":   int(row[5]) if row[5] is not None else None,
+            "valor_saldo":  int(row[6]) if row[6] is not None else None,
             "estado_corte": row[7],
         }
         for row in filas

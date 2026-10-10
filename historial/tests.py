@@ -163,35 +163,36 @@ def test_detalle_reporte_paginado():
 
 def test_buscar_deudores_por_cliente_id():
     fila = (10, "OBL001", 900001, 1001, _FECHA_CORTE, "01", 500000)
-    mock_conn, mock_cursor = _mock_conn(fetchall=[fila])
+    mock_conn, mock_cursor = _mock_conn(fetchall=[fila], fetchone=(1,))
     with patch("historial.servicios.connection", mock_conn):
         result = servicios.buscar_deudores(cliente_id=900001)
     sql = mock_cursor.execute.call_args[0][0]
     params = mock_cursor.execute.call_args[0][1]
     assert "CLIENTE_ID = :1" in sql
-    assert params == [900001]
-    assert len(result) == 1
+    assert params == [900001, 0, 20]
+    assert result["total"] == 1
+    assert len(result["resultados"]) == 1
 
 
 def test_buscar_deudores_por_numero_obligacion():
     fila = (10, "OBL001", 900001, 1001, _FECHA_CORTE, "01", 500000)
-    mock_conn, mock_cursor = _mock_conn(fetchall=[fila])
+    mock_conn, mock_cursor = _mock_conn(fetchall=[fila], fetchone=(1,))
     with patch("historial.servicios.connection", mock_conn):
         result = servicios.buscar_deudores(numero_obligacion="OBL001")
     sql = mock_cursor.execute.call_args[0][0]
     params = mock_cursor.execute.call_args[0][1]
     assert "NUMERO_OBLIGACION_TU = :1" in sql
-    assert params == ["OBL001"]
-    assert result[0]["numero_obligacion"] == "OBL001"
+    assert params == ["OBL001", 0, 20]
+    assert result["resultados"][0]["numero_obligacion"] == "OBL001"
 
 
 def test_buscar_deudores_sin_ultimo_estado():
     fila = (10, "OBL001", 900001, 1001, None, None, None)
-    mock_conn, mock_cursor = _mock_conn(fetchall=[fila])
+    mock_conn, mock_cursor = _mock_conn(fetchall=[fila], fetchone=(0,))
     with patch("historial.servicios.connection", mock_conn):
         result = servicios.buscar_deudores(cliente_id=900001)
-    assert result[0]["ultimo_estado_tu"] is None
-    assert result[0]["ultimo_valor_saldo"] is None
+    assert result["resultados"][0]["ultimo_estado_tu"] is None
+    assert result["resultados"][0]["ultimo_valor_saldo"] is None
 
 
 # ── Servicios — linea_tiempo_deudor ──────────────────────────────────────────
@@ -268,10 +269,12 @@ def test_deudores_list_sin_params_400():
 def test_deudores_list_200():
     request = factory.get("/api/historial/deudores/", {"cliente_id": "900001"})
     force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
-    with patch("historial.views.servicios.buscar_deudores", return_value=[_DEUDOR]):
+    with patch("historial.views.servicios.buscar_deudores",
+               return_value={"total": 1, "resultados": [_DEUDOR]}):
         response = DeudorViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
-    assert len(response.data) == 1
+    assert response.data["total"] == 1
+    assert len(response.data["resultados"]) == 1
 
 
 def test_deudores_list_cliente_id_no_entero_400():
@@ -378,3 +381,65 @@ def test_comando_error_grupo_no_encontrado():
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         with pytest.raises(CommandError):
             call_command("actualizar_estados_mensual", grupo_id=99)
+
+
+# ── Corrección 1 — pk no numérico → 404 ──────────────────────────────────────
+
+def test_detalle_pk_no_numerico_404():
+    request = factory.get("/api/historial/reportes/abc/detalle/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ReporteViewSet.as_view({"get": "detalle"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_linea_tiempo_pk_no_numerico_404():
+    request = factory.get("/api/historial/deudores/abc/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = DeudorViewSet.as_view({"get": "retrieve"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+# ── Corrección 2 — NULL safety en valor_mora / valor_saldo ───────────────────
+
+def test_listar_detalle_reporte_valor_none():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(1,), (1,)]
+    fila = ("OBL001", "Juan", "12345", "01", 2, "01", "00",
+            _FECHA_CORTE, 0, 100000, None, None, 50000, 0, "SIN_MORA", 1, None)
+    mock_cursor.fetchall.return_value = [fila]
+    with patch("historial.servicios.connection", mock_conn):
+        resultado = servicios.listar_detalle_reporte(1)
+    fila_res = resultado["resultados"][0]
+    assert fila_res["valor_mora"] is None
+    assert fila_res["valor_saldo"] is None
+
+
+def test_linea_tiempo_valor_none():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = (1,)
+    fila = (_FECHA_CORTE, "01", "00", 0, 0, None, None, "ENVIADO")
+    mock_cursor.fetchall.return_value = [fila]
+    with patch("historial.servicios.connection", mock_conn):
+        result = servicios.linea_tiempo_deudor(10)
+    assert result[0]["valor_mora"] is None
+    assert result[0]["valor_saldo"] is None
+
+
+# ── Corrección 4 — buscar_deudores paginado ───────────────────────────────────
+
+def test_buscar_deudores_filtra_estado_anulado():
+    fila = (10, "OBL001", 900001, 1001, _FECHA_CORTE, "01", 500000)
+    mock_conn, mock_cursor = _mock_conn(fetchall=[fila], fetchone=(1,))
+    with patch("historial.servicios.connection", mock_conn):
+        servicios.buscar_deudores(cliente_id=900001)
+    calls = [c[0][0] for c in mock_cursor.execute.call_args_list]
+    assert any("ESTADO != 'ANULADO'" in sql for sql in calls)
+
+
+def test_buscar_deudores_tiene_order_by():
+    fila = (10, "OBL001", 900001, 1001, _FECHA_CORTE, "01", 500000)
+    mock_conn, mock_cursor = _mock_conn(fetchall=[fila], fetchone=(1,))
+    with patch("historial.servicios.connection", mock_conn):
+        servicios.buscar_deudores(cliente_id=900001)
+    select_sql = mock_cursor.execute.call_args[0][0]
+    assert "ORDER BY o.OBLIGACION_ID" in select_sql

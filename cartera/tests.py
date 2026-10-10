@@ -236,10 +236,11 @@ def test_sin_grupo_conceptos_usados_son_todos_reportables():
         params for sql, params in inserts
         if params and "INSERT" in sql and "NV_CORTE" in sql
     )
-    conceptos_usados = insert_corte_params[4]
+    # Orden tras añadir ahora_bogota(): [corte_id, fecha_corte, fecha_gen, grupo_id, grupo_nombre, conceptos_usados]
+    conceptos_usados = insert_corte_params[5]
     assert conceptos_usados == "30,61,90"
-    assert insert_corte_params[2] is None   # grupo_id nulo
-    assert insert_corte_params[3] is None   # grupo_nombre nulo
+    assert insert_corte_params[3] is None   # grupo_id nulo
+    assert insert_corte_params[4] is None   # grupo_nombre nulo
 
 
 # ── Servicios — resumen ───────────────────────────────────────────────────────
@@ -637,3 +638,69 @@ def test_extraccion_sin_permiso_403():
     force_authenticate(request, user=usuario_con_rol("OTRO_ROL"))
     response = ExtraccionViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 403
+
+
+# ── Corrección 1 — pk no numérico → 404 ──────────────────────────────────────
+
+def test_retrieve_pk_no_numerico_404():
+    request = factory.get("/api/extracciones/abc/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"get": "retrieve"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_validar_pk_no_numerico_404():
+    request = factory.post("/api/extracciones/abc/validar/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_registrar_envio_pk_no_numerico_404():
+    request = factory.post("/api/extracciones/abc/registrar-envio/", {}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_obligaciones_pk_no_numerico_404():
+    request = factory.get("/api/extracciones/abc/obligaciones/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"get": "obligaciones"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+# ── Corrección 2 — NULL safety en valor_mora / valor_saldo ───────────────────
+
+def test_listar_obligaciones_valor_none():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (1,),   # corte existe
+        (1,),   # total
+    ]
+    mock_cursor.fetchall.return_value = [
+        ("OBL001", "Juan", "12345", "01", "00", 0, 0, None, None, 1),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        resultado = servicios.listar_obligaciones(1)
+    fila = resultado["resultados"][0]
+    assert fila["valor_mora"] is None
+    assert fila["valor_saldo"] is None
+
+
+# ── Corrección 6 — Mensajes de error personalizados ──────────────────────────
+
+def test_generar_corte_fecha_ausente_mensaje_personalizado():
+    request = factory.post("/api/extracciones/", {}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 400
+    assert response.data["fecha_corte"][0] == "Selecciona una fecha de corte."
+
+
+def test_generar_corte_fecha_invalida_mensaje_personalizado():
+    request = factory.post("/api/extracciones/", {"fecha_corte": "no-es-fecha"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 400
+    assert response.data["fecha_corte"][0] == "La fecha de corte no es válida."

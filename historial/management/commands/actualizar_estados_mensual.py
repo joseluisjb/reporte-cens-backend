@@ -3,6 +3,8 @@ from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
+from config.formatos import hoy_bogota
+
 from cartera.servicios import (
     BorradorOtraFecha,
     CorteEnEstadoFijo,
@@ -66,8 +68,8 @@ class Command(BaseCommand):
                     f"Fecha inválida: '{fecha_corte_str}'. Use el formato YYYY-MM-DD."
                 )
         else:
-            hoy = date.today()
-            fecha_corte = date(hoy.year, hoy.month, 1) - timedelta(days=1)
+            hoy = hoy_bogota()
+            fecha_corte = hoy.replace(day=1) - timedelta(days=1)
 
         self.stdout.write(f"Fecha de corte : {fecha_corte}")
         self.stdout.write(
