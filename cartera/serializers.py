@@ -1,6 +1,10 @@
 from rest_framework import serializers
 
 
+class RegistrarEnvioSerializer(serializers.Serializer):
+    fecha_envio = serializers.DateField(required=False, allow_null=True)
+
+
 class GenerarCorteSerializer(serializers.Serializer):
     fecha_corte = serializers.DateField()
     grupo_id    = serializers.IntegerField(required=False, allow_null=True, min_value=1)

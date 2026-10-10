@@ -42,7 +42,7 @@ class CorteNoEsValidado(Exception):
 class CorteConErroresCorrectivos(Exception):
     def __init__(self, errores):
         self.errores = errores
-        super().__init__("El corte tiene errores correctivos.")
+        super().__init__("El corte tiene errores correctivos que deben resolverse.")
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -367,11 +367,11 @@ def validar_corte(corte_id):
         )
         filas = cursor.fetchall()
 
-    correctivas = [{"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "CORRECTIVA"]
-    informativas = [{"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "INFORMATIVA"]
-
-    if correctivas:
-        raise CorteConErroresCorrectivos(correctivas)
+    correctivos = [
+        {"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "CORRECTIVA"
+    ]
+    if correctivos:
+        raise CorteConErroresCorrectivos(correctivos)
 
     with connection.cursor() as cursor:
         cursor.execute(
@@ -379,7 +379,10 @@ def validar_corte(corte_id):
             [corte_id],
         )
 
-    return {"corte": obtener_corte(corte_id), "advertencias": informativas}
+    advertencias = [
+        {"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "INFORMATIVA"
+    ]
+    return {"corte": obtener_corte(corte_id), "advertencias": advertencias}
 
 
 def registrar_envio(corte_id, fecha_envio=None):

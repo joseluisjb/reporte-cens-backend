@@ -1,7 +1,11 @@
+from contextlib import contextmanager
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from io import StringIO
+from unittest.mock import MagicMock, call, patch
 
 import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from rest_framework.test import APIRequestFactory
 
 from historial import servicios
@@ -21,6 +25,11 @@ def _mock_conn(fetchall=None, fetchone=None):
     if fetchone is not None:
         mock_cursor.fetchone.return_value = fetchone
     return mock_conn, mock_cursor
+
+
+@contextmanager
+def _noop_atomic():
+    yield
 
 
 _FECHA_CORTE = date(2026, 9, 30)
@@ -45,6 +54,15 @@ _DEUDOR = {
     "fecha_inicio": _FECHA_CORTE,
     "ultimo_estado_tu": "01",
     "ultimo_valor_saldo": 500000,
+}
+
+_RESULTADO_MOCK = {
+    "id": 7,
+    "fecha_corte": _FECHA_CORTE,
+    "estado": "BORRADOR",
+    "obligaciones": 150,
+    "saldo_consolidado": 45000000,
+    "grupo": None,
 }
 
 
@@ -288,3 +306,72 @@ def test_deudores_retrieve_404():
                side_effect=servicios.ObligacionNoEncontrada):
         response = DeudorViewSet.as_view({"get": "retrieve"})(request, pk="999")
     assert response.status_code == 404
+
+
+# ── Comando actualizar_estados_mensual ────────────────────────────────────────
+
+_CMD = "historial.management.commands.actualizar_estados_mensual"
+
+
+def test_comando_sin_argumentos():
+    mock_conn, mock_cursor = _mock_conn()
+    with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK) as mock_gc, \
+         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.transaction.atomic", _noop_atomic):
+        out = StringIO()
+        call_command("actualizar_estados_mensual", stdout=out)
+    salida = out.getvalue()
+    # Fecha esperada: último día del mes anterior a 2026-10-10 → 2026-09-30
+    assert "2026-09-30" in salida
+    assert "150" in salida
+    assert "45000000" in salida
+    assert "Corte 7 generado correctamente." in salida
+    kwargs = mock_gc.call_args.kwargs
+    assert kwargs["fecha_corte"] == date(2026, 9, 30)
+    assert kwargs["grupo_id"] is None
+
+
+def test_comando_con_fecha_y_grupo():
+    mock_conn, mock_cursor = _mock_conn()
+    resultado = {**_RESULTADO_MOCK, "grupo": {"id": 1, "nombre": "Grupo A"}}
+    with patch(f"{_CMD}.generar_corte", return_value=resultado) as mock_gc, \
+         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.transaction.atomic", _noop_atomic):
+        out = StringIO()
+        call_command("actualizar_estados_mensual",
+                     fecha_corte="2026-09-30", grupo_id=1, stdout=out)
+    kwargs = mock_gc.call_args.kwargs
+    assert kwargs["fecha_corte"] == date(2026, 9, 30)
+    assert kwargs["grupo_id"] == 1
+
+
+def test_comando_simular():
+    mock_conn, mock_cursor = _mock_conn()
+    with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK), \
+         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.transaction.atomic", _noop_atomic), \
+         patch(f"{_CMD}.transaction.set_rollback") as mock_rollback:
+        out = StringIO()
+        call_command("actualizar_estados_mensual", simular=True, stdout=out)
+    salida = out.getvalue()
+    assert "SIMULACIÓN" in salida
+    mock_rollback.assert_called_once_with(True)
+    # La bitácora no debe haberse insertado
+    mock_cursor.execute.assert_not_called()
+
+
+def test_comando_fecha_invalida_formato():
+    with patch(f"{_CMD}.generar_corte") as mock_gc:
+        with pytest.raises(CommandError):
+            call_command("actualizar_estados_mensual", fecha_corte="no-es-fecha")
+    mock_gc.assert_not_called()
+
+
+def test_comando_error_grupo_no_encontrado():
+    from cartera.servicios import GrupoNoEncontrado
+    mock_conn, mock_cursor = _mock_conn()
+    with patch(f"{_CMD}.generar_corte", side_effect=GrupoNoEncontrado), \
+         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.transaction.atomic", _noop_atomic):
+        with pytest.raises(CommandError):
+            call_command("actualizar_estados_mensual", grupo_id=99)

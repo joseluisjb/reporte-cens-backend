@@ -1,8 +1,6 @@
 from django.db import connection
 
 
-# ── Excepciones ───────────────────────────────────────────────────────────────
-
 class ReporteNoEncontrado(Exception):
     pass
 
@@ -10,23 +8,6 @@ class ReporteNoEncontrado(Exception):
 class ObligacionNoEncontrada(Exception):
     pass
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _fila_a_reporte(row):
-    corte_id, fecha_corte, fecha_envio, total, observacion, grupo_nombre, saldo = row
-    return {
-        "id":               corte_id,
-        "fecha_corte":      fecha_corte,
-        "fecha_envio":      fecha_envio,
-        "total_registros":  total or 0,
-        "saldo_consolidado": int(saldo),
-        "grupo":            grupo_nombre,
-        "observacion":      observacion,
-    }
-
-
-# ── API pública ───────────────────────────────────────────────────────────────
 
 def listar_reportes_enviados(desde=None, hasta=None):
     sql = (
@@ -45,13 +26,24 @@ def listar_reportes_enviados(desde=None, hasta=None):
         sql += f" AND c.FECHA_ENVIO <= :{len(params)}"
     sql += (
         " GROUP BY c.CORTE_ID, c.FECHA_CORTE, c.FECHA_ENVIO, c.TOTAL_REGISTROS, "
-        "c.OBSERVACION, c.GRUPO_NOMBRE "
-        "ORDER BY c.FECHA_ENVIO DESC"
+        "c.OBSERVACION, c.GRUPO_NOMBRE"
+        " ORDER BY c.FECHA_ENVIO DESC"
     )
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
-        rows = cursor.fetchall()
-    return [_fila_a_reporte(r) for r in rows]
+        filas = cursor.fetchall()
+    return [
+        {
+            "id":               row[0],
+            "fecha_corte":      row[1],
+            "fecha_envio":      row[2],
+            "total_registros":  row[3],
+            "observacion":      row[4],
+            "grupo":            row[5],
+            "saldo_consolidado": int(row[6]),
+        }
+        for row in filas
+    ]
 
 
 def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
@@ -87,23 +79,23 @@ def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
 
     resultados = [
         {
-            "numero_obligacion":    row[0],
-            "nombre_titular":       row[1],
+            "numero_obligacion":     row[0],
+            "nombre_titular":        row[1],
             "numero_identificacion": row[2],
-            "tipo_id_tu":           row[3],
-            "tipo_cartera":         row[4],
-            "estado_tu":            row[5],
-            "edad_mora":            row[6],
-            "fecha_inicio":         row[7],
-            "cuotas_mora":          row[8],
-            "valor_inicial":        int(row[9]),
-            "valor_mora":           int(row[10]),
-            "valor_saldo":          int(row[11]),
-            "valor_cuota":          int(row[12]),
-            "dias_mora":            row[13],
-            "origen_dias_mora":     row[14],
-            "n_creditos":           row[15],
-            "fecha_ultimo_pago":    row[16],
+            "tipo_id_tu":            row[3],
+            "tipo_cartera":          row[4],
+            "estado_tu":             row[5],
+            "edad_mora":             row[6],
+            "fecha_inicio":          row[7],
+            "cuotas_mora":           row[8],
+            "valor_inicial":         int(row[9]) if row[9] is not None else None,
+            "valor_mora":            int(row[10]),
+            "valor_saldo":           int(row[11]),
+            "valor_cuota":           int(row[12]) if row[12] is not None else None,
+            "dias_mora":             row[13],
+            "origen_dias_mora":      row[14],
+            "n_creditos":            row[15],
+            "fecha_ultimo_pago":     row[16],
         }
         for row in filas
     ]
@@ -116,9 +108,11 @@ def buscar_deudores(cliente_id=None, numero_obligacion=None):
         "o.FECHA_INICIO, rd.ESTADO_TU, rd.VALOR_SALDO "
         "FROM NEXOVOLT.NV_OBLIGACION o "
         "LEFT JOIN NEXOVOLT.NV_REPORTE_DETALLE rd "
-        "ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
-        "AND rd.CORTE_ID = (SELECT MAX(rd2.CORTE_ID) FROM NEXOVOLT.NV_REPORTE_DETALLE rd2 "
-        "                   WHERE rd2.OBLIGACION_ID = o.OBLIGACION_ID) "
+        "  ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
+        "  AND rd.CORTE_ID = ("
+        "    SELECT MAX(rd2.CORTE_ID) FROM NEXOVOLT.NV_REPORTE_DETALLE rd2 "
+        "    WHERE rd2.OBLIGACION_ID = o.OBLIGACION_ID"
+        "  ) "
         "WHERE 1=1"
     )
     params = []
@@ -131,18 +125,18 @@ def buscar_deudores(cliente_id=None, numero_obligacion=None):
     sql += " FETCH FIRST 50 ROWS ONLY"
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
-        rows = cursor.fetchall()
+        filas = cursor.fetchall()
     return [
         {
-            "obligacion_id":       row[0],
-            "numero_obligacion":   row[1],
-            "cliente_id":          row[2],
-            "numero_proceso":      row[3],
-            "fecha_inicio":        row[4],
-            "ultimo_estado_tu":    row[5],
-            "ultimo_valor_saldo":  int(row[6]) if row[6] is not None else None,
+            "obligacion_id":      row[0],
+            "numero_obligacion":  row[1],
+            "cliente_id":         row[2],
+            "numero_proceso":     row[3],
+            "fecha_inicio":       row[4],
+            "ultimo_estado_tu":   row[5],
+            "ultimo_valor_saldo": int(row[6]) if row[6] is not None else None,
         }
-        for row in rows
+        for row in filas
     ]
 
 
@@ -156,8 +150,8 @@ def linea_tiempo_deudor(obligacion_id):
             raise ObligacionNoEncontrada()
 
         cursor.execute(
-            "SELECT c.FECHA_CORTE, rd.ESTADO_TU, rd.EDAD_MORA, rd.DIAS_MORA, rd.CUOTAS_MORA, "
-            "rd.VALOR_MORA, rd.VALOR_SALDO, c.ESTADO AS ESTADO_CORTE "
+            "SELECT c.FECHA_CORTE, rd.ESTADO_TU, rd.EDAD_MORA, rd.DIAS_MORA, "
+            "rd.CUOTAS_MORA, rd.VALOR_MORA, rd.VALOR_SALDO, c.ESTADO AS ESTADO_CORTE "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_CORTE c ON rd.CORTE_ID = c.CORTE_ID "
             "WHERE rd.OBLIGACION_ID = :1 AND c.ESTADO != 'ANULADO' "

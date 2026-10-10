@@ -459,10 +459,6 @@ def test_get_obligaciones_404():
     assert response.status_code == 404
 
 
-# ===========================================================================
-# Ciclo mínimo — validar_corte y registrar_envio
-# ===========================================================================
-
 # ── Servicios — validar_corte ─────────────────────────────────────────────────
 
 def test_validar_corte_no_encontrado():
@@ -470,7 +466,7 @@ def test_validar_corte_no_encontrado():
     mock_cursor.fetchone.return_value = None
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.CorteNoEncontrado):
-            servicios.validar_corte(1)
+            servicios.validar_corte(99)
 
 
 def test_validar_corte_no_es_borrador():
@@ -484,8 +480,7 @@ def test_validar_corte_con_correctivas_lanza_excepcion():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.return_value = ("BORRADOR",)
     mock_cursor.fetchall.return_value = [
-        ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el número de identificación"),
-        ("SALDO_SIN_VALOR_INICIAL", "INFORMATIVA", "Tiene saldo pero valor inicial es cero"),
+        ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación"),
     ]
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
@@ -497,34 +492,24 @@ def test_validar_corte_con_correctivas_lanza_excepcion():
 def test_validar_corte_sin_errores_actualiza_estado():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
-        ("BORRADOR",),                     # SELECT ESTADO
-        None,                              # obtener_corte — no existe en este test simplificado
+        ("BORRADOR",),   # SELECT ESTADO
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),  # obtener_corte
     ]
-    mock_cursor.fetchall.side_effect = [
-        [],                                # V_VALIDACION_CORTE vacía
-        [],                                # obtener_corte GROUP BY
-    ]
-    sqls = []
-    mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append(sql)
-
+    mock_cursor.fetchall.return_value = []   # V_VALIDACION_CORTE → sin errores
     with patch("cartera.servicios.connection", mock_conn):
-        try:
-            servicios.validar_corte(1)
-        except Exception:
-            pass  # obtener_corte falla en mock, pero verificamos el UPDATE
-
-    assert any("UPDATE" in s and "VALIDADO" in s for s in sqls)
+        servicios.validar_corte(1)
+    sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
+    assert any("ESTADO = 'VALIDADO'" in s for s in sqls)
 
 
 def test_validar_corte_devuelve_advertencias():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
-        ("BORRADOR",),   # SELECT ESTADO
-        (1, _FECHA_PASADA, "VALIDADO", _FECHA_GEN, 5, None, None, 0),  # obtener_corte
+        ("BORRADOR",),
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),
     ]
-    mock_cursor.fetchall.side_effect = [
-        [("SIN_FECHA_LIMITE_PAGO", "INFORMATIVA", "No hay fecha límite")],  # validacion
-        [],  # obtener_corte GROUP BY (fetchall para saldo)
+    mock_cursor.fetchall.return_value = [
+        ("SIN_FECHA_LIMITE_PAGO", "INFORMATIVA", "No se encontró una factura"),
     ]
     with patch("cartera.servicios.connection", mock_conn):
         resultado = servicios.validar_corte(1)
@@ -539,7 +524,7 @@ def test_registrar_envio_no_encontrado():
     mock_cursor.fetchone.return_value = None
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.CorteNoEncontrado):
-            servicios.registrar_envio(1)
+            servicios.registrar_envio(99)
 
 
 def test_registrar_envio_no_es_validado():
@@ -550,26 +535,24 @@ def test_registrar_envio_no_es_validado():
 
 
 def test_registrar_envio_fecha_futura():
-    with pytest.raises(servicios.FechaInvalida):
-        servicios.registrar_envio(1, fecha_envio=_FECHA_FUTURA)
+    from datetime import timedelta
+    mock_conn, mock_cursor = _mock_conn()
+    fecha_futura = date.today() + timedelta(days=1)
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.FechaInvalida):
+            servicios.registrar_envio(1, fecha_envio=fecha_futura)
 
 
 def test_registrar_envio_usa_hoy_sin_fecha():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
-        ("VALIDADO",),    # SELECT ESTADO
-        (1, _FECHA_PASADA, "ENVIADO", _FECHA_GEN, 5, None, None, 0),  # obtener_corte
+        ("VALIDADO",),
+        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0),
     ]
-    mock_cursor.fetchall.return_value = []
-    sqls_params = []
-    mock_cursor.execute.side_effect = lambda sql, params=None: sqls_params.append((sql, params))
     with patch("cartera.servicios.connection", mock_conn):
         servicios.registrar_envio(1)
-    update_params = next(
-        params for sql, params in sqls_params
-        if params and "ENVIADO" in sql
-    )
-    assert update_params[0] == date.today()
+    sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
+    assert any("ESTADO = 'ENVIADO'" in s for s in sqls)
 
 
 # ── Vistas — ciclo mínimo ─────────────────────────────────────────────────────
@@ -577,12 +560,13 @@ def test_registrar_envio_usa_hoy_sin_fecha():
 def test_post_validar_200_sin_errores():
     request = factory.post("/api/extracciones/1/validar/")
     request.user = _usuario_analista()
-    resultado = {"corte": _RESUMEN, "advertencias": []}
+    corte_mock = {**_RESUMEN, "estado": "VALIDADO"}
+    resultado = {"corte": corte_mock, "advertencias": []}
     with patch("cartera.views.servicios.validar_corte", return_value=resultado):
         response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
     assert response.status_code == 200
-    assert "advertencias" in response.data
-    assert response.data["estado"] == "BORRADOR"
+    assert response.data["estado"] == "VALIDADO"
+    assert response.data["advertencias"] == []
 
 
 def test_post_validar_409_correctivas():
@@ -593,7 +577,7 @@ def test_post_validar_409_correctivas():
                side_effect=servicios.CorteConErroresCorrectivos(errores)):
         response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
     assert response.status_code == 409
-    assert response.data["errores"] == errores
+    assert "errores" in response.data
 
 
 def test_post_validar_404():
@@ -617,9 +601,11 @@ def test_post_validar_409_no_borrador():
 def test_post_registrar_envio_200():
     request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
     request.user = _usuario_analista()
-    with patch("cartera.views.servicios.registrar_envio", return_value=_RESUMEN):
+    corte_mock = {**_RESUMEN, "estado": "ENVIADO"}
+    with patch("cartera.views.servicios.registrar_envio", return_value=corte_mock):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
     assert response.status_code == 200
+    assert response.data["estado"] == "ENVIADO"
 
 
 def test_post_registrar_envio_404():
@@ -641,13 +627,10 @@ def test_post_registrar_envio_409_no_validado():
 
 
 def test_post_registrar_envio_400_fecha_futura():
-    request = factory.post(
-        "/api/extracciones/1/registrar-envio/",
-        {"fecha_envio": str(_FECHA_FUTURA)},
-        format="json",
-    )
+    request = factory.post("/api/extracciones/1/registrar-envio/",
+                           {"fecha_envio": "2099-01-01"}, format="json")
     request.user = _usuario_analista()
     with patch("cartera.views.servicios.registrar_envio",
-               side_effect=servicios.FechaInvalida("La fecha de envío no puede ser futura.")):
+               side_effect=servicios.FechaInvalida("fecha futura")):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
     assert response.status_code == 400

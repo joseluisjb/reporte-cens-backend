@@ -345,3 +345,47 @@ Incluye todos los cortes no anulados en los que aparece la obligación, ordenado
 **Errores específicos**
 - `400 Bad Request` — ningún parámetro de búsqueda proporcionado; `cliente_id` no es entero
 - `404 Not Found` — obligación no encontrada (línea de tiempo)
+
+### Procesos programados
+
+| Comando | Descripción |
+|---|---|
+| `actualizar_estados_mensual` | Genera el corte mensual de cartera (RF9) |
+
+**Argumentos**
+
+| Argumento | Tipo | Defecto | Descripción |
+|---|---|---|---|
+| `--fecha-corte` | YYYY-MM-DD | Último día del mes anterior | Fecha del corte a generar |
+| `--grupo` | entero | (ninguno) | ID del grupo de conceptos; sin él se usan todos los conceptos reportables |
+| `--simular` | flag | false | Ejecuta la lógica completa dentro de una transacción y la revierte |
+
+**Salida stdout (ejemplo)**
+
+```
+Fecha de corte : 2026-09-30
+Grupo          : todos los conceptos reportables
+Modo           : REAL
+Obligaciones     : 150
+Saldo consolidado: 45000000
+Estado           : BORRADOR
+Corte 7 generado correctamente.
+```
+
+**NV_BITACORA**: ACCION=`ACTUALIZACION_MENSUAL`, ENTIDAD=`NV_CORTE`, ENTIDAD_ID=id del corte, DETALLE con obligaciones/saldo/grupo. No se registra en modo `--simular`.
+
+**Código de salida**: `0` en éxito; `1` en cualquier error (fecha inválida, grupo inexistente, conflicto de estado, etc.).
+
+**Cron (Linux)**
+
+```
+# Día 1 de cada mes a las 02:00
+0 2 1 * * /ruta/venv/bin/python /ruta/proyecto/manage.py actualizar_estados_mensual >> /var/log/nexovolt.log 2>&1
+```
+
+**Render Cron Job**
+
+```
+Command : python manage.py actualizar_estados_mensual
+Schedule: 0 2 1 * *
+```
