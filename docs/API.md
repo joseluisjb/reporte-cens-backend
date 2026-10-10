@@ -179,3 +179,169 @@ Error de validación:
 - Si ya existe un corte con la misma `fecha_corte` en estado `BORRADOR`, se reemplaza: se borran su detalle (`NV_REPORTE_DETALLE`) y sus inconsistencias (`NV_INCONSISTENCIA`), y se actualiza el mismo registro.
 - Si existe un corte con esa fecha en cualquier otro estado (`VALIDADO`, `ENVIADO`, `ANULADO`), se devuelve `409`.
 - Si existe un `BORRADOR` de otra fecha, se devuelve `409` con un mensaje que indica la fecha en conflicto.
+
+### Ciclo mínimo de corte (RF6 parcial)
+
+| Método | URL | Rol requerido | Descripción |
+|---|---|---|---|
+| POST | `/api/extracciones/{id}/validar/` | ANALISTA_CARTERA, ADMINISTRADOR | Valida el corte en BORRADOR y lo pasa a VALIDADO |
+| POST | `/api/extracciones/{id}/registrar-envio/` | ANALISTA_CARTERA, ADMINISTRADOR | Registra el envío a TransUnion y pasa a ENVIADO |
+
+**POST /validar/**
+
+No requiere cuerpo. Si hay filas con `SEVERIDAD='CORRECTIVA'` en `V_VALIDACION_CORTE`, responde `409` y **no** cambia el estado. Si no hay errores correctivos, cambia el estado a `VALIDADO` y devuelve el corte con las advertencias informativas.
+
+Respuesta `200`:
+```json
+{
+  "id": 1,
+  "fecha_corte": "2026-09-30",
+  "estado": "VALIDADO",
+  "advertencias": [
+    {"regla": "SIN_FECHA_LIMITE_PAGO", "mensaje": "No se encontró una factura..."}
+  ]
+}
+```
+
+Respuesta `409` con errores:
+```json
+{
+  "detail": "El corte tiene errores correctivos que deben resolverse.",
+  "errores": [
+    {"regla": "SIN_IDENTIFICACION", "mensaje": "Falta el tipo o el número de identificación"}
+  ]
+}
+```
+
+**Errores específicos /validar/**
+- `404 Not Found` — corte no encontrado
+- `409 Conflict` — corte no está en BORRADOR; o tiene errores correctivos
+
+**POST /registrar-envio/**
+
+Cuerpo opcional:
+```json
+{"fecha_envio": "2026-10-01"}
+```
+
+`fecha_envio` no puede ser futura. Si no se envía, se usa la fecha de hoy. El archivo se carga a mano en el portal de TransUnion; no hay integración automática.
+
+Respuesta `200`: resumen del corte con `"estado": "ENVIADO"`.
+
+**Errores específicos /registrar-envio/**
+- `400 Bad Request` — `fecha_envio` futura
+- `404 Not Found` — corte no encontrado
+- `409 Conflict` — corte no está en VALIDADO
+
+### Historial de reportes enviados (RF6)
+
+| Método | URL | Rol requerido | Descripción |
+|---|---|---|---|
+| GET | `/api/historial/reportes/` | ANALISTA_CARTERA, ADMINISTRADOR | Lista cortes enviados; filtros opcionales `?desde=` y `?hasta=` (fecha en AAAA-MM-DD) |
+| GET | `/api/historial/reportes/{id}/detalle/` | ANALISTA_CARTERA, ADMINISTRADOR | Detalle de obligaciones de un reporte enviado con paginación |
+
+**Respuesta 200 — Lista de reportes**
+
+```json
+[
+  {
+    "id": 1,
+    "fecha_corte": "2026-09-30",
+    "fecha_envio": "2026-10-01",
+    "total_registros": 150,
+    "saldo_consolidado": 45000000,
+    "grupo": "Grupo A",
+    "observacion": null
+  }
+]
+```
+
+`grupo` es el nombre del grupo usado en el corte, o `null` si no se usó grupo.
+
+**Parámetros de paginación en `/detalle/`**
+
+| Parámetro | Tipo | Defecto |
+|---|---|---|
+| `limite` | entero | 20 |
+| `desplazamiento` | entero | 0 |
+
+**Respuesta 200 — Detalle de reporte**
+
+```json
+{
+  "total": 150,
+  "resultados": [
+    {
+      "numero_obligacion": "OBL0001",
+      "nombre_titular": "JUAN PÉREZ",
+      "numero_identificacion": "12345678",
+      "tipo_id_tu": "CC",
+      "tipo_cartera": 2,
+      "estado_tu": "01",
+      "edad_mora": "00",
+      "fecha_inicio": "2025-01-01",
+      "cuotas_mora": 0,
+      "valor_inicial": 500000,
+      "valor_mora": 0,
+      "valor_saldo": 500000,
+      "valor_cuota": 50000,
+      "dias_mora": 0,
+      "origen_dias_mora": "SIN_MORA",
+      "n_creditos": 1,
+      "fecha_ultimo_pago": null
+    }
+  ]
+}
+```
+
+**Errores específicos**
+- `400 Bad Request` — fechas `desde`/`hasta` con formato inválido
+- `404 Not Found` — corte no encontrado o no está en estado ENVIADO (detalle)
+
+### Historial de deudores (RF8)
+
+| Método | URL | Rol requerido | Descripción |
+|---|---|---|---|
+| GET | `/api/historial/deudores/` | ANALISTA_CARTERA, ADMINISTRADOR | Busca obligaciones; requiere `?cliente_id=` y/o `?numero_obligacion=`; máximo 50 resultados |
+| GET | `/api/historial/deudores/{id}/` | ANALISTA_CARTERA, ADMINISTRADOR | Línea de tiempo de una obligación |
+
+**Respuesta 200 — Lista de deudores**
+
+```json
+[
+  {
+    "obligacion_id": 1,
+    "numero_obligacion": "OBL0001",
+    "cliente_id": 900001,
+    "numero_proceso": 1001,
+    "fecha_inicio": "2025-01-01",
+    "ultimo_estado_tu": "01",
+    "ultimo_valor_saldo": 500000
+  }
+]
+```
+
+`ultimo_estado_tu` y `ultimo_valor_saldo` son `null` si la obligación no tiene reportes aún.
+
+**Respuesta 200 — Línea de tiempo**
+
+```json
+[
+  {
+    "fecha_corte": "2026-09-30",
+    "estado_tu": "01",
+    "edad_mora": "00",
+    "dias_mora": 0,
+    "cuotas_mora": 0,
+    "valor_mora": 0,
+    "valor_saldo": 500000,
+    "estado_corte": "ENVIADO"
+  }
+]
+```
+
+Incluye todos los cortes no anulados en los que aparece la obligación, ordenados por fecha de corte.
+
+**Errores específicos**
+- `400 Bad Request` — ningún parámetro de búsqueda proporcionado; `cliente_id` no es entero
+- `404 Not Found` — obligación no encontrada (línea de tiempo)

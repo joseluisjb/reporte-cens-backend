@@ -31,6 +31,20 @@ class CorteNoEncontrado(Exception):
     pass
 
 
+class CorteNoEsBorrador(Exception):
+    pass
+
+
+class CorteNoEsValidado(Exception):
+    pass
+
+
+class CorteConErroresCorrectivos(Exception):
+    def __init__(self, errores):
+        self.errores = errores
+        super().__init__("El corte tiene errores correctivos.")
+
+
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _todos_los_conceptos_reportables():
@@ -334,3 +348,61 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
         for row in filas
     ]
     return {"total": total, "resultados": resultados}
+
+
+def validar_corte(corte_id):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ESTADO FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise CorteNoEncontrado()
+    if row[0] != "BORRADOR":
+        raise CorteNoEsBorrador()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT REGLA, SEVERIDAD, MENSAJE FROM NEXOVOLT.V_VALIDACION_CORTE"
+        )
+        filas = cursor.fetchall()
+
+    correctivas = [{"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "CORRECTIVA"]
+    informativas = [{"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "INFORMATIVA"]
+
+    if correctivas:
+        raise CorteConErroresCorrectivos(correctivas)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'VALIDADO' WHERE CORTE_ID = :1",
+            [corte_id],
+        )
+
+    return {"corte": obtener_corte(corte_id), "advertencias": informativas}
+
+
+def registrar_envio(corte_id, fecha_envio=None):
+    if fecha_envio is None:
+        fecha_envio = date.today()
+    if fecha_envio > date.today():
+        raise FechaInvalida("La fecha de envío no puede ser futura.")
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ESTADO FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise CorteNoEncontrado()
+    if row[0] != "VALIDADO":
+        raise CorteNoEsValidado()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'ENVIADO', FECHA_ENVIO = :1 "
+            "WHERE CORTE_ID = :2",
+            [fecha_envio, corte_id],
+        )
+
+    return obtener_corte(corte_id)

@@ -6,6 +6,10 @@ class GenerarCorteSerializer(serializers.Serializer):
     grupo_id    = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
 
+class RegistrarEnvioSerializer(serializers.Serializer):
+    fecha_envio = serializers.DateField(required=False, allow_null=True)
+
+
 class CorteResumenSerializer(serializers.Serializer):
     def to_representation(self, instance):
         fecha_corte = instance["fecha_corte"]
