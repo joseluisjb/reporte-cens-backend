@@ -1,0 +1,1844 @@
+openapi: 3.0.3
+
+info:
+  title: NexoVolt — API REST (Iteración 1)
+  version: 0.4.0-borrador
+  description: |
+    Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
+    Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
+    usuarios y auditoría). RF1–RF9, RF35 y RF25–RF31.
+
+    **Estado: BORRADOR para revisión** de José Luis (usuarios, parámetros, extracción, historial) y
+    Dilan (autenticación, roles, auditoría, validaciones). La versión 0.2 se alineó con lo ya
+    implementado en `reporte-cens-backend` (rama `dev`: conceptos, grupos de conceptos y salud). La
+    **versión 0.3 se alinea también con la extracción, el ciclo de corte (validar y registrar el
+    envío) y el historial** de `origin/dev` (commit `cf07754`, 10/10/2026). Autenticación, usuarios y
+    auditoría siguen siendo lo que construyó el frontend contra mocks o una propuesta para Dilan.
+    La **versión 0.4 sigue al Manual Sector Real v34 de TransUnion** en los puntos donde el backend
+    se aparta de él (tipo de identificación, estado de la obligación, qué entra al corte y la
+    comprobación de la fecha de corte; ver `DISCREPANCIAS.md`, filas A2, A3, A4 y A9). Johan decidió
+    el 10/10/2026 que CENS reporta como **Sector Real Servicios** (paquete SSR, Tabla 4b, categoría
+    de servicios `04` "Servicio energía"). Donde el backend difiere de lo que pide la
+    documentación, el README del contrato lo lista como diferencia por resolver. Cada operación dice si está *implementada en el backend*, *implementada
+    en el frontend* (contra mocks) o es *propuesta*.
+
+    ## Reglas generales
+
+    **Sesión y CSRF.** Sesión por cookie de Django (`sessionid`, HttpOnly). Para métodos que
+    modifican datos (POST, PATCH, PUT, DELETE) el cliente envía el token CSRF en el encabezado
+    `X-CSRFToken`, leído de la cookie `csrftoken` (se obtiene con `GET /auth/csrf/`). No se usan
+    tokens en `localStorage`.
+
+    **Inactividad (RF26).** La sesión vence a los 10 minutos sin actividad (vencimiento deslizante:
+    cada petición la renueva). El frontend llama a `GET /auth/me/` cada ~5 minutos mientras el
+    usuario trabaja para renovarla. Al vencer, cualquier endpoint responde `401`.
+
+    **Roles (RF27).** `ANALISTA_CARTERA` (Analista de Cartera) y `ADMINISTRADOR` (Administrador),
+    los códigos que ya usa el backend en `request.user.rol`; el frontend los traduce a texto. Cada
+    operación indica sus roles en `x-roles`. `x-roles` usa los nombres legibles; el valor en la API
+    es el código de `Rol`. Un rol sin permiso recibe `403`; sin sesión, `401`.
+
+    **Primer ingreso.** Un usuario con `must_change_password = true` solo puede usar
+    `/auth/me/`, `/auth/logout/` y `/auth/change-password/`; el resto responde `403` con
+    `code: "password_change_required"`.
+
+    **Errores.** Formato de DRF, siempre en español (RF31):
+    `{ "detail": "..." }` para errores generales o `{ "campo": ["mensaje", ...] }` para errores de
+    validación (`400`). Los errores generales pueden traer un `code` estable para distinguirlos
+    (por ejemplo, un `403` por CSRF de uno por permisos). La extracción y el historial del backend
+    responden con `{ detail }` en español también para reglas de negocio con `400`, `404` y `409`
+    (fecha futura, grupo inexistente o inactivo, corte en otro estado); solo la validación del
+    cuerpo (campo ausente o con formato inválido) llega por campo.
+
+    **Formatos.** JSON UTF-8. Fechas y horas en ISO 8601 con zona (`America/Bogota`, UTC−05:00).
+    Fechas de corte como `YYYY-MM-DD`. Montos en pesos colombianos como número (sin símbolo ni
+    separadores). Las contraseñas nunca se devuelven (la temporal se envía por correo).
+
+    **Paginación.** Una sola convención para toda la API. Los listados que pueden crecer
+    (obligaciones de un corte, detalle de un reporte enviado y `/auditoria/`) usan `?limite=` (por
+    defecto 20) y `?desplazamiento=` (por defecto 0, filas que se saltan) y responden
+    `{ total, resultados }`, con `total` igual al número de registros que cumplen el filtro. Los
+    listados pequeños o acotados devuelven un **arreglo plano** sin paginar: `/users/`,
+    `/conceptos/`, `/grupos-conceptos/`, `/extracciones/`, `/historial/reportes/` y
+    `/historial/deudores/` (máximo 50). El contrato pide `limite` de 1 a 100 (un valor mayor se
+    recorta a 100) y `desplazamiento` desde 0; fuera de rango responde `400` con su propio mensaje.
+    El backend aún no valida el rango ni recorta el límite.
+
+    **Datos reservados.** Los datos de CENS son confidenciales: el log de auditoría no guarda
+    contraseñas ni datos personales completos. El backend devuelve hoy `numero_identificacion`
+    **completo** en las obligaciones de un corte y en el detalle histórico; el frontend lo enmascara
+    en pantalla (diferencia Q del README).
+
+    ## Fuera de alcance de este contrato (no construir sin confirmar)
+    "Cambiar datos", "Cambiar de perfil" y exportar log/resumen aparecen en la maqueta pero no
+    en los RF de la Iteración 1. `POST /demo/switch-profile/` existe solo en los mocks del
+    frontend; el backend real **no** lo tendrá. Los **grupos de conceptos** (RF43) sí están en el
+    contrato porque el backend ya los implementó; hay que confirmar que RF43 forme parte del
+    alcance documentado (no figura en la Planificación ni en la Asignación). Lo mismo ocurre con
+    RF44 (extracción por grupo de conceptos).
+  contact:
+    name: Equipo NexoVolt — Seminario Integrador 3
+
+servers:
+  - url: /api
+    description: Mismo dominio (en desarrollo, el proxy de Vite apunta a http://localhost:8000)
+
+tags:
+  - name: Autenticación
+    description: RF25, RF26, RF29 · Dilan (login, sesión) y José Luis (recuperación)
+  - name: Usuarios
+    description: RF28 · José Luis · solo Administrador
+  - name: Utilidades
+    description: Salud del servidor
+  - name: Conceptos de energía
+    description: RF35 · José Luis (API) y Angel (tabla) · lectura Analista y Administrador, escritura Administrador
+  - name: Grupos de conceptos
+    description: RF43 · José Luis · lectura Analista y Administrador, escritura Administrador
+  - name: Extracción
+    description: RF1–RF5, RF7, RF44 · José Luis y Clara · implementado en el backend · Analista y Administrador
+  - name: Ciclo de corte
+    description: Validar un corte y registrar su envío a TransUnion · José Luis · implementado en el backend · Analista y Administrador
+  - name: Historial
+    description: RF6, RF8 (RF9 es un comando mensual, sin endpoint) · José Luis y Clara · implementado en el backend · Analista y Administrador
+  - name: Auditoría
+    description: RF30 · Dilan · solo Administrador
+
+security:
+  - sessionCookie: []
+
+paths:
+  # ───────────────────────── Autenticación ─────────────────────────
+  /auth/csrf/:
+    get:
+      tags: [Autenticación]
+      summary: Obtener la cookie CSRF
+      description: Entrega la cookie `csrftoken` (`ensure_csrf_cookie`). *Implementado en el frontend.*
+      operationId: authCsrf
+      security: []
+      x-roles: [público]
+      responses:
+        '204':
+          description: Cookie `csrftoken` entregada.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: "`csrftoken=...; SameSite=Lax`"
+
+  /auth/login/:
+    post:
+      tags: [Autenticación]
+      summary: Iniciar sesión (RF25)
+      description: |
+        Valida correo y contraseña y abre la sesión. *Implementado en el frontend.*
+        Un usuario desactivado recibe `403` solo si la contraseña es correcta (no se revela nada
+        con una contraseña incorrecta). Cada intento exitoso queda en el log de auditoría.
+      operationId: authLogin
+      security: []
+      x-roles: [público]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Sesión iniciada. Entrega la cookie `sessionid`.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: "`sessionid=...; HttpOnly; Secure (en producción); SameSite=Lax`"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401':
+          description: Credenciales incorrectas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Correo o contraseña incorrectos.' }
+        '403':
+          description: Usuario desactivado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Tu usuario está desactivado. Contacta al administrador.', code: user_inactive }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout/:
+    post:
+      tags: [Autenticación]
+      summary: Cerrar sesión (RF26)
+      description: Invalida la sesión en el servidor. *Implementado en el frontend.*
+      operationId: authLogout
+      x-roles: [Analista de Cartera, Administrador]
+      responses:
+        '204': { description: Sesión cerrada. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me/:
+    get:
+      tags: [Autenticación]
+      summary: Usuario de la sesión actual
+      description: |
+        Devuelve el usuario autenticado. **También sirve de "ping"**: el frontend lo llama cada
+        ~5 minutos mientras el usuario trabaja para renovar la sesión. *Implementado en el frontend.*
+      operationId: authMe
+      x-roles: [Analista de Cartera, Administrador]
+      responses:
+        '200':
+          description: Usuario autenticado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/change-password/:
+    post:
+      tags: [Autenticación]
+      summary: Cambiar la contraseña propia (RF28)
+      description: |
+        Usado en el cambio obligatorio del primer ingreso y en cualquier cambio voluntario.
+        Pone `must_change_password = false`. Reglas de la nueva contraseña: mínimo 8 caracteres,
+        al menos una mayúscula y al menos un número. *Implementado en el frontend.*
+      operationId: authChangePassword
+      x-roles: [Analista de Cartera, Administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '204': { description: Contraseña cambiada. }
+        '400':
+          description: Validación por campo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example:
+                current_password: ['La contraseña actual no es correcta.']
+                new_password: ['La contraseña debe tener al menos una mayúscula.']
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/password-reset/:
+    post:
+      tags: [Autenticación]
+      summary: Solicitar enlace de recuperación (RF29)
+      description: |
+        Responde **siempre igual (`202`)**, exista o no el correo, para no revelar qué correos están
+        registrados. Si existe, se envía al correo corporativo un enlace
+        `{FRONTEND_URL}/restablecer?token=XXXX` de **un solo uso** y vencimiento corto (propuesta:
+        30 minutos). Con límite de intentos por correo/IP. *Implementado en el frontend.*
+      operationId: authPasswordReset
+      security: []
+      x-roles: [público]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetRequest' }
+      responses:
+        '202':
+          description: Solicitud recibida (siempre la misma respuesta).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Si el correo está registrado, recibirás un enlace.' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/password-reset/confirm/:
+    post:
+      tags: [Autenticación]
+      summary: Restablecer la contraseña con el token (RF29)
+      description: El token es de un solo uso. *Implementado en el frontend.*
+      operationId: authPasswordResetConfirm
+      security: []
+      x-roles: [público]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetConfirmRequest' }
+      responses:
+        '204': { description: Contraseña restablecida. }
+        '400':
+          description: Token vencido, ya usado o contraseña inválida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { token: ['El enlace no es válido o ya venció.'] }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ───────────────────────── Usuarios ─────────────────────────
+  /users/:
+    get:
+      tags: [Usuarios]
+      summary: Listar usuarios (RF28)
+      description: "*Implementado en el frontend.*"
+      operationId: usersList
+      x-roles: [Administrador]
+      responses:
+        '200':
+          description: Todos los usuarios, activos e inactivos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Usuarios]
+      summary: Crear usuario (RF28)
+      description: |
+        Crea el usuario con `must_change_password = true` y genera una **contraseña temporal que se
+        envía por correo** al usuario (decisión del equipo). La respuesta **no** incluye la
+        contraseña: `temporary_password` viene en `null` o ausente, y el frontend muestra "La
+        contraseña temporal se envió a su correo". En desarrollo el correo sale por consola
+        (`EmailBackend` de consola). El correo es único. Queda en el log de auditoría.
+        *Implementado en el frontend.*
+      operationId: usersCreate
+      x-roles: [Administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreateRequest' }
+      responses:
+        '201':
+          description: Usuario creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserCreatedResponse' }
+        '400':
+          description: Validación por campo (correo repetido, rol inválido, campos vacíos).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { email: ['Ya existe un usuario con ese correo.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /users/{id}/:
+    patch:
+      tags: [Usuarios]
+      summary: Editar, activar o desactivar un usuario (RF28)
+      description: |
+        Sirve para editar datos y para activar/desactivar (`is_active`). No hay `DELETE`: los
+        usuarios se desactivan, no se borran.
+
+        Reglas del servidor: un administrador **no puede desactivarse a sí mismo** ni
+        **cambiarse su propio rol**. Queda en el log de auditoría. *Implementado en el frontend.*
+      operationId: usersUpdate
+      x-roles: [Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+      responses:
+        '200':
+          description: Usuario actualizado (objeto `user` directo, sin envoltura).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400':
+          description: Validación por campo o regla de negocio sobre el propio usuario.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              examples:
+                desactivar_propio:
+                  summary: Intenta desactivar su propio usuario
+                  value: { is_active: ['No puedes desactivar tu propio usuario.'] }
+                cambiar_propio_rol:
+                  summary: Intenta cambiar su propio rol
+                  value: { rol: ['No puedes cambiar tu propio rol.'] }
+                correo_repetido:
+                  summary: Correo ya registrado
+                  value: { email: ['Ya existe un usuario con ese correo.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Utilidades ─────────────────────────
+  /salud/:
+    get:
+      tags: [Utilidades]
+      summary: Verificar que el servidor responde
+      description: Sin sesión. *Implementado en el backend.*
+      operationId: salud
+      security: []
+      x-roles: [público]
+      responses:
+        '200':
+          description: Servidor disponible.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estado: { type: string, example: ok }
+
+  # ───────────────────────── Conceptos de energía (RF35) ─────────────────────────
+  /conceptos/:
+    get:
+      tags: [Conceptos de energía]
+      summary: Listar códigos de concepto de energía (RF35)
+      description: |
+        Tabla de parámetros que define qué conceptos de facturación son energía (en Oracle,
+        `NV_CONCEPTO_REPORTABLE`, columna `REPORTABLE`). La extracción lee **solo los códigos
+        activos**. Sin paginación. La búsqueda por texto se hace en el cliente. *Implementado en el
+        backend.*
+      operationId: conceptosList
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - name: activo
+          in: query
+          description: Solo `true` o `false` en minúsculas; cualquier otro valor se ignora y devuelve todos.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Códigos de concepto.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Concepto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Conceptos de energía]
+      summary: Agregar un código de concepto (RF35)
+      description: |
+        Se crea activo salvo que se indique lo contrario. El código es único: si ya existe responde
+        `409`. *Implementado en el backend* (hoy permite también al Analista; el contrato propone solo
+        Administrador, ver README). Debe quedar en el log de auditoría.
+      operationId: conceptosCreate
+      x-roles: [Administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConceptoCreateRequest' }
+      responses:
+        '201':
+          description: Código creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Concepto' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: El código ya existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El código de concepto ya existe.' }
+
+  /conceptos/{codigo}/:
+    patch:
+      tags: [Conceptos de energía]
+      summary: Editar, activar o desactivar un código (RF35)
+      description: |
+        Cambiar `activo` no borra el código: deja de usarse en las próximas extracciones y se conserva
+        para el historial. No hay `DELETE` ni se puede cambiar el `codigo`. Un cuerpo vacío devuelve
+        el recurso sin cambios. *Implementado en el backend.* Debe quedar en el log de auditoría.
+      operationId: conceptosUpdate
+      x-roles: [Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Codigo'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConceptoUpdateRequest' }
+      responses:
+        '200':
+          description: Código actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Concepto' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El concepto no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Concepto no encontrado.' }
+
+  # ───────────────────────── Grupos de conceptos (RF43) ─────────────────────────
+  /grupos-conceptos/:
+    get:
+      tags: [Grupos de conceptos]
+      summary: Listar grupos de conceptos (RF43)
+      description: |
+        Un grupo agrupa conceptos de energía para elegirlo al ejecutar una extracción (maqueta 5 y 6).
+        Sin paginación. *Implementado en el backend.*
+      operationId: gruposList
+      x-roles: [Analista de Cartera, Administrador]
+      responses:
+        '200':
+          description: Grupos con sus conceptos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GrupoConcepto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Grupos de conceptos]
+      summary: Crear un grupo de conceptos (RF43)
+      description: |
+        El nombre es único. Todos los conceptos deben existir y estar activos. *Implementado en el
+        backend* (hoy permite también al Analista; el contrato propone solo Administrador).
+      operationId: gruposCreate
+      x-roles: [Administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrupoConceptoCreateRequest' }
+      responses:
+        '201':
+          description: Grupo creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrupoConcepto' }
+        '400':
+          description: Validación por campo, o un concepto que no existe o no está activo.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorCampos'
+                  - $ref: '#/components/schemas/ErrorDetail'
+              example: { detail: 'El concepto 3587 no existe o no está activo.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Ya existe un grupo con ese nombre.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El nombre de grupo ya existe.' }
+
+  /grupos-conceptos/{id}/:
+    get:
+      tags: [Grupos de conceptos]
+      summary: Detalle de un grupo de conceptos (RF43)
+      description: "*Implementado en el backend.*"
+      operationId: gruposRead
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Grupo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrupoConcepto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El grupo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Grupo no encontrado.' }
+    patch:
+      tags: [Grupos de conceptos]
+      summary: Editar, activar o desactivar un grupo (RF43)
+      description: |
+        `conceptos` **reemplaza la lista completa** del grupo. Un cuerpo vacío devuelve el recurso
+        sin cambios. *Implementado en el backend.*
+      operationId: gruposUpdate
+      x-roles: [Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrupoConceptoUpdateRequest' }
+      responses:
+        '200':
+          description: Grupo actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrupoConcepto' }
+        '400':
+          description: Validación por campo, o un concepto que no existe o no está activo.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorCampos'
+                  - $ref: '#/components/schemas/ErrorDetail'
+              example: { detail: 'El concepto 3587 no existe o no está activo.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El grupo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Grupo no encontrado.' }
+        '409':
+          description: Ya existe otro grupo con ese nombre.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El nombre de grupo ya existe.' }
+    delete:
+      tags: [Grupos de conceptos]
+      summary: Eliminar un grupo de conceptos (RF43)
+      description: |
+        Responde `409` si el grupo está asociado a un corte en estado `BORRADOR`. *Implementado en el
+        backend.* Debe quedar en el log de auditoría.
+      operationId: gruposDelete
+      x-roles: [Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204': { description: Grupo eliminado. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El grupo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Grupo no encontrado.' }
+        '409':
+          description: El grupo está asociado a un corte en borrador.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El grupo está asociado a un corte en estado BORRADOR.' }
+
+  # ───────────────────────── Extracción de cartera (RF1–RF5, RF7, RF44) ─────────────────────────
+  /extracciones/:
+    get:
+      tags: [Extracción]
+      summary: Listar los cortes ("Registro de extracciones")
+      description: |
+        Todos los cortes **excepto los `ANULADO`**, del más reciente al más antiguo según
+        `fecha_ejecucion`. Alimenta la tabla de registro de la pantalla 5. Es un arreglo plano, sin
+        paginación (el backend no pagina este listado). *Implementado en el backend.*
+      operationId: extraccionesList
+      x-roles: [Analista de Cartera, Administrador]
+      responses:
+        '200':
+          description: Cortes no anulados, de más reciente a más antiguo. Puede ser `[]`.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CorteResumen' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Extracción]
+      summary: Generar un corte de cartera (RF1–RF5, RF7, RF44)
+      description: |
+        Extrae los deudores con financiación vigente (RF1), aísla los conceptos de energía (RF2,
+        RF35), consolida pagos y saldos (RF3, RF4), calcula días y edad de mora (RF7) y unifica el
+        número de obligación (RF5). Deja el corte en estado `BORRADOR`. *Implementado en el backend.*
+
+        **Es síncrono:** la respuesta llega cuando el corte ya está generado (`201`); no hay
+        `202` ni consulta periódica del estado.
+
+        `grupo_id` es opcional: con un grupo solo se consideran los conceptos de ese grupo (RF43);
+        sin grupo (omitido o `null`) se usan **todos** los conceptos con `REPORTABLE = 'S'`.
+
+        **Reglas:** la fecha de corte no puede ser futura. Si ya existe un corte con **esa misma
+        fecha en `BORRADOR`**, se reemplaza (se borran sus filas y se vuelve a calcular) y conserva
+        el mismo `id`. Si existe uno con esa fecha en cualquier otro estado, responde `409`. Solo
+        puede haber **un** `BORRADOR` a la vez: si hay uno con otra fecha, responde `409`.
+
+        **Propuesta (contrato 0.4, manual de TransUnion, inconsistencia 074):** la fecha de corte
+        debe ser **posterior** a la del último corte enviado (`ENVIADO`); si es igual o anterior,
+        responde `409`. El backend todavía no lo comprueba (`DISCREPANCIAS.md`, A9).
+      operationId: extraccionesCreate
+      x-roles: [Analista de Cartera, Administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorteCreateRequest' }
+      responses:
+        '201':
+          description: Corte generado en estado `BORRADOR`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorteResumen' }
+              example:
+                id: 1
+                fecha_corte: '2026-09-30'
+                fecha_ejecucion: '2026-10-10T12:00:00'
+                grupo: { id: 1, nombre: Grupo ficticio A }
+                obligaciones: 150
+                saldo_consolidado: 45000000
+                estado: BORRADOR
+                ejecutada_por: null
+        '400':
+          description: |
+            Fecha de corte futura (`{ detail }`) o error de validación del cuerpo por campo
+            (`fecha_corte` ausente o con formato inválido, `grupo_id` menor que 1 o no entero).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorDetail'
+                  - $ref: '#/components/schemas/ErrorCampos'
+              examples:
+                fecha_futura:
+                  summary: Fecha de corte futura
+                  value: { detail: 'La fecha de corte no puede ser futura.' }
+                fecha_corte_faltante:
+                  summary: Falta la fecha de corte
+                  value: { fecha_corte: ['Selecciona una fecha de corte.'] }
+                fecha_corte_invalida:
+                  summary: Fecha de corte con formato inválido
+                  value: { fecha_corte: ['La fecha de corte no es válida.'] }
+                grupo_invalido:
+                  summary: "`grupo_id` menor que 1 o no entero"
+                  value: { grupo_id: ['El grupo de conceptos no es válido.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El grupo indicado no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Grupo no encontrado.' }
+        '409':
+          description: Grupo inactivo, corte existente que no se puede reemplazar, ya hay un borrador de otra fecha o la fecha de corte no es posterior a la del último corte enviado (propuesta).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              examples:
+                grupo_inactivo:
+                  summary: El grupo está inactivo
+                  value: { detail: 'El grupo está inactivo.' }
+                estado_fijo:
+                  summary: Ya hay un corte con esa fecha que no es BORRADOR
+                  value: { detail: 'Ya existe un corte con esa fecha en un estado que no permite reemplazo.' }
+                borrador_otra_fecha:
+                  summary: Hay un BORRADOR de otra fecha
+                  value: { detail: 'Ya existe un corte en BORRADOR con fecha 2026-08-31. Debe completarlo o eliminarlo primero.' }
+                fecha_no_posterior:
+                  summary: La fecha de corte no es posterior a la del último corte enviado (propuesta; el backend aún no lo comprueba, A9)
+                  value: { detail: 'La fecha de corte debe ser posterior a la del último corte enviado.' }
+
+  /extracciones/ultima/:
+    get:
+      tags: [Extracción]
+      summary: Último corte procesado
+      description: |
+        El corte más reciente según `fecha_ejecucion`, sin contar los `ANULADO`. Alimenta el dato
+        "Último corte procesado" del panel. Si todavía no hay ningún corte responde `204` **sin
+        cuerpo**. *Implementado en el backend.*
+      operationId: extraccionesUltima
+      x-roles: [Analista de Cartera, Administrador]
+      responses:
+        '200':
+          description: Último corte.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorteResumen' }
+        '204':
+          description: Aún no hay cortes. Sin cuerpo.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /extracciones/{id}/:
+    get:
+      tags: [Extracción]
+      summary: Detalle de un corte
+      description: |
+        Resumen de un corte, en cualquier estado (también `ANULADO`). El `id` debe ser numérico: hoy
+        un `id` no numérico produce un error 500 en el backend (diferencia S del README).
+        *Implementado en el backend.*
+      operationId: extraccionesRead
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Corte.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorteResumen' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+
+  /extracciones/{id}/obligaciones/:
+    get:
+      tags: [Extracción]
+      summary: Obligaciones de un corte (RF3–RF5, RF7)
+      description: |
+        Una fila por **obligación**, es decir, por **proceso de financiación** (no por deudor): un
+        deudor con dos financiaciones aparece con dos obligaciones (Acta 2 y Manual TransUnion v34).
+        Cada fila trae el titular, el estado y la edad de mora (Tabla 9), los días y las cuotas en
+        mora, el valor en mora y el saldo. Ordenado por `OBLIGACION_ID`. Se pagina con `limite` y
+        `desplazamiento`. Disponible en cualquier estado del corte. *Implementado en el backend.*
+
+        **Contenido del corte (contrato 0.4, manual de TransUnion).** Un corte puede incluir las
+        obligaciones que se **cerraron desde el corte anterior**, reportadas con `estado_tu` `02`
+        (Saldada), `valor_saldo`, `valor_mora`, `valor_cuota` y `cuotas_mora` en `0` y `edad_mora`
+        `'00'`. Según el manual, una obligación se cierra reportándola como Saldada; la que deja de
+        reportarse queda como "no reportada" ante TransUnion. Hoy el backend excluye las obligaciones
+        con saldo 0 (`DISCREPANCIAS.md`, A2). **Pendiente de confirmar por Santiago**, porque RF1
+        dice "solo vigentes".
+
+        **Dato personal:** `numero_identificacion` llega completo hoy; el frontend lo enmascara en
+        pantalla (diferencia Q del README).
+      operationId: extraccionesObligaciones
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limite'
+        - $ref: '#/components/parameters/Desplazamiento'
+      responses:
+        '200':
+          description: Página de obligaciones.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ListaPaginada'
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: { $ref: '#/components/schemas/ObligacionCorte' }
+              example:
+                total: 150
+                resultados:
+                  - numero_obligacion: OBL0001
+                    nombre_titular: TITULAR FICTICIO UNO
+                    numero_identificacion: '1000000001'
+                    estado_tu: '01'
+                    edad_mora: '00'
+                    dias_mora: 0
+                    cuotas_mora: 0
+                    valor_mora: 0
+                    valor_saldo: 500000
+                    n_creditos: 1
+                  - numero_obligacion: OBL0002
+                    nombre_titular: TITULAR FICTICIO DOS
+                    numero_identificacion: '1000000002'
+                    estado_tu: '02'
+                    edad_mora: '00'
+                    dias_mora: 0
+                    cuotas_mora: 0
+                    valor_mora: 0
+                    valor_saldo: 0
+                    n_creditos: 1
+        '400':
+          description: '`limite` o `desplazamiento` no son enteros, o están fuera de rango (`limite` menor que 1 o `desplazamiento` negativo).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              examples:
+                no_enteros:
+                  summary: No son números enteros
+                  value: { detail: 'Los parámetros limite y desplazamiento deben ser enteros.' }
+                fuera_de_rango:
+                  summary: "`limite` menor que 1 o `desplazamiento` negativo"
+                  value: { detail: 'El límite debe ser mayor que 0 y el desplazamiento no puede ser negativo.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+
+  # ───────────────────────── Ciclo de corte (validar y registrar el envío) ─────────────────────────
+  /extracciones/{id}/validar/:
+    post:
+      tags: [Ciclo de corte]
+      summary: Validar un corte (BORRADOR a VALIDADO)
+      description: |
+        Revisa el corte contra las reglas de validación. Sin cuerpo. Si alguna regla de severidad
+        **correctiva** falla, responde `409` con la lista `errores` y el corte **sigue en
+        `BORRADOR`**. Si no hay errores correctivos, lo pasa a `VALIDADO` y devuelve el resumen con
+        las `advertencias` (reglas informativas; puede ser `[]`), que no bloquean. Solo se puede
+        validar un corte en `BORRADOR`. *Implementado en el backend.*
+      operationId: extraccionesValidar
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Corte validado, ahora en `VALIDADO`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorteValidado' }
+              example:
+                id: 1
+                fecha_corte: '2026-09-30'
+                fecha_ejecucion: '2026-10-10T12:00:00'
+                grupo: null
+                obligaciones: 150
+                saldo_consolidado: 45000000
+                estado: VALIDADO
+                ejecutada_por: null
+                advertencias:
+                  - { regla: SIN_FECHA_LIMITE_PAGO, mensaje: No se encontró una factura con fecha de vencimiento. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+        '409':
+          description: El corte no está en `BORRADOR` o tiene errores correctivos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCorrectivo' }
+              examples:
+                no_borrador:
+                  summary: El corte ya no está en BORRADOR
+                  value: { detail: 'El corte no está en estado BORRADOR.' }
+                errores_correctivos:
+                  summary: Errores correctivos
+                  value:
+                    detail: 'El corte tiene errores correctivos que deben resolverse.'
+                    errores:
+                      - { regla: SIN_IDENTIFICACION, mensaje: Falta el tipo o el número de identificación }
+
+  /extracciones/{id}/registrar-envio/:
+    post:
+      tags: [Ciclo de corte]
+      summary: Registrar el envío a TransUnion (VALIDADO a ENVIADO)
+      description: |
+        Registra que el archivo se cargó manualmente en el portal de TransUnion y pasa el corte a
+        `ENVIADO`; desde ahí aparece en el historial de reportes. El cuerpo es opcional: sin
+        `fecha_envio` (o con `null`) se usa la fecha de hoy. Solo se puede registrar el envío de un
+        corte en `VALIDADO`. A diferencia de lo que dice `docs/API.md` del backend, esta operación
+        **no** devuelve `errores` (diferencia X del README). *Implementado en el backend.*
+      operationId: extraccionesRegistrarEnvio
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistrarEnvioRequest' }
+      responses:
+        '200':
+          description: Corte enviado, ahora en `ENVIADO`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorteResumen' }
+              example:
+                id: 1
+                fecha_corte: '2026-09-30'
+                fecha_ejecucion: '2026-10-10T12:00:00'
+                grupo: null
+                obligaciones: 150
+                saldo_consolidado: 45000000
+                estado: ENVIADO
+                ejecutada_por: null
+        '400':
+          description: Fecha de envío futura (`{ detail }`) o con formato inválido (error por campo).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorDetail'
+                  - $ref: '#/components/schemas/ErrorCampos'
+              examples:
+                fecha_futura:
+                  summary: Fecha de envío futura
+                  value: { detail: 'La fecha de envío no puede ser futura.' }
+                fecha_invalida:
+                  summary: Fecha de envío con formato inválido
+                  value: { fecha_envio: ['La fecha de envío no es válida.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+        '409':
+          description: El corte no está en `VALIDADO`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El corte no está en estado VALIDADO.' }
+
+  # ───────────────────────── Historial (RF6, RF8) ─────────────────────────
+  /historial/reportes/:
+    get:
+      tags: [Historial]
+      summary: Historial de reportes enviados a TransUnion (RF6)
+      description: |
+        Los cortes en estado `ENVIADO`, del envío más reciente al más antiguo. Los filtros `desde`
+        y `hasta` se aplican sobre `fecha_envio` y son inclusivos. Arreglo plano, sin paginación.
+        Puede ser `[]` mientras no se haya registrado ningún envío. *Implementado en el backend.*
+      operationId: historialReportes
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - name: desde
+          in: query
+          description: Fecha de envío inicial, inclusive (`AAAA-MM-DD`).
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          description: Fecha de envío final, inclusive (`AAAA-MM-DD`).
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Reportes enviados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReporteEnviado' }
+              example:
+                - id: 1
+                  fecha_corte: '2026-09-30'
+                  fecha_envio: '2026-10-01'
+                  total_registros: 150
+                  saldo_consolidado: 45000000
+                  grupo: Grupo ficticio A
+                  observacion: null
+        '400':
+          description: '`desde` o `hasta` no son fechas válidas.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Los parámetros desde y hasta deben ser fechas en formato AAAA-MM-DD.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /historial/reportes/{id}/detalle/:
+    get:
+      tags: [Historial]
+      summary: Detalle de un reporte enviado (RF6)
+      description: |
+        Las filas que se enviaron en ese corte, ordenadas por `OBLIGACION_ID` y paginadas con
+        `limite` y `desplazamiento`. Solo para cortes en `ENVIADO`; en cualquier otro estado
+        responde `404`. Muestra parte de los 22 campos de CENS (ver decisión 13 del README).
+        *Implementado en el backend.*
+
+        **Dato personal:** `numero_identificacion` llega completo hoy; el frontend lo enmascara en
+        pantalla (diferencia Q del README).
+      operationId: historialReporteDetalle
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limite'
+        - $ref: '#/components/parameters/Desplazamiento'
+      responses:
+        '200':
+          description: Página del detalle.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ListaPaginada'
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReporteDetalleFila' }
+              example:
+                total: 150
+                resultados:
+                  - numero_obligacion: OBL0001
+                    nombre_titular: TITULAR FICTICIO UNO
+                    numero_identificacion: '1000000001'
+                    tipo_id_tu: '01'
+                    tipo_cartera: 2
+                    estado_tu: '01'
+                    edad_mora: '00'
+                    fecha_inicio: '2025-01-01'
+                    cuotas_mora: 0
+                    valor_inicial: 500000
+                    valor_mora: 0
+                    valor_saldo: 500000
+                    valor_cuota: 50000
+                    dias_mora: 0
+                    origen_dias_mora: SIN_MORA
+                    n_creditos: 1
+                    fecha_ultimo_pago: null
+        '400':
+          description: '`limite` o `desplazamiento` no son enteros, o están fuera de rango (`limite` menor que 1 o `desplazamiento` negativo).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              examples:
+                no_enteros:
+                  summary: No son números enteros
+                  value: { detail: 'Los parámetros limite y desplazamiento deben ser enteros.' }
+                fuera_de_rango:
+                  summary: "`limite` menor que 1 o `desplazamiento` negativo"
+                  value: { detail: 'El límite debe ser mayor que 0 y el desplazamiento no puede ser negativo.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El reporte no existe o el corte no está en `ENVIADO`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Reporte no encontrado o no está en estado ENVIADO.' }
+
+  /historial/deudores/:
+    get:
+      tags: [Historial]
+      summary: Buscar obligaciones en el historial de deudores (RF8)
+      description: |
+        Busca obligaciones por `cliente_id` y/o `numero_obligacion`; hay que enviar **al menos uno**.
+        Devuelve como máximo **50** resultados, sin orden definido y sin avisar si hubo más
+        (diferencia T del README). Cada resultado trae el último estado y saldo registrados, que son
+        `null` si la obligación aún no aparece en ningún corte. Arreglo plano. *Implementado en el
+        backend.*
+      operationId: historialDeudores
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - name: cliente_id
+          in: query
+          description: Id del cliente en el sistema comercial de CENS.
+          schema: { type: integer }
+        - name: numero_obligacion
+          in: query
+          schema: { $ref: '#/components/schemas/NumeroObligacion' }
+      responses:
+        '200':
+          description: Obligaciones encontradas (máximo 50). Puede ser `[]`.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items: { $ref: '#/components/schemas/DeudorBusqueda' }
+              example:
+                - obligacion_id: 1
+                  numero_obligacion: OBL0001
+                  cliente_id: 900001
+                  numero_proceso: 1001
+                  fecha_inicio: '2025-01-01'
+                  ultimo_estado_tu: '01'
+                  ultimo_valor_saldo: 500000
+        '400':
+          description: No se envió ningún filtro o `cliente_id` no es un entero.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              examples:
+                sin_filtro:
+                  summary: Ningún filtro
+                  value: { detail: 'Debe proporcionar al menos cliente_id o numero_obligacion.' }
+                cliente_invalido:
+                  summary: cliente_id no numérico
+                  value: { detail: 'cliente_id debe ser un entero.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /historial/deudores/{id}/:
+    get:
+      tags: [Historial]
+      summary: Línea de tiempo de una obligación (RF8)
+      description: |
+        El estado de la obligación en **cada corte no anulado** donde aparece, del más antiguo al
+        más reciente por `fecha_corte`. Incluye cortes en `BORRADOR` y `VALIDADO` (el campo
+        `estado_corte` lo indica). `id` es el `obligacion_id` que devuelve la búsqueda; un `id`
+        no numérico produce hoy un error 500 (diferencia S del README). *Implementado en el backend.*
+      operationId: historialDeudorLineaTiempo
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Id de la obligación (`obligacion_id`).
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Línea de tiempo (puede ser `[]` si la obligación no aparece en ningún corte).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DeudorLineaTiempo' }
+              example:
+                - fecha_corte: '2026-08-31'
+                  estado_tu: '01'
+                  edad_mora: '00'
+                  dias_mora: 0
+                  cuotas_mora: 0
+                  valor_mora: 0
+                  valor_saldo: 520000
+                  estado_corte: ENVIADO
+                - fecha_corte: '2026-09-30'
+                  estado_tu: '01'
+                  edad_mora: '01'
+                  dias_mora: 32
+                  cuotas_mora: 1
+                  valor_mora: 50000
+                  valor_saldo: 500000
+                  estado_corte: ENVIADO
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La obligación no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Obligación no encontrada.' }
+
+  # ───────────────────────── Auditoría (RF30) ─────────────────────────
+  /auditoria/:
+    get:
+      tags: [Auditoría]
+      summary: Consultar el log de auditoría (RF30)
+      description: |
+        Quién, cuándo y qué acción se realizó. Se registra automáticamente (middleware o decorador)
+        la actividad sobre la cartera y sobre la administración. Más reciente primero. El detalle
+        **no** contiene contraseñas ni datos personales completos. Los registros no se editan ni se
+        borran desde la API. Pagina con `limite` y `desplazamiento` y responde `{ total, resultados }`,
+        la misma convención que el resto de la API (decisión de Johan). **Propuesta** para la
+        pantalla de Omar (maqueta 8).
+      operationId: auditoriaList
+      x-roles: [Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Limite'
+        - $ref: '#/components/parameters/Desplazamiento'
+        - name: desde
+          in: query
+          description: Fecha inicial, inclusive (`YYYY-MM-DD`).
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          description: Fecha final, inclusive (`YYYY-MM-DD`).
+          schema: { type: string, format: date }
+        - name: usuario
+          in: query
+          description: Id del usuario que realizó la acción (`usuario_id`).
+          schema: { type: integer }
+        - name: tipo_accion
+          in: query
+          description: Tipo de acción.
+          schema: { $ref: '#/components/schemas/TipoAccion' }
+        - name: modulo
+          in: query
+          schema: { $ref: '#/components/schemas/Modulo' }
+      responses:
+        '200':
+          description: Página de registros de auditoría.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ListaPaginada'
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: { $ref: '#/components/schemas/RegistroAuditoria' }
+        '400':
+          description: Filtro inválido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              examples:
+                desde:
+                  summary: Fecha inicial inválida
+                  value: { desde: ['Usa una fecha válida (AAAA-MM-DD).'] }
+                hasta:
+                  summary: Fecha final anterior a la inicial
+                  value: { hasta: ['La fecha final no puede ser anterior a la inicial.'] }
+                usuario:
+                  summary: Id de usuario no numérico
+                  value: { usuario: ['Indica el id numérico del usuario.'] }
+                tipo_accion:
+                  summary: Tipo de acción desconocido
+                  value: { tipo_accion: ['Tipo de acción no válido.'] }
+                modulo:
+                  summary: Módulo desconocido
+                  value: { modulo: ['Módulo no válido.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: Cookie de sesión de Django (HttpOnly). Los métodos que modifican datos exigen además el encabezado `X-CSRFToken`.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+      description: Valor de la cookie `csrftoken`.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    Codigo:
+      name: codigo
+      in: path
+      required: true
+      description: Código del concepto en el sistema comercial de CENS (entero de 1 a 9999).
+      schema: { type: integer, minimum: 1, maximum: 9999 }
+    Limite:
+      name: limite
+      in: query
+      description: |
+        Máximo de filas a devolver. Por defecto 20. Debe ser un entero de 1 a 100: un valor menor
+        que 1 responde `400` y **un valor mayor que 100 se recorta a 100**. El backend **aún no
+        valida el rango ni pone el máximo** (diferencias N y S del README).
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Desplazamiento:
+      name: desplazamiento
+      in: query
+      description: |
+        Cuántas filas saltarse (desde 0). Por defecto 0. Un valor negativo responde `400`; el
+        backend **aún no valida el rango** (diferencia S del README).
+      schema: { type: integer, minimum: 0, default: 0 }
+
+  responses:
+    ValidationError:
+      description: Error de validación (RF31). Mensajes en español, por campo.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorCampos' }
+          example: { nombre: ['Ingresa el nombre completo.'] }
+    Unauthorized:
+      description: Sin sesión o sesión vencida por inactividad.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorDetail' }
+          example: { detail: 'Tu sesión venció. Inicia sesión de nuevo.', code: not_authenticated }
+    Forbidden:
+      description: |
+        Sin permiso. Distinguir por `code`: `permission_denied` (rol insuficiente),
+        `password_change_required` (primer ingreso pendiente), `csrf_failed` (token CSRF inválido).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorDetail' }
+          example: { detail: 'No tienes permiso para realizar esta acción.', code: permission_denied }
+    NotFound:
+      description: El recurso no existe.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorDetail' }
+          example: { detail: 'No se encontró el recurso solicitado.', code: not_found }
+    TooManyRequests:
+      description: Demasiados intentos. Reintentar más tarde.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Segundos de espera.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorDetail' }
+          example: { detail: 'Demasiados intentos. Intenta de nuevo en unos minutos.', code: throttled }
+
+  schemas:
+    # ── Errores ──
+    ErrorDetail:
+      type: object
+      required: [detail]
+      properties:
+        detail: { type: string, description: Mensaje en español para mostrar al usuario. }
+        code: { type: string, description: Identificador estable del error (opcional). }
+    ErrorCampos:
+      type: object
+      description: Un arreglo de mensajes por cada campo con error.
+      additionalProperties:
+        type: array
+        items: { type: string }
+
+    # ── Paginación ──
+    ListaPaginada:
+      type: object
+      required: [total, resultados]
+      description: Respuesta de los listados que pueden crecer. Se pide con `?limite=` y `?desplazamiento=`.
+      properties:
+        total: { type: integer, minimum: 0, description: Total de registros que cumplen el filtro (no solo los de esta página). }
+        resultados: { type: array, items: {} }
+
+    # ── Usuarios y autenticación ──
+    Rol:
+      type: string
+      enum: [ANALISTA_CARTERA, ADMINISTRADOR]
+      description: Códigos que usa el backend (`request.user.rol`). El frontend los muestra como "Analista de Cartera" y "Administrador". Pendiente de confirmar por Dilan al construir la autenticación.
+    User:
+      type: object
+      required: [id, nombre, email, rol, is_active, last_login, must_change_password]
+      properties:
+        id: { type: integer, example: 2 }
+        nombre: { type: string, example: Rosa Martínez }
+        email: { type: string, format: email, example: rmartinez@cens.com.co }
+        rol: { $ref: '#/components/schemas/Rol' }
+        is_active: { type: boolean }
+        last_login: { type: string, format: date-time, nullable: true, description: Último acceso; `null` si nunca ingresó. }
+        must_change_password: { type: boolean, description: "`true` mientras el usuario no cambie su contraseña temporal." }
+    UserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string, format: password }
+        new_password:
+          type: string
+          format: password
+          description: Mínimo 8 caracteres, al menos una mayúscula y al menos un número.
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    PasswordResetConfirmRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token: { type: string }
+        new_password:
+          type: string
+          format: password
+          description: Mismas reglas que `change-password`.
+    UserCreateRequest:
+      type: object
+      required: [nombre, email, rol]
+      properties:
+        nombre: { type: string, minLength: 1 }
+        email: { type: string, format: email, description: Correo corporativo; único. }
+        rol: { $ref: '#/components/schemas/Rol' }
+    UserUpdateRequest:
+      type: object
+      description: Todos los campos son opcionales; se envía solo lo que cambia.
+      properties:
+        nombre: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        rol: { $ref: '#/components/schemas/Rol' }
+        is_active: { type: boolean }
+    UserCreatedResponse:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        temporary_password:
+          type: string
+          nullable: true
+          description: La contraseña temporal se envía por correo, así que el backend **no la devuelve**; llega `null` o ausente. El campo se conserva porque el frontend ya sabe mostrarla una sola vez si algún día se devolviera.
+
+    # ── Conceptos de energía ──
+    Concepto:
+      type: object
+      required: [codigo, descripcion, activo]
+      properties:
+        codigo: { type: integer, minimum: 1, maximum: 9999, example: 30, description: Código del concepto de facturación en el sistema comercial de CENS (catálogo del 02/10/2026). }
+        descripcion: { type: string, maxLength: 60, example: CUOTA FINANCIACION ENERGIA }
+        activo: { type: boolean, description: "`true` = Activo (reportable); `false` = Inactivo." }
+        observacion: { type: string, maxLength: 200, nullable: true }
+        fecha_creacion:
+          type: string
+          format: date-time
+          description: "*(pendiente)* RF35 pide mostrar la fecha de creación, pero la tabla `NV_CONCEPTO_REPORTABLE` no tiene esa columna. Falta agregarla o sacarla de la auditoría."
+    ConceptoCreateRequest:
+      type: object
+      required: [codigo, descripcion]
+      properties:
+        codigo: { type: integer, minimum: 1, maximum: 9999 }
+        descripcion: { type: string, minLength: 1, maxLength: 60 }
+        activo: { type: boolean, default: true }
+        observacion: { type: string, maxLength: 200, nullable: true }
+    ConceptoUpdateRequest:
+      type: object
+      description: Todos los campos son opcionales. El código no se puede cambiar.
+      properties:
+        descripcion: { type: string, minLength: 1, maxLength: 60 }
+        activo: { type: boolean }
+        observacion: { type: string, maxLength: 200, nullable: true }
+
+    # ── Grupos de conceptos (RF43) ──
+    ConceptoResumen:
+      type: object
+      required: [codigo, descripcion]
+      properties:
+        codigo: { type: integer, example: 30 }
+        descripcion: { type: string, example: CUOTA FINANCIACION ENERGIA }
+    GrupoConcepto:
+      type: object
+      required: [id, nombre, activo, conceptos, creado]
+      properties:
+        id: { type: integer, example: 1 }
+        nombre: { type: string, maxLength: 60, example: Energía financiada }
+        activo: { type: boolean }
+        conceptos:
+          type: array
+          items: { $ref: '#/components/schemas/ConceptoResumen' }
+        creado: { type: string, format: date, example: '2026-10-10' }
+    GrupoConceptoCreateRequest:
+      type: object
+      required: [nombre, conceptos]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 60 }
+        conceptos:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1, maximum: 9999 }
+          description: "Códigos de concepto, sin repetidos (propuesta `uniqueItems`: el backend hoy no rechaza repetidos, diferencia O); todos deben existir y estar activos."
+          example: [30, 94]
+    GrupoConceptoUpdateRequest:
+      type: object
+      description: Todos los campos son opcionales; `conceptos` reemplaza la lista completa.
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 60 }
+        activo: { type: boolean }
+        conceptos:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1, maximum: 9999 }
+          description: "Sin códigos repetidos (propuesta `uniqueItems`: el backend hoy no rechaza repetidos, diferencia O)."
+
+    # ── Extracción y ciclo de corte ──
+    CorteCreateRequest:
+      type: object
+      required: [fecha_corte]
+      properties:
+        fecha_corte: { type: string, format: date, example: '2026-09-30', description: "No puede ser futura." }
+        grupo_id:
+          type: integer
+          minimum: 1
+          nullable: true
+          example: 1
+          description: |
+            Grupo de conceptos que define qué se considera energía en este corte (RF43). Opcional:
+            omitido o `null` = todos los conceptos reportables (`REPORTABLE = 'S'`). Si se envía,
+            debe existir y estar activo.
+    EstadoCorte:
+      type: string
+      enum: [BORRADOR, VALIDADO, ENVIADO, ANULADO]
+      description: |
+        Estado del corte (negocio). Transiciones:
+        `POST /extracciones/` crea el corte en `BORRADOR` (un `BORRADOR` de la misma fecha se
+        reemplaza); `POST /extracciones/{id}/validar/` pasa `BORRADOR` a `VALIDADO`;
+        `POST /extracciones/{id}/registrar-envio/` pasa `VALIDADO` a `ENVIADO`. `ANULADO` existe en
+        la base pero **ninguna operación de la API lo produce todavía**; los listados lo excluyen.
+        Solo puede haber un corte en `BORRADOR` a la vez.
+    CorteResumen:
+      type: object
+      required: [id, fecha_corte, fecha_ejecucion, grupo, obligaciones, saldo_consolidado, estado, ejecutada_por]
+      description: Resumen de un corte de cartera (lo devuelven la lista, el detalle, la creación y el ciclo de corte).
+      properties:
+        id: { type: integer, example: 1 }
+        fecha_corte:
+          type: string
+          format: date
+          example: '2026-09-30'
+          description: "Fecha del corte (`AAAA-MM-DD`). Hoy el backend puede devolverla como fecha-hora según el endpoint (diferencia V del README); el frontend toma los 10 primeros caracteres."
+        fecha_ejecucion:
+          type: string
+          format: date-time
+          example: '2026-10-10T12:00:00'
+          description: "Cuándo se generó el corte (`FECHA_GENERACION`). Hoy sin zona horaria; el contrato pide `-05:00` (diferencia V del README)."
+        grupo:
+          type: object
+          nullable: true
+          description: Grupo de conceptos con el que se generó. `null` si se usaron todos los conceptos reportables.
+          required: [id, nombre]
+          properties:
+            id: { type: integer, example: 1 }
+            nombre: { type: string, example: Grupo ficticio A }
+        obligaciones: { type: integer, minimum: 0, example: 150, description: Cantidad de obligaciones (filas) del corte. }
+        saldo_consolidado: { type: integer, example: 45000000, description: "Suma del saldo de todas las obligaciones del corte, en pesos colombianos (COP)." }
+        estado: { $ref: '#/components/schemas/EstadoCorte' }
+        ejecutada_por:
+          type: string
+          nullable: true
+          description: "Nombre de quien generó el corte. Hoy siempre `null`: no hay usuario autenticado (diferencia Y del README)."
+    ReglaMensaje:
+      type: object
+      required: [regla, mensaje]
+      description: Resultado de una regla de validación del corte.
+      properties:
+        regla: { type: string, example: SIN_IDENTIFICACION, description: Identificador estable de la regla. }
+        mensaje: { type: string, example: Falta el tipo o el número de identificación, description: Texto en español para mostrar. }
+    CorteValidado:
+      description: El resumen del corte ya en `VALIDADO`, más las advertencias informativas.
+      allOf:
+        - $ref: '#/components/schemas/CorteResumen'
+        - type: object
+          required: [advertencias]
+          properties:
+            advertencias:
+              type: array
+              description: Reglas informativas que no bloquean la validación. Puede ser `[]`.
+              items: { $ref: '#/components/schemas/ReglaMensaje' }
+    ErrorCorrectivo:
+      type: object
+      required: [detail]
+      description: |
+        `409` de `validar`. Siempre trae `detail`. Cuando el corte tiene reglas correctivas sin
+        resolver (y sigue en `BORRADOR`) trae además `errores`; cuando el corte no está en `BORRADOR`
+        solo trae `detail`.
+      properties:
+        detail: { type: string, description: Mensaje en español para mostrar al usuario. }
+        code: { type: string, description: Identificador estable del error (opcional). }
+        errores:
+          type: array
+          description: Reglas correctivas que fallaron. Solo está cuando el `409` es por errores correctivos.
+          items: { $ref: '#/components/schemas/ReglaMensaje' }
+    RegistrarEnvioRequest:
+      type: object
+      description: Cuerpo opcional; también se acepta sin cuerpo o `{}`.
+      properties:
+        fecha_envio:
+          type: string
+          format: date
+          nullable: true
+          example: '2026-10-01'
+          description: Fecha en que se cargó el archivo en el portal de TransUnion. No puede ser futura. Si falta o es `null`, se usa la fecha de hoy.
+    CodigoEdadMora:
+      type: string
+      enum: ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14']
+      example: '01'
+      description: |
+        Código de edad de mora según la Tabla 9 del Manual Sector Real v34 de TransUnion
+        (verificada). **El backend devuelve solo el código** (texto de dos dígitos); el frontend lo
+        traduce a la descripción. Códigos: `00` Normal (0–29 días), `01` Mora 30 (30–59), `02` Mora
+        60 (60–89), `03` Mora 90 (90–119), `04` Mora 120, `05` Mora 150, `06` Mora 180, `07` Mora
+        210, `08` Mora 240, `09` Mora 270, `10` Mora 300, `11` Mora 330, `12` Mora 360 (360–539),
+        `13` Mora 540 (540–729) y `14` Mora 730 (730 días o más).
+
+        | Código | Descripción | Código | Descripción |
+        |---|---|---|---|
+        | `00` | Normal | `08` | Mora 240 |
+        | `01` | Mora 30 | `09` | Mora 270 |
+        | `02` | Mora 60 | `10` | Mora 300 |
+        | `03` | Mora 90 | `11` | Mora 330 |
+        | `04` | Mora 120 | `12` | Mora 360 |
+        | `05` | Mora 150 | `13` | Mora 540 |
+        | `06` | Mora 180 | `14` | Mora 730 |
+        | `07` | Mora 210 | | |
+
+        El backend aún no valida que el valor esté entre `00` y `14` (diferencia R del README). Todo
+        campo `edad_mora` de la API usa este mismo esquema. Una obligación Saldada (`02`) lleva
+        siempre `00`.
+    TipoIdentificacion:
+      type: string
+      enum: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '12', '13']
+      example: '01'
+      description: |
+        Tipo de identificación del titular según la **Tabla 2** del Manual Sector Real v34 de
+        TransUnion: código numérico de dos dígitos, no letras. No existe el código `11`.
+
+        | Código | Descripción | Código | Descripción |
+        |---|---|---|---|
+        | `01` | Cédula de ciudadanía | `07` | Sociedad extranjera sin NIT en Colombia |
+        | `02` | NIT | `08` | Fideicomiso |
+        | `03` | Cédula de extranjería | `09` | Registro civil |
+        | `04` | Tarjeta de identidad | `10` | Carnet diplomático |
+        | `05` | Pasaporte | `12` | PEP |
+        | `06` | Tarjeta del seguro social extranjero | `13` | PPT |
+
+        **Diferencia con el backend:** hoy la documentación y las pruebas del backend devuelven
+        `"CC"` (`DISCREPANCIAS.md`, A3). El contrato 0.4 sigue al manual; el backend debe
+        traducir a estos códigos.
+    EstadoObligacion:
+      type: string
+      enum: ['01', '02', '03', '04', '06', '07', '08', '10', '11', '12']
+      example: '01'
+      description: |
+        Estado de la obligación ante TransUnion según la **Tabla 4b** del Manual Sector Real v34
+        (**Sector Real Servicios**, paquete SSR), sector con el que reporta CENS (decisión de Johan,
+        10/10/2026). No existen los códigos `05` ni `09`.
+
+        | Código | Descripción |
+        |---|---|
+        | `01` | Vigente |
+        | `02` | Saldada |
+        | `03` | Dudoso recaudo |
+        | `04` | Suspendida por la entidad |
+        | `06` | Castigada |
+        | `07` | Castigada recuperada (cartera recuperada) |
+        | `08` | Inactivo |
+        | `10` | Ley 550 |
+        | `11` | Ley 1116 |
+        | `12` | Ley 1564 de 2012 (insolvencia de persona natural no comerciante) |
+
+        **El sector importa:** la Tabla 4a (Comercio) usa los mismos códigos con otros significados;
+        por ejemplo, `03` y `04` no son Dudoso recaudo ni Suspendida por la entidad en Comercio.
+
+        **Saldada (`02`)** exige `valor_saldo` 0, `valor_mora` 0, `edad_mora` `'00'`, `valor_cuota` 0
+        y `cuotas_mora` 0. El backend todavía no declara la tabla ni valida los códigos
+        (`DISCREPANCIAS.md`, A4).
+    NumeroObligacion:
+      type: string
+      maxLength: 20
+      pattern: '^[A-Za-z0-9()*,\-./\\_]{1,20}$'
+      example: 2257-4156
+      description: |
+        Número que identifica la obligación ante TransUnion: **único, permanente** y de **máximo 20
+        caracteres** (Manual v34). Solo admite letras, números y los especiales `( ) * , - . / \ _`.
+        Se deriva del número de proceso de la financiación y **no puede cambiar de un mes a otro**:
+        si cambiara hay que renumerar (registro tipo 3) o TransUnion lo toma como obligación nueva.
+    NumeroIdentificacion:
+      type: string
+      example: '1000000001'
+      description: |
+        **Dato personal reservado.** Hoy el backend lo devuelve **completo**; el frontend lo muestra
+        enmascarado en pantalla y no lo registra completo en el log (diferencia Q del README: se
+        propone enmascararlo o restringirlo en el backend).
+    ObligacionCorte:
+      type: object
+      required: [numero_obligacion, nombre_titular, numero_identificacion, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, n_creditos]
+      description: |
+        Una **obligación = una financiación (proceso)**. Un mismo deudor puede tener varias, y una
+        misma obligación puede tener varios titulares; el corte muestra un titular por fila. Puede
+        ser una obligación **saldada** desde el corte anterior: `estado_tu` `02`, `valor_saldo`,
+        `valor_mora`, `cuotas_mora` en `0` y `edad_mora` `'00'` (contrato 0.4; el backend hoy las
+        excluye, `DISCREPANCIAS.md` A2).
+      properties:
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        nombre_titular: { type: string, example: TITULAR FICTICIO UNO }
+        numero_identificacion: { $ref: '#/components/schemas/NumeroIdentificacion' }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
+        dias_mora: { type: integer, minimum: 0, example: 0, description: Fecha de corte menos fecha límite de pago (RF7). }
+        cuotas_mora: { type: integer, minimum: 0, example: 0 }
+        valor_mora: { type: integer, example: 0, description: Valor vencido en COP. Cero si no hay mora. }
+        valor_saldo: { type: integer, example: 500000, description: "Saldo neto en COP (RF4). El archivo de TransUnion lo exige en miles de pesos; esa conversión la hace el generador (Iteración 2), no la API." }
+        n_creditos: { type: integer, minimum: 0, example: 1, description: Cantidad de créditos que componen la obligación. }
+
+    # ── Historial ──
+    ReporteEnviado:
+      type: object
+      required: [id, fecha_corte, fecha_envio, total_registros, saldo_consolidado, grupo, observacion]
+      description: Un corte en estado `ENVIADO`. El `id` es el del corte.
+      properties:
+        id: { type: integer, example: 1 }
+        fecha_corte: { type: string, format: date, example: '2026-09-30', description: "Hoy puede llegar como fecha-hora (diferencia V del README)." }
+        fecha_envio: { type: string, format: date, example: '2026-10-01', description: "Fecha registrada en `registrar-envio`. Hoy puede llegar como fecha-hora (diferencia V del README)." }
+        total_registros: { type: integer, example: 150 }
+        saldo_consolidado: { type: integer, example: 45000000, description: Suma del saldo del corte en COP. }
+        grupo: { type: string, nullable: true, example: Grupo ficticio A, description: "Nombre del grupo de conceptos (solo el nombre, no un objeto). `null` si se usaron todos los conceptos reportables." }
+        observacion: { type: string, nullable: true, description: "Observación del envío. Ninguna operación de la API la escribe todavía, así que llega `null`." }
+    ReporteDetalleFila:
+      type: object
+      required: [numero_obligacion, nombre_titular, numero_identificacion, tipo_id_tu, tipo_cartera, estado_tu, edad_mora, fecha_inicio, cuotas_mora, valor_inicial, valor_mora, valor_saldo, valor_cuota, dias_mora, origen_dias_mora, n_creditos, fecha_ultimo_pago]
+      description: |
+        Una fila de lo enviado en un corte. Reúne parte de los 22 campos que pidió CENS
+        (`campos tranusnion.xlsx`); correo y celular no se exponen en la API.
+      properties:
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        nombre_titular: { type: string, example: TITULAR FICTICIO UNO }
+        numero_identificacion: { $ref: '#/components/schemas/NumeroIdentificacion' }
+        tipo_id_tu: { $ref: '#/components/schemas/TipoIdentificacion' }
+        tipo_cartera: { type: integer, example: 2, description: Tipo de cartera (código numérico; catálogo por confirmar). }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
+        fecha_inicio: { type: string, format: date, nullable: true, example: '2025-01-01', description: Fecha de inicio de la financiación. }
+        cuotas_mora: { type: integer, minimum: 0, example: 0 }
+        valor_inicial: { type: integer, nullable: true, example: 500000, description: Valor inicial de la financiación en COP. }
+        valor_mora: { type: integer, example: 0, description: Valor vencido en COP. Cero si no hay mora. }
+        valor_saldo: { type: integer, example: 500000, description: Saldo neto en COP. }
+        valor_cuota: { type: integer, nullable: true, example: 50000, description: Valor de la cuota en COP. }
+        dias_mora: { type: integer, minimum: 0, example: 0 }
+        origen_dias_mora: { type: string, example: SIN_MORA, description: De dónde se calculó `dias_mora` (por ejemplo `SIN_MORA`). Conjunto de valores por confirmar con José Luis. }
+        n_creditos: { type: integer, minimum: 0, example: 1 }
+        fecha_ultimo_pago: { type: string, format: date, nullable: true, description: Fecha del último pago. `null` si no tiene pagos. }
+    DeudorBusqueda:
+      type: object
+      required: [obligacion_id, numero_obligacion, cliente_id, numero_proceso, fecha_inicio, ultimo_estado_tu, ultimo_valor_saldo]
+      description: Una obligación encontrada en la búsqueda del historial de deudores.
+      properties:
+        obligacion_id: { type: integer, example: 1, description: "Id interno; se usa en `GET /historial/deudores/{id}/`." }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        cliente_id: { type: integer, example: 900001, description: Id del cliente en el sistema comercial de CENS. }
+        numero_proceso: { type: integer, example: 1001, description: Número del proceso de financiación. }
+        fecha_inicio: { type: string, format: date, nullable: true, example: '2025-01-01' }
+        ultimo_estado_tu:
+          type: string
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EstadoObligacion'
+          description: "Estado en el último corte donde aparece. `null` si nunca ha aparecido en un corte. Hoy el \"último corte\" puede ser un `BORRADOR` o `ANULADO` (diferencia Z del README)."
+        ultimo_valor_saldo: { type: integer, nullable: true, example: 500000, description: Saldo en COP en ese último corte. `null` si nunca ha aparecido en un corte. }
+    DeudorLineaTiempo:
+      type: object
+      required: [fecha_corte, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, estado_corte]
+      description: El estado de una obligación en un corte.
+      properties:
+        fecha_corte: { type: string, format: date, example: '2026-09-30', description: "Hoy puede llegar como fecha-hora (diferencia V del README)." }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
+        dias_mora: { type: integer, minimum: 0, example: 0 }
+        cuotas_mora: { type: integer, minimum: 0, example: 0 }
+        valor_mora: { type: integer, example: 0, description: Valor vencido en COP. }
+        valor_saldo: { type: integer, example: 500000, description: Saldo neto en COP. }
+        estado_corte: { $ref: '#/components/schemas/EstadoCorte' }
+
+    # ── Auditoría ──
+    Modulo:
+      type: string
+      enum: [Seguridad, Usuarios, Parametrización, Extracción]
+    TipoAccion:
+      type: string
+      description: |
+        Clasificación estable de la acción. Une las dos listas de CENS: RF30 (consulta, generación de
+        archivo, corrección, eliminación) y el Acta 3 (consulta, **cálculo, exportación y
+        modificación**), más los eventos de seguridad y administración de la maqueta.
+        `calculo` = ejecutar una extracción o consolidación; `exportacion` = exportar un archivo o
+        reporte; `generacion` = generar el archivo plano de TransUnion; `modificacion` = cambiar
+        datos de cartera; `correccion` = corregir información ya reportada.
+      enum: [inicio_sesion, cierre_sesion, consulta, calculo, generacion, exportacion, modificacion, correccion, eliminacion, creacion, edicion, desactivacion]
+    RegistroAuditoria:
+      type: object
+      required: [id, fecha_hora, usuario_id, usuario, rol, accion, tipo_accion, modulo, detalle]
+      properties:
+        id: { type: integer }
+        fecha_hora: { type: string, format: date-time }
+        usuario_id: { type: integer, example: 2, description: Id del usuario que realizó la acción. }
+        usuario: { type: string, example: Rosa Martínez, description: Nombre para mostrar. }
+        rol: { $ref: '#/components/schemas/Rol' }
+        accion: { type: string, example: Usuario creado, description: Texto legible en español. }
+        tipo_accion: { $ref: '#/components/schemas/TipoAccion' }
+        modulo: { $ref: '#/components/schemas/Modulo' }
+        detalle:
+          type: string
+          example: María Gómez
+          description: Sin contraseñas ni datos personales completos.

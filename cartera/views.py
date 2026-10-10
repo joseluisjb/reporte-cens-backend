@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from config.paginacion import parsear_paginacion
 from usuarios.permisos import EsAnalistaOAdministrador
 from cartera import servicios
 from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer, RegistrarEnvioSerializer
@@ -9,6 +10,7 @@ from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer, 
 
 class ExtraccionViewSet(viewsets.ViewSet):
     permission_classes = [EsAnalistaOAdministrador]
+    lookup_value_regex = r"\d+"
 
     def list(self, request):
         cortes = servicios.listar_cortes()
@@ -48,7 +50,10 @@ class ExtraccionViewSet(viewsets.ViewSet):
         return Response(CorteResumenSerializer(resumen).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):
-        corte = servicios.obtener_corte(int(pk))
+        try:
+            corte = servicios.obtener_corte(int(pk))
+        except ValueError:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         if corte is None:
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         return Response(CorteResumenSerializer(corte).data)
@@ -64,6 +69,8 @@ class ExtraccionViewSet(viewsets.ViewSet):
     def validar(self, request, pk=None):
         try:
             resultado = servicios.validar_corte(int(pk))
+        except ValueError:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEncontrado:
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEsBorrador:
@@ -91,6 +98,8 @@ class ExtraccionViewSet(viewsets.ViewSet):
         fecha_envio = serializer.validated_data.get("fecha_envio")
         try:
             corte = servicios.registrar_envio(int(pk), fecha_envio=fecha_envio)
+        except ValueError:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEncontrado:
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEsValidado:
@@ -104,18 +113,15 @@ class ExtraccionViewSet(viewsets.ViewSet):
 
     @action(detail=True, methods=["get"], url_path="obligaciones")
     def obligaciones(self, request, pk=None):
-        try:
-            limite = int(request.query_params.get("limite", 20))
-            desplazamiento = int(request.query_params.get("desplazamiento", 0))
-        except (ValueError, TypeError):
-            return Response(
-                {"detail": "Los parámetros limite y desplazamiento deben ser enteros."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        limite, desplazamiento, err = parsear_paginacion(request)
+        if err is not None:
+            return err
         try:
             resultado = servicios.listar_obligaciones(
                 int(pk), limite=limite, desplazamiento=desplazamiento
             )
+        except ValueError:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEncontrado:
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         return Response(resultado)

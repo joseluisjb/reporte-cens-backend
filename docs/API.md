@@ -21,7 +21,7 @@ Error simple:
 {"detail": "Mensaje de error."}
 ```
 
-Error con lista (solo `/validar/` y `/registrar-envio/`):
+Error con lista (solo `/validar/`):
 
 ```json
 {"detail": "El corte tiene errores correctivos que deben resolverse.", "errores": [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta el tipo o el número de identificación"}]}
@@ -37,7 +37,7 @@ Error de validación de campo (DRF estándar):
 
 - Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
 - `ejecutada_por` siempre es `null` hasta RF25.
-- No hay paginación automática en los listados de cortes ni deudores (máximo 50 en deudores, sin límite en cortes).
+- No hay paginación automática en el listado de cortes (sin límite). El endpoint de deudores acepta `limite` y `desplazamiento` (defecto 20/0, máximo 100).
 
 ---
 
@@ -136,7 +136,7 @@ Lista todos los grupos con sus conceptos.
     "nombre": "Grupo A",
     "activo": true,
     "conceptos": [{"codigo": 30, "descripcion": "Energía activa"}],
-    "creado": "2026-10-10"
+    "creado": "2026-10-10T00:00:00-05:00"
   }
 ]
 ```
@@ -229,7 +229,7 @@ Genera un corte de cartera.
 {
   "id": 1,
   "fecha_corte": "2026-09-30",
-  "fecha_ejecucion": "2026-10-10T12:00:00",
+  "fecha_ejecucion": "2026-10-10T12:00:00-05:00",
   "grupo": {"id": 1, "nombre": "Grupo A"},
   "obligaciones": 150,
   "saldo_consolidado": 45000000,
@@ -334,7 +334,7 @@ Si hay filas con `SEVERIDAD='CORRECTIVA'` en `V_VALIDACION_CORTE`, responde `409
 {
   "id": 1,
   "fecha_corte": "2026-09-30",
-  "fecha_ejecucion": "2026-10-10T12:00:00",
+  "fecha_ejecucion": "2026-10-10T12:00:00-05:00",
   "grupo": null,
   "obligaciones": 150,
   "saldo_consolidado": 45000000,
@@ -376,7 +376,7 @@ Registra el envío a TransUnion y pasa el corte a ENVIADO. El archivo se carga m
 
 `fecha_envio` no puede ser futura. Si no se envía, se usa la fecha de hoy.
 
-**Respuesta 200**: objeto con la misma estructura que POST /extracciones/ con `"estado": "ENVIADO"`.
+**Respuesta 200**: objeto con la misma estructura que POST /extracciones/ con `"estado": "ENVIADO"`. No incluye lista `errores`.
 
 **Errores**
 
@@ -439,7 +439,7 @@ Detalle de obligaciones de un reporte enviado con paginación.
       "numero_obligacion": "OBL0001",
       "nombre_titular": "JUAN PÉREZ",
       "numero_identificacion": "12345678",
-      "tipo_id_tu": "CC",
+      "tipo_id_tu": "01",
       "tipo_cartera": 2,
       "estado_tu": "01",
       "edad_mora": "00",
@@ -458,6 +458,8 @@ Detalle de obligaciones de un reporte enviado con paginación.
 }
 ```
 
+Notas de campo: `tipo_id_tu` código de 2 caracteres (Tabla 4a SSR, e.g. `"01"`). `estado_tu` código de 2 caracteres (Tabla 4b SSR, e.g. `"01"`). `edad_mora` código de 2 caracteres `"00"`–`"14"` (Tabla SSR). `valor_mora` y `valor_saldo` pueden ser `null`.
+
 **Errores**
 
 - `404 Not Found` — reporte no encontrado o no está en estado ENVIADO
@@ -468,38 +470,43 @@ Detalle de obligaciones de un reporte enviado con paginación.
 
 #### GET /api/historial/deudores/
 
-Busca obligaciones. Requiere al menos uno de: `?cliente_id=` o `?numero_obligacion=`. Devuelve máximo 50 resultados.
+Busca obligaciones con paginación. Requiere al menos uno de: `?cliente_id=` o `?numero_obligacion=`.
 
 **Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
 
 **Parámetros query**
 
-| Parámetro | Tipo | Descripción |
-|---|---|---|
-| `cliente_id` | entero | ID del cliente |
-| `numero_obligacion` | texto | Número de obligación TU |
+| Parámetro | Tipo | Defecto | Descripción |
+|---|---|---|---|
+| `cliente_id` | entero | | ID del cliente |
+| `numero_obligacion` | texto | | Número de obligación TU |
+| `limite` | entero | 20 | Máximo de filas (tope 100) |
+| `desplazamiento` | entero | 0 | Filas a saltarse |
 
 **Respuesta 200**
 
 ```json
-[
-  {
-    "obligacion_id": 1,
-    "numero_obligacion": "OBL0001",
-    "cliente_id": 900001,
-    "numero_proceso": 1001,
-    "fecha_inicio": "2025-01-01",
-    "ultimo_estado_tu": "01",
-    "ultimo_valor_saldo": 500000
-  }
-]
+{
+  "total": 1,
+  "resultados": [
+    {
+      "obligacion_id": 1,
+      "numero_obligacion": "OBL0001",
+      "cliente_id": 900001,
+      "numero_proceso": 1001,
+      "fecha_inicio": "2025-01-01",
+      "ultimo_estado_tu": "01",
+      "ultimo_valor_saldo": 500000
+    }
+  ]
+}
 ```
 
-`ultimo_estado_tu` y `ultimo_valor_saldo` son `null` si la obligación no tiene reportes aún.
+`ultimo_estado_tu` y `ultimo_valor_saldo` son `null` si la obligación no tiene reportes aún (excluye cortes ANULADO).
 
 **Errores**
 
-- `400 Bad Request` — ningún parámetro proporcionado; `cliente_id` no es entero
+- `400 Bad Request` — ningún parámetro proporcionado; `cliente_id` no es entero; `limite`/`desplazamiento` inválidos
 
 #### GET /api/historial/deudores/{id}/
 

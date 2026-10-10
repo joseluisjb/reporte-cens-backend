@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from config.formatos import timestamp_str
+
 
 # ── Conceptos ────────────────────────────────────────────────────────────────
 
@@ -47,14 +49,12 @@ class ConceptoActualizarSerializer(serializers.Serializer):
 
 class GrupoConceptoSerializer(serializers.Serializer):
     def to_representation(self, instance):
-        fecha = instance["fecha_creacion"]
-        creado = fecha.date().isoformat() if hasattr(fecha, "date") else str(fecha)[:10]
         return {
             "id":        instance["grupo_id"],
             "nombre":    instance["nombre"],
             "activo":    instance["activo"] == "S",
             "conceptos": instance.get("conceptos", []),
-            "creado":    creado,
+            "creado":    timestamp_str(instance["fecha_creacion"]),
         }
 
 
@@ -65,6 +65,11 @@ class GrupoConceptoCrearSerializer(serializers.Serializer):
         min_length=1,
     )
 
+    def validate_conceptos(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("No se permiten códigos repetidos.")
+        return value
+
 
 class GrupoConceptoActualizarSerializer(serializers.Serializer):
     nombre    = serializers.CharField(max_length=60, required=False)
@@ -74,6 +79,11 @@ class GrupoConceptoActualizarSerializer(serializers.Serializer):
         min_length=1,
         required=False,
     )
+
+    def validate_conceptos(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("No se permiten códigos repetidos.")
+        return value
 
     def to_internal_value(self, data):
         validated = super().to_internal_value(data)
