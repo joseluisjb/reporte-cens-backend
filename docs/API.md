@@ -75,7 +75,7 @@ Lista conceptos de energía. Filtro opcional: `?activo=true|false`.
 
 Crea un concepto.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo**
 
@@ -99,7 +99,7 @@ Crea un concepto.
 
 Actualiza `descripcion`, `observacion` y/o `activo`. Todos los campos son opcionales.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo**
 
@@ -136,7 +136,7 @@ Lista todos los grupos con sus conceptos.
     "nombre": "Grupo A",
     "activo": true,
     "conceptos": [{"codigo": 30, "descripcion": "Energía activa"}],
-    "creado": "2026-10-10T00:00:00-05:00"
+    "creado": "2026-10-10"
   }
 ]
 ```
@@ -157,7 +157,7 @@ Detalle de un grupo.
 
 Crea un grupo.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo**
 
@@ -176,7 +176,7 @@ Crea un grupo.
 
 Actualiza nombre, activo y/o lista de conceptos. `conceptos` reemplaza la lista completa.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo** (todos los campos son opcionales)
 
@@ -196,7 +196,7 @@ Actualiza nombre, activo y/o lista de conceptos. `conceptos` reemplaza la lista 
 
 Elimina el grupo.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Respuesta 204**: sin cuerpo.
 
@@ -244,7 +244,7 @@ Genera un corte de cartera.
 
 - `400 Bad Request` — `fecha_corte` ausente o futura
 - `404 Not Found` — grupo no encontrado
-- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha
+- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha (mensaje incluye `DELETE /api/extracciones/{id}/` para eliminarlo); `fecha_corte` no es posterior a la del último corte enviado
 
 #### GET /api/extracciones/
 
@@ -276,6 +276,19 @@ Detalle de un corte.
 
 - `404 Not Found` — corte no encontrado
 
+#### DELETE /api/extracciones/{id}/
+
+Elimina un corte en estado BORRADOR. Borra en cascada sus obligaciones e inconsistencias y registra la eliminación en `NV_BITACORA`.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `404 Not Found` — corte no encontrado
+- `409 Conflict` — `{"detail": "Solo se puede eliminar un corte en estado BORRADOR."}`
+
 #### GET /api/extracciones/{id}/obligaciones/
 
 Obligaciones del corte con paginación.
@@ -298,7 +311,7 @@ Obligaciones del corte con paginación.
     {
       "numero_obligacion": "OBL0001",
       "nombre_titular": "JUAN PÉREZ",
-      "numero_identificacion": "12345678",
+      "numero_identificacion": "******5678",
       "estado_tu": "01",
       "edad_mora": "00",
       "dias_mora": 0,
@@ -310,6 +323,8 @@ Obligaciones del corte con paginación.
   ]
 }
 ```
+
+Nota: `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visibles, prefijados con `******`). Identificaciones con menos de 4 dígitos se muestran como asteriscos completos.
 
 **Errores**
 
@@ -374,13 +389,13 @@ Registra el envío a TransUnion y pasa el corte a ENVIADO. El archivo se carga m
 {"fecha_envio": "2026-10-01"}
 ```
 
-`fecha_envio` no puede ser futura. Si no se envía, se usa la fecha de hoy.
+`fecha_envio` no puede ser futura ni anterior a `fecha_corte`. Si no se envía, se usa la fecha de hoy. La existencia del corte se verifica antes de aplicar cualquier validación de fecha.
 
 **Respuesta 200**: objeto con la misma estructura que POST /extracciones/ con `"estado": "ENVIADO"`. No incluye lista `errores`.
 
 **Errores**
 
-- `400 Bad Request` — `fecha_envio` futura
+- `400 Bad Request` — `fecha_envio` futura; o `fecha_envio` anterior a `fecha_corte`
 - `404 Not Found` — corte no encontrado
 - `409 Conflict` — corte no está en VALIDADO
 
@@ -438,7 +453,7 @@ Detalle de obligaciones de un reporte enviado con paginación.
     {
       "numero_obligacion": "OBL0001",
       "nombre_titular": "JUAN PÉREZ",
-      "numero_identificacion": "12345678",
+      "numero_identificacion": "******5678",
       "tipo_id_tu": "01",
       "tipo_cartera": 2,
       "estado_tu": "01",
@@ -458,7 +473,7 @@ Detalle de obligaciones de un reporte enviado con paginación.
 }
 ```
 
-Notas de campo: `tipo_id_tu` código de 2 caracteres (Tabla 4a SSR, e.g. `"01"`). `estado_tu` código de 2 caracteres (Tabla 4b SSR, e.g. `"01"`). `edad_mora` código de 2 caracteres `"00"`–`"14"` (Tabla SSR). `valor_mora` y `valor_saldo` pueden ser `null`.
+Notas de campo: `tipo_id_tu` código de 2 caracteres (Tabla 4a SSR, e.g. `"01"`). `estado_tu` código de 2 caracteres (Tabla 4b SSR, e.g. `"01"`). `edad_mora` código de 2 caracteres `"00"`–`"14"` (Tabla SSR). `valor_mora` y `valor_saldo` pueden ser `null`. `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visibles, prefijados con `******`).
 
 **Errores**
 

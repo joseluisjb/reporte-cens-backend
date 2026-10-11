@@ -1,5 +1,7 @@
 from django.db import connection
 
+from config.formatos import enmascarar_identificacion
+
 
 class ReporteNoEncontrado(Exception):
     pass
@@ -81,7 +83,7 @@ def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
         {
             "numero_obligacion":     row[0],
             "nombre_titular":        row[1],
-            "numero_identificacion": row[2],
+            "numero_identificacion": enmascarar_identificacion(row[2]),
             "tipo_id_tu":            row[3],
             "tipo_cartera":          row[4],
             "estado_tu":             row[5],

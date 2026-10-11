@@ -218,7 +218,7 @@ def test_create_responde_201():
         {"codigo": 10, "descripcion": "Nuevo", "activo": True},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     nuevo = {"codigo_concepto": 10, "descripcion": "Nuevo", "reportable": "S", "observacion": None}
     with patch("parametros.views.servicios.crear_concepto", return_value=nuevo):
         response = ConceptoViewSet.as_view({"post": "create"})(request)
@@ -232,7 +232,7 @@ def test_create_409_cuando_codigo_ya_existe():
         {"codigo": 1, "descripcion": "Dup", "activo": True},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.crear_concepto", side_effect=servicios.ConceptoYaExiste):
         response = ConceptoViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 409
@@ -244,7 +244,7 @@ def test_partial_update_responde_200():
         {"descripcion": "Modificado"},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     actualizado = {"codigo_concepto": 1, "descripcion": "Modificado", "reportable": "S", "observacion": None}
     with patch("parametros.views.servicios.actualizar_concepto", return_value=actualizado):
         response = ConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
@@ -258,7 +258,7 @@ def test_partial_update_404_cuando_no_existe():
         {"descripcion": "X"},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.actualizar_concepto", return_value=None):
         response = ConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="999")
     assert response.status_code == 404
@@ -286,7 +286,7 @@ def test_grupo_repr_activo_s_es_true():
     data = GrupoConceptoSerializer(_GRUPO_DICT).data
     assert data["activo"] is True
     assert data["id"] == 1
-    assert data["creado"] == "2026-10-10T00:00:00-05:00"
+    assert data["creado"] == "2026-10-10"
     assert data["conceptos"][0]["codigo"] == 30
 
 
@@ -538,7 +538,7 @@ def test_grupo_create_201():
         {"nombre": "Grupo A", "conceptos": [30]},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.crear_grupo", return_value=_GRUPO_DICT):
         response = GrupoConceptoViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 201
@@ -551,7 +551,7 @@ def test_grupo_create_409_nombre_duplicado():
         {"nombre": "Dup", "conceptos": [30]},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.crear_grupo",
                side_effect=servicios.GrupoYaExiste):
         response = GrupoConceptoViewSet.as_view({"post": "create"})(request)
@@ -564,7 +564,7 @@ def test_grupo_create_400_concepto_invalido():
         {"nombre": "X", "conceptos": [99]},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.crear_grupo",
                side_effect=servicios.ConceptoInvalido(99)):
         response = GrupoConceptoViewSet.as_view({"post": "create"})(request)
@@ -578,7 +578,7 @@ def test_grupo_partial_update_200():
         {"nombre": "Nuevo nombre"},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.actualizar_grupo", return_value=_GRUPO_DICT):
         response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
     assert response.status_code == 200
@@ -590,7 +590,7 @@ def test_grupo_partial_update_404():
         {"nombre": "X"},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.actualizar_grupo",
                side_effect=servicios.GrupoNoEncontrado):
         response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="99")
@@ -603,7 +603,7 @@ def test_grupo_partial_update_409():
         {"nombre": "Dup"},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.actualizar_grupo",
                side_effect=servicios.GrupoYaExiste):
         response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
@@ -612,7 +612,7 @@ def test_grupo_partial_update_409():
 
 def test_grupo_destroy_204():
     request = factory.delete("/api/grupos-conceptos/1/")
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.eliminar_grupo"):
         response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="1")
     assert response.status_code == 204
@@ -620,7 +620,7 @@ def test_grupo_destroy_204():
 
 def test_grupo_destroy_409_en_uso():
     request = factory.delete("/api/grupos-conceptos/1/")
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.eliminar_grupo",
                side_effect=servicios.GrupoEnUso):
         response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="1")
@@ -629,7 +629,7 @@ def test_grupo_destroy_409_en_uso():
 
 def test_grupo_destroy_404():
     request = factory.delete("/api/grupos-conceptos/99/")
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     with patch("parametros.views.servicios.eliminar_grupo",
                side_effect=servicios.GrupoNoEncontrado):
         response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="99")
@@ -654,21 +654,21 @@ def test_retrieve_grupo_pk_no_numerico_404():
 
 def test_partial_update_grupo_pk_no_numerico_404():
     request = factory.patch("/api/grupos-conceptos/abc/", {"nombre": "X"}, format="json")
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="abc")
     assert response.status_code == 404
 
 
 def test_destroy_grupo_pk_no_numerico_404():
     request = factory.delete("/api/grupos-conceptos/abc/")
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="abc")
     assert response.status_code == 404
 
 
 def test_partial_update_concepto_pk_no_numerico_404():
     request = factory.patch("/api/conceptos/abc/", {"descripcion": "X"}, format="json")
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = ConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="abc")
     assert response.status_code == 404
 
@@ -681,7 +681,7 @@ def test_crear_grupo_conceptos_duplicados_400():
         {"nombre": "G", "conceptos": [30, 30]},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = GrupoConceptoViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 400
     assert "No se permiten códigos repetidos." in str(response.data)
@@ -693,7 +693,72 @@ def test_actualizar_grupo_conceptos_duplicados_400():
         {"conceptos": [30, 61, 30]},
         format="json",
     )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
     assert response.status_code == 400
     assert "No se permiten códigos repetidos." in str(response.data)
+
+
+# ── C1 — Permisos: analista puede leer, no puede escribir ────────────────────
+
+def test_concepto_list_analista_200():
+    request = factory.get("/api/conceptos/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("parametros.views.servicios.listar_conceptos", return_value=[]):
+        response = ConceptoViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 200
+
+
+def test_concepto_create_analista_403():
+    request = factory.post("/api/conceptos/", {"codigo": 1, "descripcion": "X"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ConceptoViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 403
+
+
+def test_concepto_partial_update_analista_403():
+    request = factory.patch("/api/conceptos/1/", {"descripcion": "X"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
+    assert response.status_code == 403
+
+
+def test_grupo_list_analista_200():
+    request = factory.get("/api/grupos-conceptos/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("parametros.views.servicios.listar_grupos", return_value=[]):
+        response = GrupoConceptoViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 200
+
+
+def test_grupo_retrieve_analista_200():
+    request = factory.get("/api/grupos-conceptos/1/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("parametros.views.servicios.obtener_grupo", return_value=_GRUPO_DICT):
+        response = GrupoConceptoViewSet.as_view({"get": "retrieve"})(request, pk="1")
+    assert response.status_code == 200
+
+
+def test_grupo_create_analista_403():
+    request = factory.post(
+        "/api/grupos-conceptos/", {"nombre": "G", "conceptos": [30]}, format="json"
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 403
+
+
+def test_grupo_partial_update_analista_403():
+    request = factory.patch(
+        "/api/grupos-conceptos/1/", {"nombre": "X"}, format="json"
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
+    assert response.status_code == 403
+
+
+def test_grupo_destroy_analista_403():
+    request = factory.delete("/api/grupos-conceptos/1/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="1")
+    assert response.status_code == 403

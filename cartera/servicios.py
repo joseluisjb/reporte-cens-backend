@@ -1,6 +1,7 @@
 from django.db import connection, transaction
 
-from config.formatos import ahora_bogota, hoy_bogota
+from config.bitacora import registrar_bitacora
+from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota
 
 
 # ── Excepciones ───────────────────────────────────────────────────────────────
@@ -22,8 +23,9 @@ class CorteEnEstadoFijo(Exception):
 
 
 class BorradorOtraFecha(Exception):
-    def __init__(self, fecha):
+    def __init__(self, fecha, corte_id=None):
         self.fecha = fecha
+        self.corte_id = corte_id
         super().__init__(f"Ya existe un corte en BORRADOR con fecha {fecha}.")
 
 
@@ -43,6 +45,10 @@ class CorteConErroresCorrectivos(Exception):
     def __init__(self, errores):
         self.errores = errores
         super().__init__("El corte tiene errores correctivos que deben resolverse.")
+
+
+class FechaAnteriorAlUltimoEnviado(Exception):
+    pass
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -101,7 +107,7 @@ def _verificar_corte_existente(fecha_corte):
         )
         row = cursor.fetchone()
     if row is not None:
-        raise BorradorOtraFecha(row[1])
+        raise BorradorOtraFecha(row[1], corte_id=row[0])
 
     return None, False
 
@@ -127,7 +133,7 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "(CORTE_ID, FECHA_CORTE, TIPO_REPORTE, ESTADO, FECHA_GENERACION, "
                 "USUARIO_ID, TOTAL_REGISTROS, GRUPO_ID, GRUPO_NOMBRE, CONCEPTOS_USADOS) "
                 "VALUES (:1, :2, '01', 'BORRADOR', :3, NULL, 0, :4, :5, :6)",
-                [corte_id, fecha_corte, ahora_bogota(), grupo_id, grupo_nombre, conceptos_usados],
+                [corte_id, fecha_corte, ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados],
             )
         return corte_id
     else:
@@ -137,7 +143,7 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "SET FECHA_GENERACION = :1, TOTAL_REGISTROS = 0, "
                 "GRUPO_ID = :2, GRUPO_NOMBRE = :3, CONCEPTOS_USADOS = :4 "
                 "WHERE CORTE_ID = :5",
-                [ahora_bogota(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
+                [ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
             )
         return corte_id_existente
 
@@ -245,6 +251,18 @@ def generar_corte(fecha_corte, grupo_id=None):
         if fecha_corte > hoy_bogota():
             raise FechaInvalida("La fecha de corte no puede ser futura.")
 
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT MAX(FECHA_CORTE) FROM NEXOVOLT.NV_CORTE WHERE ESTADO = 'ENVIADO'"
+            )
+            row = cursor.fetchone()
+        if row and row[0] is not None:
+            ultimo = row[0]
+            if hasattr(ultimo, "date"):
+                ultimo = ultimo.date()
+            if fecha_corte <= ultimo:
+                raise FechaAnteriorAlUltimoEnviado()
+
         if grupo_id is not None:
             grupo_nombre, conceptos_usados = _validar_grupo(grupo_id)
         else:
@@ -336,7 +354,7 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
         {
             "numero_obligacion":    row[0],
             "nombre_titular":       row[1],
-            "numero_identificacion": row[2],
+            "numero_identificacion": enmascarar_identificacion(row[2]),
             "estado_tu":            row[3],
             "edad_mora":            row[4],
             "dias_mora":            row[5],
@@ -363,7 +381,9 @@ def validar_corte(corte_id):
 
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT REGLA, SEVERIDAD, MENSAJE FROM NEXOVOLT.V_VALIDACION_CORTE"
+            "SELECT REGLA, SEVERIDAD, MENSAJE FROM NEXOVOLT.V_VALIDACION_CORTE "
+            "WHERE CORTE_ID = :1",
+            [corte_id],
         )
         filas = cursor.fetchall()
 
@@ -386,19 +406,28 @@ def validar_corte(corte_id):
 
 
 def registrar_envio(corte_id, fecha_envio=None):
-    if fecha_envio is None:
-        fecha_envio = hoy_bogota()
-    if fecha_envio > hoy_bogota():
-        raise FechaInvalida("La fecha de envío no puede ser futura.")
-
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT ESTADO FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+            "SELECT ESTADO, FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1",
+            [corte_id],
         )
         row = cursor.fetchone()
     if row is None:
         raise CorteNoEncontrado()
-    if row[0] != "VALIDADO":
+
+    estado = row[0]
+    fecha_corte_corte = row[1]
+    if hasattr(fecha_corte_corte, "date"):
+        fecha_corte_corte = fecha_corte_corte.date()
+
+    if fecha_envio is None:
+        fecha_envio = hoy_bogota()
+    if fecha_envio > hoy_bogota():
+        raise FechaInvalida("La fecha de envío no puede ser futura.")
+    if fecha_envio < fecha_corte_corte:
+        raise FechaInvalida("La fecha de envío no puede ser anterior a la fecha de corte.")
+
+    if estado != "VALIDADO":
         raise CorteNoEsValidado()
 
     with connection.cursor() as cursor:
@@ -409,3 +438,33 @@ def registrar_envio(corte_id, fecha_envio=None):
         )
 
     return obtener_corte(corte_id)
+
+
+def eliminar_borrador(corte_id):
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ESTADO, FECHA_CORTE, GRUPO_NOMBRE "
+                "FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1",
+                [corte_id],
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise CorteNoEncontrado()
+        if row[0] != "BORRADOR":
+            raise CorteNoEsBorrador()
+
+        grupo_nombre = row[2] or "todos"
+        detalle = f"Fecha: {fecha_str(row[1])}, Grupo: {grupo_nombre}"
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1", [corte_id]
+            )
+            cursor.execute(
+                "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA WHERE CORTE_ID = :1", [corte_id]
+            )
+            cursor.execute(
+                "DELETE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+            )
+        registrar_bitacora("ELIMINACION_BORRADOR", "NV_CORTE", corte_id, detalle)

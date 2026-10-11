@@ -320,9 +320,8 @@ _CMD = "historial.management.commands.actualizar_estados_mensual"
 
 
 def test_comando_sin_argumentos():
-    mock_conn, mock_cursor = _mock_conn()
     with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK) as mock_gc, \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora"), \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         out = StringIO()
         call_command("actualizar_estados_mensual", stdout=out)
@@ -338,10 +337,9 @@ def test_comando_sin_argumentos():
 
 
 def test_comando_con_fecha_y_grupo():
-    mock_conn, mock_cursor = _mock_conn()
     resultado = {**_RESULTADO_MOCK, "grupo": {"id": 1, "nombre": "Grupo A"}}
     with patch(f"{_CMD}.generar_corte", return_value=resultado) as mock_gc, \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora"), \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         out = StringIO()
         call_command("actualizar_estados_mensual",
@@ -352,9 +350,8 @@ def test_comando_con_fecha_y_grupo():
 
 
 def test_comando_simular():
-    mock_conn, mock_cursor = _mock_conn()
     with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK), \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora") as mock_reg, \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic), \
          patch(f"{_CMD}.transaction.set_rollback") as mock_rollback:
         out = StringIO()
@@ -362,8 +359,8 @@ def test_comando_simular():
     salida = out.getvalue()
     assert "SIMULACIÓN" in salida
     mock_rollback.assert_called_once_with(True)
-    # La bitácora no debe haberse insertado
-    mock_cursor.execute.assert_not_called()
+    # La bitácora no debe haberse insertada en simulación
+    mock_reg.assert_not_called()
 
 
 def test_comando_fecha_invalida_formato():
@@ -443,3 +440,16 @@ def test_buscar_deudores_tiene_order_by():
         servicios.buscar_deudores(cliente_id=900001)
     select_sql = mock_cursor.execute.call_args[0][0]
     assert "ORDER BY o.OBLIGACION_ID" in select_sql
+
+
+# ── C2 — Enmascaramiento de numero_identificacion ────────────────────────────
+
+def test_listar_detalle_reporte_enmascara_identificacion():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(1,), (1,)]
+    fila = ("OBL001", "Juan", "12345678", "01", 2, "01", "00",
+            _FECHA_CORTE, 0, 100000, 0, 500000, 50000, 0, "SIN_MORA", 1, None)
+    mock_cursor.fetchall.return_value = [fila]
+    with patch("historial.servicios.connection", mock_conn):
+        resultado = servicios.listar_detalle_reporte(1)
+    assert resultado["resultados"][0]["numero_identificacion"] == "******5678"
