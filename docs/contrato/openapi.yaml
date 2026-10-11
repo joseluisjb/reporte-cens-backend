@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: NexoVolt — API REST (Iteración 1)
-  version: 0.4.0-borrador
+  version: 0.5.0-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
@@ -21,6 +21,11 @@ info:
     de servicios `04` "Servicio energía"). Donde el backend difiere de lo que pide la
     documentación, el README del contrato lo lista como diferencia por resolver. Cada operación dice si está *implementada en el backend*, *implementada
     en el frontend* (contra mocks) o es *propuesta*.
+
+    La **versión 0.5** recoge los cambios del backend del 10/10/2026, revisados el 11/10/2026 en la
+    rama `main` (commit `e835f31`), que ya incluye `fix/api-reglas`. Suma
+    `DELETE /extracciones/{id}/`, pagina la búsqueda de deudores y marca como resueltas las
+    diferencias que el backend ya corrigió (README y `DISCREPANCIAS.md`).
 
     ## Reglas generales
 
@@ -55,19 +60,18 @@ info:
     separadores). Las contraseñas nunca se devuelven (la temporal se envía por correo).
 
     **Paginación.** Una sola convención para toda la API. Los listados que pueden crecer
-    (obligaciones de un corte, detalle de un reporte enviado y `/auditoria/`) usan `?limite=` (por
-    defecto 20) y `?desplazamiento=` (por defecto 0, filas que se saltan) y responden
-    `{ total, resultados }`, con `total` igual al número de registros que cumplen el filtro. Los
-    listados pequeños o acotados devuelven un **arreglo plano** sin paginar: `/users/`,
-    `/conceptos/`, `/grupos-conceptos/`, `/extracciones/`, `/historial/reportes/` y
-    `/historial/deudores/` (máximo 50). El contrato pide `limite` de 1 a 100 (un valor mayor se
-    recorta a 100) y `desplazamiento` desde 0; fuera de rango responde `400` con su propio mensaje.
-    El backend aún no valida el rango ni recorta el límite.
+    (obligaciones de un corte, detalle de un reporte enviado, búsqueda de deudores y `/auditoria/`)
+    usan `?limite=` (por defecto 20) y `?desplazamiento=` (por defecto 0, filas que se saltan) y
+    responden `{ total, resultados }`, con `total` igual al número de registros que cumplen el
+    filtro. Los listados pequeños o acotados devuelven un **arreglo plano** sin paginar: `/users/`,
+    `/conceptos/`, `/grupos-conceptos/`, `/extracciones/` y `/historial/reportes/`. `limite` va de
+    1 a 100 (un valor mayor se recorta a 100) y `desplazamiento` desde 0; fuera de rango responde
+    `400` con su propio mensaje. El backend ya lo cumple (rama `dev`).
 
     **Datos reservados.** Los datos de CENS son confidenciales: el log de auditoría no guarda
-    contraseñas ni datos personales completos. El backend devuelve hoy `numero_identificacion`
-    **completo** en las obligaciones de un corte y en el detalle histórico; el frontend lo enmascara
-    en pantalla (diferencia Q del README).
+    contraseñas ni datos personales completos. `numero_identificacion` llega **enmascarado** en las
+    obligaciones de un corte y en el detalle histórico (solo los últimos 4 dígitos).
+    El frontend lo vuelve a enmascarar en pantalla por si acaso.
 
     ## Fuera de alcance de este contrato (no construir sin confirmar)
     "Cambiar datos", "Cambiar de perfil" y exportar log/resumen aparecen en la maqueta pero no
@@ -415,8 +419,7 @@ paths:
       summary: Agregar un código de concepto (RF35)
       description: |
         Se crea activo salvo que se indique lo contrario. El código es único: si ya existe responde
-        `409`. *Implementado en el backend* (hoy permite también al Analista; el contrato propone solo
-        Administrador, ver README). Debe quedar en el log de auditoría.
+        `409`. *Implementado en el backend.* Solo el Administrador. Debe quedar en el log de auditoría.
       operationId: conceptosCreate
       x-roles: [Administrador]
       requestBody:
@@ -497,8 +500,8 @@ paths:
       tags: [Grupos de conceptos]
       summary: Crear un grupo de conceptos (RF43)
       description: |
-        El nombre es único. Todos los conceptos deben existir y estar activos. *Implementado en el
-        backend* (hoy permite también al Analista; el contrato propone solo Administrador).
+        El nombre es único. Todos los conceptos deben existir y estar activos, sin repetidos.
+        *Implementado en el backend.* Escribir grupos es solo del Administrador.
       operationId: gruposCreate
       x-roles: [Administrador]
       requestBody:
@@ -664,9 +667,12 @@ paths:
         el mismo `id`. Si existe uno con esa fecha en cualquier otro estado, responde `409`. Solo
         puede haber **un** `BORRADOR` a la vez: si hay uno con otra fecha, responde `409`.
 
-        **Propuesta (contrato 0.4, manual de TransUnion, inconsistencia 074):** la fecha de corte
+        **Contrato 0.4 (manual de TransUnion, inconsistencia 074):** la fecha de corte
         debe ser **posterior** a la del último corte enviado (`ENVIADO`); si es igual o anterior,
-        responde `409`. El backend todavía no lo comprueba (`DISCREPANCIAS.md`, A9).
+        responde `409`. Implementado en el backend (`DISCREPANCIAS.md`, A9).
+
+        **Si hay un `BORRADOR` equivocado** de otra fecha, se elimina con
+        `DELETE /extracciones/{id}/` y se vuelve a generar.
       operationId: extraccionesCreate
       x-roles: [Analista de Cartera, Administrador]
       requestBody:
@@ -683,7 +689,7 @@ paths:
               example:
                 id: 1
                 fecha_corte: '2026-09-30'
-                fecha_ejecucion: '2026-10-10T12:00:00'
+                fecha_ejecucion: '2026-10-10T12:00:00-05:00'
                 grupo: { id: 1, nombre: Grupo ficticio A }
                 obligaciones: 150
                 saldo_consolidado: 45000000
@@ -721,7 +727,12 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
               example: { detail: 'Grupo no encontrado.' }
         '409':
-          description: Grupo inactivo, corte existente que no se puede reemplazar, ya hay un borrador de otra fecha o la fecha de corte no es posterior a la del último corte enviado (propuesta).
+          description: |
+            Grupo inactivo, corte existente que no se puede reemplazar, ya hay un borrador de otra
+            fecha o la fecha de corte no es posterior a la del último corte enviado. El texto del
+            borrador de otra fecha es el que propone el contrato: hoy el backend
+            incluye la ruta `DELETE /api/extracciones/{id}/` en el mensaje, y ese texto lo ve el
+            usuario (diferencia AC del README).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
@@ -734,9 +745,9 @@ paths:
                   value: { detail: 'Ya existe un corte con esa fecha en un estado que no permite reemplazo.' }
                 borrador_otra_fecha:
                   summary: Hay un BORRADOR de otra fecha
-                  value: { detail: 'Ya existe un corte en BORRADOR con fecha 2026-08-31. Debe completarlo o eliminarlo primero.' }
+                  value: { detail: 'Ya existe un corte en BORRADOR con fecha 2026-08-31. Elimínelo o complételo antes de generar otro.' }
                 fecha_no_posterior:
-                  summary: La fecha de corte no es posterior a la del último corte enviado (propuesta; el backend aún no lo comprueba, A9)
+                  summary: La fecha de corte no es posterior a la del último corte enviado (A9)
                   value: { detail: 'La fecha de corte debe ser posterior a la del último corte enviado.' }
 
   /extracciones/ultima/:
@@ -765,9 +776,7 @@ paths:
       tags: [Extracción]
       summary: Detalle de un corte
       description: |
-        Resumen de un corte, en cualquier estado (también `ANULADO`). El `id` debe ser numérico: hoy
-        un `id` no numérico produce un error 500 en el backend (diferencia S del README).
-        *Implementado en el backend.*
+        Resumen de un corte, en cualquier estado (también `ANULADO`). *Implementado en el backend.*
       operationId: extraccionesRead
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -786,6 +795,35 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
               example: { detail: 'Corte no encontrado.' }
+    delete:
+      tags: [Extracción]
+      summary: Eliminar un corte en BORRADOR
+      description: |
+        Borra un corte que está en `BORRADOR`, junto con sus obligaciones e inconsistencias, y deja
+        la eliminación en la bitácora (`NV_BITACORA`, acción `ELIMINACION_BORRADOR`). Sirve para
+        salir de un borrador equivocado, porque solo puede haber uno a la vez. Un corte en otro
+        estado no se puede eliminar (`409`). Implementado en el backend. Debe quedar en el
+        log de auditoría (RF30, eliminación).
+      operationId: extraccionesDelete
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204': { description: Corte eliminado. Sin cuerpo. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+        '409':
+          description: El corte no está en `BORRADOR`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Solo se puede eliminar un corte en estado BORRADOR.' }
 
   /extracciones/{id}/obligaciones/:
     get:
@@ -806,8 +844,7 @@ paths:
         con saldo 0 (`DISCREPANCIAS.md`, A2). **Pendiente de confirmar por Santiago**, porque RF1
         dice "solo vigentes".
 
-        **Dato personal:** `numero_identificacion` llega completo hoy; el frontend lo enmascara en
-        pantalla (diferencia Q del README).
+        **Dato personal:** `numero_identificacion` llega enmascarado (`NumeroIdentificacion`).
       operationId: extraccionesObligaciones
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -832,7 +869,7 @@ paths:
                 resultados:
                   - numero_obligacion: OBL0001
                     nombre_titular: TITULAR FICTICIO UNO
-                    numero_identificacion: '1000000001'
+                    numero_identificacion: '******0001'
                     estado_tu: '01'
                     edad_mora: '00'
                     dias_mora: 0
@@ -842,7 +879,7 @@ paths:
                     n_creditos: 1
                   - numero_obligacion: OBL0002
                     nombre_titular: TITULAR FICTICIO DOS
-                    numero_identificacion: '1000000002'
+                    numero_identificacion: '******0002'
                     estado_tu: '02'
                     edad_mora: '00'
                     dias_mora: 0
@@ -895,7 +932,7 @@ paths:
               example:
                 id: 1
                 fecha_corte: '2026-09-30'
-                fecha_ejecucion: '2026-10-10T12:00:00'
+                fecha_ejecucion: '2026-10-10T12:00:00-05:00'
                 grupo: null
                 obligaciones: 150
                 saldo_consolidado: 45000000
@@ -935,8 +972,12 @@ paths:
         Registra que el archivo se cargó manualmente en el portal de TransUnion y pasa el corte a
         `ENVIADO`; desde ahí aparece en el historial de reportes. El cuerpo es opcional: sin
         `fecha_envio` (o con `null`) se usa la fecha de hoy. Solo se puede registrar el envío de un
-        corte en `VALIDADO`. A diferencia de lo que dice `docs/API.md` del backend, esta operación
-        **no** devuelve `errores` (diferencia X del README). *Implementado en el backend.*
+        corte en `VALIDADO`. Esta operación **no** devuelve `errores`. *Implementado en el backend.*
+
+        `fecha_envio` no puede ser futura ni anterior a la fecha de corte. El backend comprueba
+        primero que el corte exista (`404`) y después las fechas; un formato de fecha inválido sí
+        se rechaza antes (`400` por campo). Lo de la fecha de corte y el orden ya están implementados en
+        el backend.
       operationId: extraccionesRegistrarEnvio
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -955,14 +996,14 @@ paths:
               example:
                 id: 1
                 fecha_corte: '2026-09-30'
-                fecha_ejecucion: '2026-10-10T12:00:00'
+                fecha_ejecucion: '2026-10-10T12:00:00-05:00'
                 grupo: null
                 obligaciones: 150
                 saldo_consolidado: 45000000
                 estado: ENVIADO
                 ejecutada_por: null
         '400':
-          description: Fecha de envío futura (`{ detail }`) o con formato inválido (error por campo).
+          description: Fecha de envío futura o anterior a la fecha de corte (`{ detail }`), o con formato inválido (error por campo).
           content:
             application/json:
               schema:
@@ -973,6 +1014,9 @@ paths:
                 fecha_futura:
                   summary: Fecha de envío futura
                   value: { detail: 'La fecha de envío no puede ser futura.' }
+                anterior_al_corte:
+                  summary: Fecha de envío anterior a la fecha de corte
+                  value: { detail: 'La fecha de envío no puede ser anterior a la fecha de corte.' }
                 fecha_invalida:
                   summary: Fecha de envío con formato inválido
                   value: { fecha_envio: ['La fecha de envío no es válida.'] }
@@ -1046,8 +1090,7 @@ paths:
         responde `404`. Muestra parte de los 22 campos de CENS (ver decisión 13 del README).
         *Implementado en el backend.*
 
-        **Dato personal:** `numero_identificacion` llega completo hoy; el frontend lo enmascara en
-        pantalla (diferencia Q del README).
+        **Dato personal:** `numero_identificacion` llega enmascarado (`NumeroIdentificacion`).
       operationId: historialReporteDetalle
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -1072,7 +1115,7 @@ paths:
                 resultados:
                   - numero_obligacion: OBL0001
                     nombre_titular: TITULAR FICTICIO UNO
-                    numero_identificacion: '1000000001'
+                    numero_identificacion: '******0001'
                     tipo_id_tu: '01'
                     tipo_cartera: 2
                     estado_tu: '01'
@@ -1114,10 +1157,10 @@ paths:
       summary: Buscar obligaciones en el historial de deudores (RF8)
       description: |
         Busca obligaciones por `cliente_id` y/o `numero_obligacion`; hay que enviar **al menos uno**.
-        Devuelve como máximo **50** resultados, sin orden definido y sin avisar si hubo más
-        (diferencia T del README). Cada resultado trae el último estado y saldo registrados, que son
-        `null` si la obligación aún no aparece en ningún corte. Arreglo plano. *Implementado en el
-        backend.*
+        Ordenado por `obligacion_id` y paginado con `limite` y `desplazamiento`
+        (`{ total, resultados }`). Cada resultado trae el último estado y saldo registrados, sin
+        contar los cortes `ANULADO`; son `null` si la obligación aún no aparece en ningún corte.
+        *Implementado en el backend.* Hasta la versión 0.4 era un arreglo plano de máximo 50.
       operationId: historialDeudores
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -1128,25 +1171,33 @@ paths:
         - name: numero_obligacion
           in: query
           schema: { $ref: '#/components/schemas/NumeroObligacion' }
+        - $ref: '#/components/parameters/Limite'
+        - $ref: '#/components/parameters/Desplazamiento'
       responses:
         '200':
-          description: Obligaciones encontradas (máximo 50). Puede ser `[]`.
+          description: Página de obligaciones encontradas. `resultados` puede ser `[]`.
           content:
             application/json:
               schema:
-                type: array
-                maxItems: 50
-                items: { $ref: '#/components/schemas/DeudorBusqueda' }
+                allOf:
+                  - $ref: '#/components/schemas/ListaPaginada'
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: { $ref: '#/components/schemas/DeudorBusqueda' }
               example:
-                - obligacion_id: 1
-                  numero_obligacion: OBL0001
-                  cliente_id: 900001
-                  numero_proceso: 1001
-                  fecha_inicio: '2025-01-01'
-                  ultimo_estado_tu: '01'
-                  ultimo_valor_saldo: 500000
+                total: 1
+                resultados:
+                  - obligacion_id: 1
+                    numero_obligacion: OBL0001
+                    cliente_id: 900001
+                    numero_proceso: 1001
+                    fecha_inicio: '2025-01-01'
+                    ultimo_estado_tu: '01'
+                    ultimo_valor_saldo: 500000
         '400':
-          description: No se envió ningún filtro o `cliente_id` no es un entero.
+          description: No se envió ningún filtro, `cliente_id` no es un entero, o `limite` o `desplazamiento` no son válidos.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
@@ -1157,6 +1208,9 @@ paths:
                 cliente_invalido:
                   summary: cliente_id no numérico
                   value: { detail: 'cliente_id debe ser un entero.' }
+                fuera_de_rango:
+                  summary: "`limite` menor que 1 o `desplazamiento` negativo"
+                  value: { detail: 'El límite debe ser mayor que 0 y el desplazamiento no puede ser negativo.' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -1167,8 +1221,8 @@ paths:
       description: |
         El estado de la obligación en **cada corte no anulado** donde aparece, del más antiguo al
         más reciente por `fecha_corte`. Incluye cortes en `BORRADOR` y `VALIDADO` (el campo
-        `estado_corte` lo indica). `id` es el `obligacion_id` que devuelve la búsqueda; un `id`
-        no numérico produce hoy un error 500 (diferencia S del README). *Implementado en el backend.*
+        `estado_corte` lo indica). `id` es el `obligacion_id` que devuelve la búsqueda.
+        *Implementado en el backend.*
       operationId: historialDeudorLineaTiempo
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -1302,6 +1356,9 @@ components:
       name: id
       in: path
       required: true
+      description: |
+        Entero. Una ruta con un `id` no numérico no existe: el backend responde `404` con la página
+        de error de Django, **no** con `{ detail }` (diferencia AD del README).
       schema: { type: integer }
     Codigo:
       name: codigo
@@ -1314,15 +1371,15 @@ components:
       in: query
       description: |
         Máximo de filas a devolver. Por defecto 20. Debe ser un entero de 1 a 100: un valor menor
-        que 1 responde `400` y **un valor mayor que 100 se recorta a 100**. El backend **aún no
-        valida el rango ni pone el máximo** (diferencias N y S del README).
+        que 1 responde `400` y **un valor mayor que 100 se recorta a 100**. Implementado en el
+        backend.
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
     Desplazamiento:
       name: desplazamiento
       in: query
       description: |
-        Cuántas filas saltarse (desde 0). Por defecto 0. Un valor negativo responde `400`; el
-        backend **aún no valida el rango** (diferencia S del README).
+        Cuántas filas saltarse (desde 0). Por defecto 0. Un valor negativo responde `400`.
+        Implementado en el backend.
       schema: { type: integer, minimum: 0, default: 0 }
 
   responses:
@@ -1398,7 +1455,7 @@ components:
       properties:
         id: { type: integer, example: 2 }
         nombre: { type: string, example: Rosa Martínez }
-        email: { type: string, format: email, example: rmartinez@cens.com.co }
+        email: { type: string, format: email, example: rmartinez@example.com }
         rol: { $ref: '#/components/schemas/Rol' }
         is_active: { type: boolean }
         last_login: { type: string, format: date-time, nullable: true, description: Último acceso; `null` si nunca ingresó. }
@@ -1508,7 +1565,15 @@ components:
         conceptos:
           type: array
           items: { $ref: '#/components/schemas/ConceptoResumen' }
-        creado: { type: string, format: date, example: '2026-10-10' }
+        creado:
+          type: string
+          format: date
+          example: '2026-10-10'
+          description: |
+            Fecha de creación del grupo (`AAAA-MM-DD`). **Diferencia AB del README (resuelta en `3610b63`):**
+            entre `9411d65` y `3610b63` el backend la devolvió como fecha-hora
+            (`2026-10-10T00:00:00-05:00`); desde `3610b63` (`main` `e835f31`) vuelve a ser fecha. El
+            frontend sigue tomando los 10 primeros caracteres, por si acaso.
     GrupoConceptoCreateRequest:
       type: object
       required: [nombre, conceptos]
@@ -1519,7 +1584,7 @@ components:
           minItems: 1
           uniqueItems: true
           items: { type: integer, minimum: 1, maximum: 9999 }
-          description: "Códigos de concepto, sin repetidos (propuesta `uniqueItems`: el backend hoy no rechaza repetidos, diferencia O); todos deben existir y estar activos."
+          description: "Códigos de concepto, sin repetidos (con repetidos el backend responde `400` por campo: `No se permiten códigos repetidos.`); todos deben existir y estar activos."
           example: [30, 94]
     GrupoConceptoUpdateRequest:
       type: object
@@ -1532,7 +1597,7 @@ components:
           minItems: 1
           uniqueItems: true
           items: { type: integer, minimum: 1, maximum: 9999 }
-          description: "Sin códigos repetidos (propuesta `uniqueItems`: el backend hoy no rechaza repetidos, diferencia O)."
+          description: "Sin códigos repetidos (con repetidos el backend responde `400` por campo: `No se permiten códigos repetidos.`)."
 
     # ── Extracción y ciclo de corte ──
     CorteCreateRequest:
@@ -1556,9 +1621,10 @@ components:
         Estado del corte (negocio). Transiciones:
         `POST /extracciones/` crea el corte en `BORRADOR` (un `BORRADOR` de la misma fecha se
         reemplaza); `POST /extracciones/{id}/validar/` pasa `BORRADOR` a `VALIDADO`;
-        `POST /extracciones/{id}/registrar-envio/` pasa `VALIDADO` a `ENVIADO`. `ANULADO` existe en
-        la base pero **ninguna operación de la API lo produce todavía**; los listados lo excluyen.
-        Solo puede haber un corte en `BORRADOR` a la vez.
+        `POST /extracciones/{id}/registrar-envio/` pasa `VALIDADO` a `ENVIADO`;
+        `DELETE /extracciones/{id}/` borra un `BORRADOR` (no lo deja en `ANULADO`: lo elimina).
+        `ANULADO` existe en la base pero **ninguna operación de la API lo produce todavía**; los
+        listados lo excluyen. Solo puede haber un corte en `BORRADOR` a la vez.
     CorteResumen:
       type: object
       required: [id, fecha_corte, fecha_ejecucion, grupo, obligaciones, saldo_consolidado, estado, ejecutada_por]
@@ -1569,12 +1635,12 @@ components:
           type: string
           format: date
           example: '2026-09-30'
-          description: "Fecha del corte (`AAAA-MM-DD`). Hoy el backend puede devolverla como fecha-hora según el endpoint (diferencia V del README); el frontend toma los 10 primeros caracteres."
+          description: "Fecha del corte (`AAAA-MM-DD`)."
         fecha_ejecucion:
           type: string
           format: date-time
-          example: '2026-10-10T12:00:00'
-          description: "Cuándo se generó el corte (`FECHA_GENERACION`). Hoy sin zona horaria; el contrato pide `-05:00` (diferencia V del README)."
+          example: '2026-10-10T12:00:00-05:00'
+          description: "Cuándo se generó el corte (`FECHA_GENERACION`), con zona horaria de Bogotá."
         grupo:
           type: object
           nullable: true
@@ -1631,7 +1697,7 @@ components:
           format: date
           nullable: true
           example: '2026-10-01'
-          description: Fecha en que se cargó el archivo en el portal de TransUnion. No puede ser futura. Si falta o es `null`, se usa la fecha de hoy.
+          description: Fecha en que se cargó el archivo en el portal de TransUnion. No puede ser futura ni anterior a la fecha de corte. Si falta o es `null`, se usa la fecha de hoy (hora de Bogotá).
     CodigoEdadMora:
       type: string
       enum: ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14']
@@ -1675,9 +1741,9 @@ components:
         | `05` | Pasaporte | `12` | PEP |
         | `06` | Tarjeta del seguro social extranjero | `13` | PPT |
 
-        **Diferencia con el backend:** hoy la documentación y las pruebas del backend devuelven
-        `"CC"` (`DISCREPANCIAS.md`, A3). El contrato 0.4 sigue al manual; el backend debe
-        traducir a estos códigos.
+        **Diferencia con el backend:** su `docs/API.md` ya muestra `"01"`,
+        pero el código copia el valor de la base sin validarlo (`DISCREPANCIAS.md`, A3). El contrato
+        sigue al manual; el backend debe devolver estos códigos.
     EstadoObligacion:
       type: string
       enum: ['01', '02', '03', '04', '06', '07', '08', '10', '11', '12']
@@ -1718,11 +1784,13 @@ components:
         si cambiara hay que renumerar (registro tipo 3) o TransUnion lo toma como obligación nueva.
     NumeroIdentificacion:
       type: string
-      example: '1000000001'
+      example: '******0001'
       description: |
-        **Dato personal reservado.** Hoy el backend lo devuelve **completo**; el frontend lo muestra
-        enmascarado en pantalla y no lo registra completo en el log (diferencia Q del README: se
-        propone enmascararlo o restringirlo en el backend).
+        **Dato personal reservado.** Llega **enmascarado**: seis asteriscos y los últimos 4 dígitos
+        (`******0001`); con menos de 4 caracteres, todo en asteriscos, y sin valor, `****`.
+        Implementado en el backend. El frontend lo vuelve a
+        enmascarar en pantalla y no lo registra completo en el log. Falta decidir si algún rol puede
+        verlo completo (pendiente anotado en el backend).
     ObligacionCorte:
       type: object
       required: [numero_obligacion, nombre_titular, numero_identificacion, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, n_creditos]
@@ -1751,8 +1819,8 @@ components:
       description: Un corte en estado `ENVIADO`. El `id` es el del corte.
       properties:
         id: { type: integer, example: 1 }
-        fecha_corte: { type: string, format: date, example: '2026-09-30', description: "Hoy puede llegar como fecha-hora (diferencia V del README)." }
-        fecha_envio: { type: string, format: date, example: '2026-10-01', description: "Fecha registrada en `registrar-envio`. Hoy puede llegar como fecha-hora (diferencia V del README)." }
+        fecha_corte: { type: string, format: date, example: '2026-09-30' }
+        fecha_envio: { type: string, format: date, example: '2026-10-01', description: "Fecha registrada en `registrar-envio`." }
         total_registros: { type: integer, example: 150 }
         saldo_consolidado: { type: integer, example: 45000000, description: Suma del saldo del corte en COP. }
         grupo: { type: string, nullable: true, example: Grupo ficticio A, description: "Nombre del grupo de conceptos (solo el nombre, no un objeto). `null` si se usaron todos los conceptos reportables." }
@@ -1796,14 +1864,14 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/EstadoObligacion'
-          description: "Estado en el último corte donde aparece. `null` si nunca ha aparecido en un corte. Hoy el \"último corte\" puede ser un `BORRADOR` o `ANULADO` (diferencia Z del README)."
+          description: "Estado en el último corte no anulado donde aparece. `null` si nunca ha aparecido en un corte. Ese último corte todavía puede ser un `BORRADOR` (diferencia Z del README)."
         ultimo_valor_saldo: { type: integer, nullable: true, example: 500000, description: Saldo en COP en ese último corte. `null` si nunca ha aparecido en un corte. }
     DeudorLineaTiempo:
       type: object
       required: [fecha_corte, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, estado_corte]
       description: El estado de una obligación en un corte.
       properties:
-        fecha_corte: { type: string, format: date, example: '2026-09-30', description: "Hoy puede llegar como fecha-hora (diferencia V del README)." }
+        fecha_corte: { type: string, format: date, example: '2026-09-30' }
         estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
         edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
         dias_mora: { type: integer, minimum: 0, example: 0 }
