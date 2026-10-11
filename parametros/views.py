@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 
-from usuarios.permisos import EsAnalistaOAdministrador
+from usuarios.permisos import EsAdministrador, EsAnalistaOAdministrador
 from parametros import servicios
 from parametros.serializers import (
     ConceptoReportableSerializer,
@@ -13,7 +13,12 @@ from parametros.serializers import (
 
 
 class ConceptoViewSet(viewsets.ViewSet):
-    permission_classes = [EsAnalistaOAdministrador]
+    lookup_value_regex = r"\d+"
+
+    def get_permissions(self):
+        if self.action in ("create", "partial_update"):
+            return [EsAdministrador()]
+        return [EsAnalistaOAdministrador()]
 
     def list(self, request):
         param = request.query_params.get("activo")
@@ -37,9 +42,16 @@ class ConceptoViewSet(viewsets.ViewSet):
         )
 
     def partial_update(self, request, pk=None):
+        try:
+            pk_int = int(pk)
+        except ValueError:
+            return Response(
+                {"detail": "Concepto no encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         serializer = ConceptoActualizarSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        concepto = servicios.actualizar_concepto(pk, serializer.validated_data)
+        concepto = servicios.actualizar_concepto(pk_int, serializer.validated_data)
         if concepto is None:
             return Response(
                 {"detail": "Concepto no encontrado."},
@@ -49,14 +61,26 @@ class ConceptoViewSet(viewsets.ViewSet):
 
 
 class GrupoConceptoViewSet(viewsets.ViewSet):
-    permission_classes = [EsAnalistaOAdministrador]
+    lookup_value_regex = r"\d+"
+
+    def get_permissions(self):
+        if self.action in ("create", "partial_update", "destroy"):
+            return [EsAdministrador()]
+        return [EsAnalistaOAdministrador()]
 
     def list(self, request):
         grupos = servicios.listar_grupos()
         return Response(GrupoConceptoSerializer(grupos, many=True).data)
 
     def retrieve(self, request, pk=None):
-        grupo = servicios.obtener_grupo(pk)
+        try:
+            pk_int = int(pk)
+        except ValueError:
+            return Response(
+                {"detail": "Grupo no encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        grupo = servicios.obtener_grupo(pk_int)
         if grupo is None:
             return Response(
                 {"detail": "Grupo no encontrado."},
@@ -82,10 +106,17 @@ class GrupoConceptoViewSet(viewsets.ViewSet):
         return Response(GrupoConceptoSerializer(grupo).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):
+        try:
+            pk_int = int(pk)
+        except ValueError:
+            return Response(
+                {"detail": "Grupo no encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         serializer = GrupoConceptoActualizarSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            grupo = servicios.actualizar_grupo(pk, serializer.validated_data)
+            grupo = servicios.actualizar_grupo(pk_int, serializer.validated_data)
         except servicios.GrupoNoEncontrado:
             return Response(
                 {"detail": "Grupo no encontrado."},
@@ -105,7 +136,14 @@ class GrupoConceptoViewSet(viewsets.ViewSet):
 
     def destroy(self, request, pk=None):
         try:
-            servicios.eliminar_grupo(pk)
+            pk_int = int(pk)
+        except ValueError:
+            return Response(
+                {"detail": "Grupo no encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            servicios.eliminar_grupo(pk_int)
         except servicios.GrupoEnUso:
             return Response(
                 {"detail": "El grupo está asociado a un corte en estado BORRADOR."},

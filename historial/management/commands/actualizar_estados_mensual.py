@@ -1,7 +1,10 @@
 from datetime import date, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
+from django.db import transaction
+
+from config.bitacora import registrar_bitacora
+from config.formatos import hoy_bogota
 
 from cartera.servicios import (
     BorradorOtraFecha,
@@ -11,22 +14,6 @@ from cartera.servicios import (
     GrupoNoEncontrado,
     generar_corte,
 )
-
-
-def _registrar_bitacora(resultado):
-    grupo_nombre = resultado["grupo"]["nombre"] if resultado["grupo"] else "todos"
-    detalle = (
-        f"Obligaciones: {resultado['obligaciones']}, "
-        f"Saldo: {resultado['saldo_consolidado']}, "
-        f"Grupo: {grupo_nombre}"
-    )
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO NEXOVOLT.NV_BITACORA "
-            "(BITACORA_ID, USUARIO_ID, ACCION, ENTIDAD, ENTIDAD_ID, DETALLE) "
-            "VALUES (NEXOVOLT.SEQ_NV_BITACORA.NEXTVAL, NULL, :1, :2, :3, :4)",
-            ["ACTUALIZACION_MENSUAL", "NV_CORTE", str(resultado["id"]), detalle],
-        )
 
 
 class Command(BaseCommand):
@@ -66,8 +53,8 @@ class Command(BaseCommand):
                     f"Fecha inválida: '{fecha_corte_str}'. Use el formato YYYY-MM-DD."
                 )
         else:
-            hoy = date.today()
-            fecha_corte = date(hoy.year, hoy.month, 1) - timedelta(days=1)
+            hoy = hoy_bogota()
+            fecha_corte = hoy.replace(day=1) - timedelta(days=1)
 
         self.stdout.write(f"Fecha de corte : {fecha_corte}")
         self.stdout.write(
@@ -80,7 +67,13 @@ class Command(BaseCommand):
                 resultado = generar_corte(fecha_corte=fecha_corte, grupo_id=grupo_id)
 
                 if not simular:
-                    _registrar_bitacora(resultado)
+                    grupo_nombre = resultado["grupo"]["nombre"] if resultado["grupo"] else "todos"
+                    detalle = (
+                        f"Obligaciones: {resultado['obligaciones']}, "
+                        f"Saldo: {resultado['saldo_consolidado']}, "
+                        f"Grupo: {grupo_nombre}"
+                    )
+                    registrar_bitacora("ACTUALIZACION_MENSUAL", "NV_CORTE", resultado["id"], detalle)
 
                 if simular:
                     transaction.set_rollback(True)

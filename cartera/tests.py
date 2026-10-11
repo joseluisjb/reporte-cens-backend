@@ -3,7 +3,9 @@ from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from tests.ayudas import usuario_con_rol
 
 from cartera import servicios
 from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer
@@ -43,12 +45,6 @@ _RESUMEN = {
     "estado": "BORRADOR",
     "ejecutada_por": None,
 }
-
-
-def _usuario_analista():
-    user = MagicMock()
-    user.rol = "ANALISTA_CARTERA"
-    return user
 
 
 # ── Serializer GenerarCorteSerializer ─────────────────────────────────────────
@@ -107,7 +103,11 @@ def test_grupo_inexistente_lanza_grupo_no_encontrado():
 
 
 def test_grupo_inactivo_lanza_grupo_inactivo():
-    mock_conn, mock_cursor = _mock_conn(fetchone=("Grupo X", "N"))
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (None,),             # MAX(FECHA_CORTE) — sin enviados
+        ("Grupo X", "N"),    # _validar_grupo — nombre, activo
+    ]
     with patch("cartera.servicios.connection", mock_conn), \
          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         with pytest.raises(servicios.GrupoInactivo):
@@ -117,6 +117,7 @@ def test_grupo_inactivo_lanza_grupo_inactivo():
 def test_corte_misma_fecha_estado_fijo_lanza_excepcion():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
+        (None,),             # MAX(FECHA_CORTE) — sin enviados
         ("Grupo A", "S"),    # _validar_grupo — nombre y activo
         (7, "VALIDADO"),     # _verificar_corte_existente — corte con esa fecha
     ]
@@ -131,6 +132,7 @@ def test_borrador_otra_fecha_lanza_excepcion():
     mock_conn, mock_cursor = _mock_conn()
     otra_fecha = date(2026, 8, 31)
     mock_cursor.fetchone.side_effect = [
+        (None,),                     # MAX(FECHA_CORTE) — sin enviados
         None,                        # _verificar_corte_existente — sin corte esa fecha
         (3, otra_fecha),             # _verificar_corte_existente — borrador de otra fecha
     ]
@@ -154,6 +156,7 @@ def test_corte_insertado_antes_de_vistas():
     mock_conn.cursor.return_value.__exit__.return_value = False
 
     mock_cursor.fetchone.side_effect = [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
         None,               # _verificar_corte_existente — sin misma fecha
         None,               # _verificar_corte_existente — sin borrador otra fecha
         (1,),               # _persistir_corte — NEXTVAL (INSERT no llama fetchone)
@@ -191,6 +194,7 @@ def test_corte_insertado_antes_de_vistas():
 def test_reemplaza_borrador_misma_fecha():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
         (3, "BORRADOR"),    # _verificar_corte_existente — borrador existente
         (5, _FECHA_GEN),    # _finalizar_y_resumir — TOTAL, FECHA_GENERACION
         (0,),               # _finalizar_y_resumir — SUM VALOR_SALDO
@@ -218,6 +222,7 @@ def test_reemplaza_borrador_misma_fecha():
 def test_sin_grupo_conceptos_usados_son_todos_reportables():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
         None,               # _verificar_corte_existente — sin misma fecha
         None,               # _verificar_corte_existente — sin borrador
         (1,),               # _persistir_corte — NEXTVAL (INSERT no llama fetchone)
@@ -240,10 +245,11 @@ def test_sin_grupo_conceptos_usados_son_todos_reportables():
         params for sql, params in inserts
         if params and "INSERT" in sql and "NV_CORTE" in sql
     )
-    conceptos_usados = insert_corte_params[4]
+    # Orden tras añadir ahora_para_bd(): [corte_id, fecha_corte, fecha_gen, grupo_id, grupo_nombre, conceptos_usados]
+    conceptos_usados = insert_corte_params[5]
     assert conceptos_usados == "30,61,90"
-    assert insert_corte_params[2] is None   # grupo_id nulo
-    assert insert_corte_params[3] is None   # grupo_nombre nulo
+    assert insert_corte_params[3] is None   # grupo_id nulo
+    assert insert_corte_params[4] is None   # grupo_nombre nulo
 
 
 # ── Servicios — resumen ───────────────────────────────────────────────────────
@@ -251,6 +257,7 @@ def test_sin_grupo_conceptos_usados_son_todos_reportables():
 def test_resumen_estructura_correcta():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
         None, None,         # _verificar_corte_existente
         (1,),               # NEXTVAL (INSERT no llama fetchone)
         (3, _FECHA_GEN),    # TOTAL + FECHA_GEN
@@ -275,6 +282,7 @@ def test_resumen_estructura_correcta():
 def test_resumen_grupo_presente_cuando_se_usa_grupo():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
         ("Grupo A", "S"),   # _validar_grupo — nombre, activo
         None,               # _verificar_corte_existente — sin misma fecha
         None,               # _verificar_corte_existente — sin borrador
@@ -305,7 +313,7 @@ def test_post_201_genera_corte():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte", return_value=_RESUMEN):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 201
@@ -318,7 +326,7 @@ def test_post_400_fecha_futura():
         {"fecha_corte": str(_FECHA_FUTURA)},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.FechaInvalida("La fecha de corte no puede ser futura.")):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -332,7 +340,7 @@ def test_post_404_grupo_inexistente():
         {"fecha_corte": "2026-09-30", "grupo_id": 99},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.GrupoNoEncontrado):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -345,7 +353,7 @@ def test_post_409_grupo_inactivo():
         {"fecha_corte": "2026-09-30", "grupo_id": 5},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.GrupoInactivo):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -358,9 +366,9 @@ def test_post_409_borrador_otra_fecha():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
-               side_effect=servicios.BorradorOtraFecha(date(2026, 8, 31))):
+               side_effect=servicios.BorradorOtraFecha(date(2026, 8, 31), corte_id=3)):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 409
     assert "BORRADOR" in response.data["detail"]
@@ -372,7 +380,7 @@ def test_post_409_estado_fijo():
         {"fecha_corte": "2026-09-30"},
         format="json",
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.generar_corte",
                side_effect=servicios.CorteEnEstadoFijo):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
@@ -381,7 +389,7 @@ def test_post_409_estado_fijo():
 
 def test_get_list_200():
     request = factory.get("/api/extracciones/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.listar_cortes", return_value=[_RESUMEN]):
         response = ExtraccionViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
@@ -390,7 +398,7 @@ def test_get_list_200():
 
 def test_get_ultima_200():
     request = factory.get("/api/extracciones/ultima/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_ultimo_corte", return_value=_RESUMEN):
         response = ExtraccionViewSet.as_view({"get": "ultima"})(request)
     assert response.status_code == 200
@@ -399,7 +407,7 @@ def test_get_ultima_200():
 
 def test_get_ultima_204_sin_cortes():
     request = factory.get("/api/extracciones/ultima/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_ultimo_corte", return_value=None):
         response = ExtraccionViewSet.as_view({"get": "ultima"})(request)
     assert response.status_code == 204
@@ -407,7 +415,7 @@ def test_get_ultima_204_sin_cortes():
 
 def test_get_id_200():
     request = factory.get("/api/extracciones/1/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_corte", return_value=_RESUMEN):
         response = ExtraccionViewSet.as_view({"get": "retrieve"})(request, pk="1")
     assert response.status_code == 200
@@ -415,7 +423,7 @@ def test_get_id_200():
 
 def test_get_id_404():
     request = factory.get("/api/extracciones/999/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.obtener_corte", return_value=None):
         response = ExtraccionViewSet.as_view({"get": "retrieve"})(request, pk="999")
     assert response.status_code == 404
@@ -426,7 +434,7 @@ def test_get_obligaciones_200():
         "/api/extracciones/1/obligaciones/",
         {"limite": "10", "desplazamiento": "0"},
     )
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     payload = {
         "total": 2,
         "resultados": [
@@ -452,7 +460,7 @@ def test_get_obligaciones_200():
 
 def test_get_obligaciones_404():
     request = factory.get("/api/extracciones/999/obligaciones/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.listar_obligaciones",
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"get": "obligaciones"})(request, pk="999")
@@ -528,7 +536,7 @@ def test_registrar_envio_no_encontrado():
 
 
 def test_registrar_envio_no_es_validado():
-    mock_conn, mock_cursor = _mock_conn(fetchone=("BORRADOR",))
+    mock_conn, mock_cursor = _mock_conn(fetchone=("BORRADOR", date(2026, 9, 30)))
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.CorteNoEsValidado):
             servicios.registrar_envio(1)
@@ -537,6 +545,7 @@ def test_registrar_envio_no_es_validado():
 def test_registrar_envio_fecha_futura():
     from datetime import timedelta
     mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("VALIDADO", date(2026, 9, 30))
     fecha_futura = date.today() + timedelta(days=1)
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.FechaInvalida):
@@ -546,7 +555,7 @@ def test_registrar_envio_fecha_futura():
 def test_registrar_envio_usa_hoy_sin_fecha():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
-        ("VALIDADO",),
+        ("VALIDADO", date(2026, 9, 30)),
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0),
     ]
     with patch("cartera.servicios.connection", mock_conn):
@@ -559,7 +568,7 @@ def test_registrar_envio_usa_hoy_sin_fecha():
 
 def test_post_validar_200_sin_errores():
     request = factory.post("/api/extracciones/1/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     corte_mock = {**_RESUMEN, "estado": "VALIDADO"}
     resultado = {"corte": corte_mock, "advertencias": []}
     with patch("cartera.views.servicios.validar_corte", return_value=resultado):
@@ -571,7 +580,7 @@ def test_post_validar_200_sin_errores():
 
 def test_post_validar_409_correctivas():
     request = factory.post("/api/extracciones/1/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     errores = [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta identificación"}]
     with patch("cartera.views.servicios.validar_corte",
                side_effect=servicios.CorteConErroresCorrectivos(errores)):
@@ -582,7 +591,7 @@ def test_post_validar_409_correctivas():
 
 def test_post_validar_404():
     request = factory.post("/api/extracciones/999/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.validar_corte",
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="999")
@@ -591,7 +600,7 @@ def test_post_validar_404():
 
 def test_post_validar_409_no_borrador():
     request = factory.post("/api/extracciones/1/validar/")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.validar_corte",
                side_effect=servicios.CorteNoEsBorrador):
         response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="1")
@@ -600,7 +609,7 @@ def test_post_validar_409_no_borrador():
 
 def test_post_registrar_envio_200():
     request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     corte_mock = {**_RESUMEN, "estado": "ENVIADO"}
     with patch("cartera.views.servicios.registrar_envio", return_value=corte_mock):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
@@ -610,7 +619,7 @@ def test_post_registrar_envio_200():
 
 def test_post_registrar_envio_404():
     request = factory.post("/api/extracciones/999/registrar-envio/", {}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.registrar_envio",
                side_effect=servicios.CorteNoEncontrado):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="999")
@@ -619,7 +628,7 @@ def test_post_registrar_envio_404():
 
 def test_post_registrar_envio_409_no_validado():
     request = factory.post("/api/extracciones/1/registrar-envio/", {}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.registrar_envio",
                side_effect=servicios.CorteNoEsValidado):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
@@ -629,8 +638,253 @@ def test_post_registrar_envio_409_no_validado():
 def test_post_registrar_envio_400_fecha_futura():
     request = factory.post("/api/extracciones/1/registrar-envio/",
                            {"fecha_envio": "2099-01-01"}, format="json")
-    request.user = _usuario_analista()
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     with patch("cartera.views.servicios.registrar_envio",
                side_effect=servicios.FechaInvalida("fecha futura")):
         response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="1")
     assert response.status_code == 400
+
+
+def test_extraccion_sin_permiso_403():
+    request = factory.get("/api/extracciones/")
+    force_authenticate(request, user=usuario_con_rol("OTRO_ROL"))
+    response = ExtraccionViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 403
+
+
+# ── Corrección 1 — pk no numérico → 404 ──────────────────────────────────────
+
+def test_retrieve_pk_no_numerico_404():
+    request = factory.get("/api/extracciones/abc/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"get": "retrieve"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_validar_pk_no_numerico_404():
+    request = factory.post("/api/extracciones/abc/validar/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "validar"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_registrar_envio_pk_no_numerico_404():
+    request = factory.post("/api/extracciones/abc/registrar-envio/", {}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "registrar_envio"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+def test_obligaciones_pk_no_numerico_404():
+    request = factory.get("/api/extracciones/abc/obligaciones/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"get": "obligaciones"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+# ── Corrección 2 — NULL safety en valor_mora / valor_saldo ───────────────────
+
+def test_listar_obligaciones_valor_none():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (1,),   # corte existe
+        (1,),   # total
+    ]
+    mock_cursor.fetchall.return_value = [
+        ("OBL001", "Juan", "12345", "01", "00", 0, 0, None, None, 1),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        resultado = servicios.listar_obligaciones(1)
+    fila = resultado["resultados"][0]
+    assert fila["valor_mora"] is None
+    assert fila["valor_saldo"] is None
+
+
+# ── Corrección 6 — Mensajes de error personalizados ──────────────────────────
+
+def test_generar_corte_fecha_ausente_mensaje_personalizado():
+    request = factory.post("/api/extracciones/", {}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 400
+    assert response.data["fecha_corte"][0] == "Selecciona una fecha de corte."
+
+
+def test_generar_corte_fecha_invalida_mensaje_personalizado():
+    request = factory.post("/api/extracciones/", {"fecha_corte": "no-es-fecha"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 400
+    assert response.data["fecha_corte"][0] == "La fecha de corte no es válida."
+
+
+# ── C1 — Enmascaramiento de numero_identificacion ────────────────────────────
+
+def test_listar_obligaciones_enmascara_identificacion():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (1,),   # corte existe
+        (1,),   # total
+    ]
+    mock_cursor.fetchall.return_value = [
+        ("OBL001", "Juan", "12345678", "01", "00", 0, 0, 100, 500000, 1),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        resultado = servicios.listar_obligaciones(1)
+    assert resultado["resultados"][0]["numero_identificacion"] == "******5678"
+
+
+# ── C3 — validar_corte filtra por CORTE_ID ───────────────────────────────────
+
+def test_validar_corte_filtra_por_corte_id():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("BORRADOR",),
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),
+    ]
+    mock_cursor.fetchall.return_value = []
+    with patch("cartera.servicios.connection", mock_conn):
+        servicios.validar_corte(42)
+    sqls_con_params = [c for c in mock_cursor.execute.call_args_list if len(c[0]) > 1]
+    validacion_calls = [c for c in sqls_con_params if "V_VALIDACION_CORTE" in c[0][0]]
+    assert validacion_calls
+    assert validacion_calls[0][0][1] == [42]
+
+
+# ── C4 — eliminar_borrador ────────────────────────────────────────────────────
+
+def test_eliminar_borrador_ejecuta_deletes():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR", date(2026, 9, 30), "Grupo A")
+    sqls = []
+    mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append(sql)
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora") as mock_reg:
+        servicios.eliminar_borrador(7)
+    assert any("DELETE" in s and "NV_REPORTE_DETALLE" in s for s in sqls)
+    assert any("DELETE" in s and "NV_INCONSISTENCIA" in s for s in sqls)
+    assert any("DELETE" in s and "NV_CORTE" in s for s in sqls)
+    mock_reg.assert_called_once_with(
+        "ELIMINACION_BORRADOR", "NV_CORTE", 7,
+        "Fecha: 2026-09-30, Grupo: Grupo A",
+    )
+
+
+def test_eliminar_borrador_no_encontrado():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = None
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.CorteNoEncontrado):
+            servicios.eliminar_borrador(99)
+
+
+def test_eliminar_borrador_no_es_borrador():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("VALIDADO", date(2026, 9, 30), None)
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.CorteNoEsBorrador):
+            servicios.eliminar_borrador(1)
+
+
+def test_destroy_204():
+    request = factory.delete("/api/extracciones/1/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.eliminar_borrador"):
+        response = ExtraccionViewSet.as_view({"delete": "destroy"})(request, pk="1")
+    assert response.status_code == 204
+
+
+def test_destroy_404_no_existe():
+    request = factory.delete("/api/extracciones/99/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.eliminar_borrador",
+               side_effect=servicios.CorteNoEncontrado):
+        response = ExtraccionViewSet.as_view({"delete": "destroy"})(request, pk="99")
+    assert response.status_code == 404
+
+
+def test_destroy_409_no_es_borrador():
+    request = factory.delete("/api/extracciones/1/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.eliminar_borrador",
+               side_effect=servicios.CorteNoEsBorrador):
+        response = ExtraccionViewSet.as_view({"delete": "destroy"})(request, pk="1")
+    assert response.status_code == 409
+    assert "BORRADOR" in response.data["detail"]
+
+
+def test_destroy_pk_no_numerico_404():
+    request = factory.delete("/api/extracciones/abc/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ExtraccionViewSet.as_view({"delete": "destroy"})(request, pk="abc")
+    assert response.status_code == 404
+
+
+# ── C5 — fecha posterior al último enviado ───────────────────────────────────
+
+def test_fecha_igual_a_ultimo_enviado_lanza_excepcion():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = (_FECHA_PASADA,)
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.FechaAnteriorAlUltimoEnviado):
+            servicios.generar_corte(fecha_corte=_FECHA_PASADA)
+
+
+def test_fecha_anterior_a_ultimo_enviado_lanza_excepcion():
+    mock_conn, mock_cursor = _mock_conn()
+    fecha_mas_reciente = date(2026, 10, 31)
+    mock_cursor.fetchone.return_value = (fecha_mas_reciente,)
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.FechaAnteriorAlUltimoEnviado):
+            servicios.generar_corte(fecha_corte=_FECHA_PASADA)
+
+
+def test_sin_cortes_enviados_no_falla():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
+        None,               # _verificar_corte_existente — sin misma fecha
+        None,               # _verificar_corte_existente — sin borrador
+        (1,),               # NEXTVAL
+        (0, _FECHA_GEN),    # TOTAL + FECHA_GEN
+        (0,),               # SUM
+    ]
+    mock_cursor.fetchall.side_effect = [[(30,)], []]
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        resumen = servicios.generar_corte(fecha_corte=_FECHA_PASADA)
+    assert resumen["estado"] == "BORRADOR"
+
+
+def test_generar_corte_409_fecha_anterior_enviado():
+    request = factory.post("/api/extracciones/", {"fecha_corte": "2026-09-30"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.generar_corte",
+               side_effect=servicios.FechaAnteriorAlUltimoEnviado):
+        response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 409
+    assert "último corte enviado" in response.data["detail"]
+
+
+# ── C6 — registrar_envio: existencia primero + fecha >= fecha_corte ──────────
+
+def test_registrar_envio_404_sin_corte_antes_que_fecha():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = None
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteNoEncontrado):
+            servicios.registrar_envio(99, fecha_envio=date(2099, 1, 1))
+
+
+def test_registrar_envio_fecha_anterior_a_corte_400():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("VALIDADO", date(2026, 9, 30))
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.FechaInvalida) as exc_info:
+            servicios.registrar_envio(1, fecha_envio=date(2026, 9, 1))
+    assert "anterior a la fecha de corte" in str(exc_info.value)

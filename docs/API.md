@@ -21,7 +21,7 @@ Error simple:
 {"detail": "Mensaje de error."}
 ```
 
-Error con lista (solo `/validar/` y `/registrar-envio/`):
+Error con lista (solo `/validar/`):
 
 ```json
 {"detail": "El corte tiene errores correctivos que deben resolverse.", "errores": [{"regla": "SIN_IDENTIFICACION", "mensaje": "Falta el tipo o el número de identificación"}]}
@@ -37,7 +37,7 @@ Error de validación de campo (DRF estándar):
 
 - Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
 - `ejecutada_por` siempre es `null` hasta RF25.
-- No hay paginación automática en los listados de cortes ni deudores (máximo 50 en deudores, sin límite en cortes).
+- No hay paginación automática en el listado de cortes (sin límite). El endpoint de deudores acepta `limite` y `desplazamiento` (defecto 20/0, máximo 100).
 
 ---
 
@@ -75,7 +75,7 @@ Lista conceptos de energía. Filtro opcional: `?activo=true|false`.
 
 Crea un concepto.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo**
 
@@ -99,7 +99,7 @@ Crea un concepto.
 
 Actualiza `descripcion`, `observacion` y/o `activo`. Todos los campos son opcionales.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo**
 
@@ -157,7 +157,7 @@ Detalle de un grupo.
 
 Crea un grupo.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo**
 
@@ -176,7 +176,7 @@ Crea un grupo.
 
 Actualiza nombre, activo y/o lista de conceptos. `conceptos` reemplaza la lista completa.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Cuerpo** (todos los campos son opcionales)
 
@@ -196,7 +196,7 @@ Actualiza nombre, activo y/o lista de conceptos. `conceptos` reemplaza la lista 
 
 Elimina el grupo.
 
-**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+**Rol requerido**: `ADMINISTRADOR`
 
 **Respuesta 204**: sin cuerpo.
 
@@ -229,7 +229,7 @@ Genera un corte de cartera.
 {
   "id": 1,
   "fecha_corte": "2026-09-30",
-  "fecha_ejecucion": "2026-10-10T12:00:00",
+  "fecha_ejecucion": "2026-10-10T12:00:00-05:00",
   "grupo": {"id": 1, "nombre": "Grupo A"},
   "obligaciones": 150,
   "saldo_consolidado": 45000000,
@@ -244,7 +244,7 @@ Genera un corte de cartera.
 
 - `400 Bad Request` — `fecha_corte` ausente o futura
 - `404 Not Found` — grupo no encontrado
-- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha
+- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha (mensaje incluye `DELETE /api/extracciones/{id}/` para eliminarlo); `fecha_corte` no es posterior a la del último corte enviado
 
 #### GET /api/extracciones/
 
@@ -276,6 +276,19 @@ Detalle de un corte.
 
 - `404 Not Found` — corte no encontrado
 
+#### DELETE /api/extracciones/{id}/
+
+Elimina un corte en estado BORRADOR. Borra en cascada sus obligaciones e inconsistencias y registra la eliminación en `NV_BITACORA`.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `404 Not Found` — corte no encontrado
+- `409 Conflict` — `{"detail": "Solo se puede eliminar un corte en estado BORRADOR."}`
+
 #### GET /api/extracciones/{id}/obligaciones/
 
 Obligaciones del corte con paginación.
@@ -298,7 +311,7 @@ Obligaciones del corte con paginación.
     {
       "numero_obligacion": "OBL0001",
       "nombre_titular": "JUAN PÉREZ",
-      "numero_identificacion": "12345678",
+      "numero_identificacion": "******5678",
       "estado_tu": "01",
       "edad_mora": "00",
       "dias_mora": 0,
@@ -310,6 +323,8 @@ Obligaciones del corte con paginación.
   ]
 }
 ```
+
+Nota: `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visibles, prefijados con `******`). Identificaciones con menos de 4 dígitos se muestran como asteriscos completos.
 
 **Errores**
 
@@ -334,7 +349,7 @@ Si hay filas con `SEVERIDAD='CORRECTIVA'` en `V_VALIDACION_CORTE`, responde `409
 {
   "id": 1,
   "fecha_corte": "2026-09-30",
-  "fecha_ejecucion": "2026-10-10T12:00:00",
+  "fecha_ejecucion": "2026-10-10T12:00:00-05:00",
   "grupo": null,
   "obligaciones": 150,
   "saldo_consolidado": 45000000,
@@ -374,13 +389,13 @@ Registra el envío a TransUnion y pasa el corte a ENVIADO. El archivo se carga m
 {"fecha_envio": "2026-10-01"}
 ```
 
-`fecha_envio` no puede ser futura. Si no se envía, se usa la fecha de hoy.
+`fecha_envio` no puede ser futura ni anterior a `fecha_corte`. Si no se envía, se usa la fecha de hoy. La existencia del corte se verifica antes de aplicar cualquier validación de fecha.
 
-**Respuesta 200**: objeto con la misma estructura que POST /extracciones/ con `"estado": "ENVIADO"`.
+**Respuesta 200**: objeto con la misma estructura que POST /extracciones/ con `"estado": "ENVIADO"`. No incluye lista `errores`.
 
 **Errores**
 
-- `400 Bad Request` — `fecha_envio` futura
+- `400 Bad Request` — `fecha_envio` futura; o `fecha_envio` anterior a `fecha_corte`
 - `404 Not Found` — corte no encontrado
 - `409 Conflict` — corte no está en VALIDADO
 
@@ -438,8 +453,8 @@ Detalle de obligaciones de un reporte enviado con paginación.
     {
       "numero_obligacion": "OBL0001",
       "nombre_titular": "JUAN PÉREZ",
-      "numero_identificacion": "12345678",
-      "tipo_id_tu": "CC",
+      "numero_identificacion": "******5678",
+      "tipo_id_tu": "01",
       "tipo_cartera": 2,
       "estado_tu": "01",
       "edad_mora": "00",
@@ -458,6 +473,8 @@ Detalle de obligaciones de un reporte enviado con paginación.
 }
 ```
 
+Notas de campo: `tipo_id_tu` código de 2 caracteres (Tabla 4a SSR, e.g. `"01"`). `estado_tu` código de 2 caracteres (Tabla 4b SSR, e.g. `"01"`). `edad_mora` código de 2 caracteres `"00"`–`"14"` (Tabla SSR). `valor_mora` y `valor_saldo` pueden ser `null`. `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visibles, prefijados con `******`).
+
 **Errores**
 
 - `404 Not Found` — reporte no encontrado o no está en estado ENVIADO
@@ -468,38 +485,43 @@ Detalle de obligaciones de un reporte enviado con paginación.
 
 #### GET /api/historial/deudores/
 
-Busca obligaciones. Requiere al menos uno de: `?cliente_id=` o `?numero_obligacion=`. Devuelve máximo 50 resultados.
+Busca obligaciones con paginación. Requiere al menos uno de: `?cliente_id=` o `?numero_obligacion=`.
 
 **Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
 
 **Parámetros query**
 
-| Parámetro | Tipo | Descripción |
-|---|---|---|
-| `cliente_id` | entero | ID del cliente |
-| `numero_obligacion` | texto | Número de obligación TU |
+| Parámetro | Tipo | Defecto | Descripción |
+|---|---|---|---|
+| `cliente_id` | entero | | ID del cliente |
+| `numero_obligacion` | texto | | Número de obligación TU |
+| `limite` | entero | 20 | Máximo de filas (tope 100) |
+| `desplazamiento` | entero | 0 | Filas a saltarse |
 
 **Respuesta 200**
 
 ```json
-[
-  {
-    "obligacion_id": 1,
-    "numero_obligacion": "OBL0001",
-    "cliente_id": 900001,
-    "numero_proceso": 1001,
-    "fecha_inicio": "2025-01-01",
-    "ultimo_estado_tu": "01",
-    "ultimo_valor_saldo": 500000
-  }
-]
+{
+  "total": 1,
+  "resultados": [
+    {
+      "obligacion_id": 1,
+      "numero_obligacion": "OBL0001",
+      "cliente_id": 900001,
+      "numero_proceso": 1001,
+      "fecha_inicio": "2025-01-01",
+      "ultimo_estado_tu": "01",
+      "ultimo_valor_saldo": 500000
+    }
+  ]
+}
 ```
 
-`ultimo_estado_tu` y `ultimo_valor_saldo` son `null` si la obligación no tiene reportes aún.
+`ultimo_estado_tu` y `ultimo_valor_saldo` son `null` si la obligación no tiene reportes aún (excluye cortes ANULADO).
 
 **Errores**
 
-- `400 Bad Request` — ningún parámetro proporcionado; `cliente_id` no es entero
+- `400 Bad Request` — ningún parámetro proporcionado; `cliente_id` no es entero; `limite`/`desplazamiento` inválidos
 
 #### GET /api/historial/deudores/{id}/
 

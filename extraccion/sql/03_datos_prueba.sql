@@ -3,16 +3,16 @@
    Es seguro repetirlo? NO: INSERT fallara si los CLIENTE_ID ya existen
 
    Casos cubiertos:
-     900001  ESTADO='A', concepto 1 REPORTABLE='S', saldo 50000  -> aparece en V_DEUDOR_VIGENTE
-     900002  ESTADO='A', concepto 2 REPORTABLE='N',  saldo 30000  -> NO aparece (concepto no es energia)
-     900003  ESTADO='F', concepto 1 REPORTABLE='S', saldo 20000  -> NO aparece (estado != 'A')
-     900004  ESTADO='A', concepto 1 REPORTABLE='S', saldo 0      -> NO aparece (saldo = 0) */
+     900001  ESTADO='A', concepto 30 REPORTABLE='S', saldo 50000  -> aparece en V_DEUDOR_VIGENTE
+     900002  ESTADO='A', concepto 61 REPORTABLE='N',  saldo 30000  -> NO aparece (concepto no es energia)
+     900003  ESTADO='F', concepto 30 REPORTABLE='S', saldo 20000  -> NO aparece (estado != 'A')
+     900004  ESTADO='A', concepto 30 REPORTABLE='S', saldo 0      -> NO aparece (saldo = 0) */
 
 
-/* 1. Activar concepto 1 como reportable */
+/* 1. Activar concepto 30 como reportable */
 UPDATE NEXOVOLT.NV_CONCEPTO_REPORTABLE
    SET REPORTABLE = 'S'
- WHERE CODIGO_CONCEPTO = 1;
+ WHERE CODIGO_CONCEPTO = 30;
 
 
 /* 2. Clientes ficticios
@@ -138,7 +138,7 @@ INSERT INTO SAC.CREDITOS (
   900001, 1, 9000001, 'A',
   100000, 0, 0, 1, 1, 0, 0,
   1, 50000, 0,
-  1, 1, SYSDATE,
+  1, 30, SYSDATE,
   1001001, SYSDATE
 );
 
@@ -154,7 +154,7 @@ INSERT INTO SAC.CREDITOS (
   900002, 1, 9000002, 'A',
   100000, 0, 0, 1, 1, 0, 0,
   1, 30000, 0,
-  1, 2, SYSDATE,
+  1, 61, SYSDATE,
   1001002, SYSDATE
 );
 
@@ -170,7 +170,7 @@ INSERT INTO SAC.CREDITOS (
   900003, 1, 9000003, 'F',
   100000, 0, 0, 1, 1, 0, 0,
   1, 20000, 0,
-  1, 1, SYSDATE,
+  1, 30, SYSDATE,
   1001003, SYSDATE
 );
 
@@ -186,7 +186,7 @@ INSERT INTO SAC.CREDITOS (
   900004, 1, 9000004, 'A',
   100000, 0, 0, 1, 1, 0, 0,
   1, 0, 0,
-  1, 1, SYSDATE,
+  1, 30, SYSDATE,
   1001004, SYSDATE
 );
 
@@ -198,5 +198,5 @@ COMMIT;
    ============================================================
    DELETE FROM SAC.CREDITOS  WHERE CLIENTE_ID BETWEEN 900001 AND 900004;
    DELETE FROM SAC.CLIENTES  WHERE CLIENTE_ID BETWEEN 900001 AND 900004;
-   UPDATE NEXOVOLT.NV_CONCEPTO_REPORTABLE SET REPORTABLE = 'N' WHERE CODIGO_CONCEPTO = 1;
+   UPDATE NEXOVOLT.NV_CONCEPTO_REPORTABLE SET REPORTABLE = 'N' WHERE CODIGO_CONCEPTO = 30;
    COMMIT; */
