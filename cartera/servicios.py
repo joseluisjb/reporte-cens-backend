@@ -1,6 +1,7 @@
 from django.db import connection, transaction
 
-from config.formatos import ahora_bogota, enmascarar_identificacion, fecha_str, hoy_bogota
+from config.bitacora import registrar_bitacora
+from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota
 
 
 # ── Excepciones ───────────────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "(CORTE_ID, FECHA_CORTE, TIPO_REPORTE, ESTADO, FECHA_GENERACION, "
                 "USUARIO_ID, TOTAL_REGISTROS, GRUPO_ID, GRUPO_NOMBRE, CONCEPTOS_USADOS) "
                 "VALUES (:1, :2, '01', 'BORRADOR', :3, NULL, 0, :4, :5, :6)",
-                [corte_id, fecha_corte, ahora_bogota(), grupo_id, grupo_nombre, conceptos_usados],
+                [corte_id, fecha_corte, ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados],
             )
         return corte_id
     else:
@@ -142,7 +143,7 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "SET FECHA_GENERACION = :1, TOTAL_REGISTROS = 0, "
                 "GRUPO_ID = :2, GRUPO_NOMBRE = :3, CONCEPTOS_USADOS = :4 "
                 "WHERE CORTE_ID = :5",
-                [ahora_bogota(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
+                [ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
             )
         return corte_id_existente
 
@@ -466,9 +467,4 @@ def eliminar_borrador(corte_id):
             cursor.execute(
                 "DELETE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
             )
-            cursor.execute(
-                "INSERT INTO NEXOVOLT.NV_BITACORA "
-                "(BITACORA_ID, USUARIO_ID, ACCION, ENTIDAD, ENTIDAD_ID, DETALLE) "
-                "VALUES (NEXOVOLT.SEQ_NV_BITACORA.NEXTVAL, NULL, :1, :2, :3, :4)",
-                ["ELIMINACION_BORRADOR", "NV_CORTE", str(corte_id), detalle],
-            )
+        registrar_bitacora("ELIMINACION_BORRADOR", "NV_CORTE", corte_id, detalle)

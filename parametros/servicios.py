@@ -3,7 +3,7 @@ from collections import defaultdict
 from django.db import connection, IntegrityError
 from django.db import transaction
 
-from config.formatos import ahora_bogota
+from config.formatos import ahora_para_bd
 
 
 # ── Excepciones ───────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ def crear_grupo(datos):
                     "INSERT INTO NV_GRUPO_CONCEPTO "
                     "(GRUPO_ID, NOMBRE, ACTIVO, FECHA_CREACION) "
                     "VALUES (:1, :2, 'S', :3)",
-                    [grupo_id, datos["nombre"], ahora_bogota()],
+                    [grupo_id, datos["nombre"], ahora_para_bd()],
                 )
         except IntegrityError:
             raise GrupoYaExiste()

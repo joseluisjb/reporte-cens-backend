@@ -245,7 +245,7 @@ def test_sin_grupo_conceptos_usados_son_todos_reportables():
         params for sql, params in inserts
         if params and "INSERT" in sql and "NV_CORTE" in sql
     )
-    # Orden tras añadir ahora_bogota(): [corte_id, fecha_corte, fecha_gen, grupo_id, grupo_nombre, conceptos_usados]
+    # Orden tras añadir ahora_para_bd(): [corte_id, fecha_corte, fecha_gen, grupo_id, grupo_nombre, conceptos_usados]
     conceptos_usados = insert_corte_params[5]
     assert conceptos_usados == "30,61,90"
     assert insert_corte_params[3] is None   # grupo_id nulo
@@ -759,12 +759,16 @@ def test_eliminar_borrador_ejecuta_deletes():
     sqls = []
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append(sql)
     with patch("cartera.servicios.connection", mock_conn), \
-         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora") as mock_reg:
         servicios.eliminar_borrador(7)
     assert any("DELETE" in s and "NV_REPORTE_DETALLE" in s for s in sqls)
     assert any("DELETE" in s and "NV_INCONSISTENCIA" in s for s in sqls)
     assert any("DELETE" in s and "NV_CORTE" in s for s in sqls)
-    assert any("NV_BITACORA" in s for s in sqls)
+    mock_reg.assert_called_once_with(
+        "ELIMINACION_BORRADOR", "NV_CORTE", 7,
+        "Fecha: 2026-09-30, Grupo: Grupo A",
+    )
 
 
 def test_eliminar_borrador_no_encontrado():

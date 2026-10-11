@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from config.formatos import timestamp_str
+from config.formatos import fecha_str
 
 
 # ── Conceptos ────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ class GrupoConceptoSerializer(serializers.Serializer):
             "nombre":    instance["nombre"],
             "activo":    instance["activo"] == "S",
             "conceptos": instance.get("conceptos", []),
-            "creado":    timestamp_str(instance["fecha_creacion"]),
+            "creado":    fecha_str(instance["fecha_creacion"]),
         }
 
 

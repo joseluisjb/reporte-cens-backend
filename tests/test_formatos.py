@@ -64,3 +64,9 @@ def test_enmascarar_none():
 
 def test_enmascarar_vacio():
     assert enmascarar_identificacion("") == "****"
+
+
+def test_ahora_para_bd_sin_zona():
+    from config.formatos import ahora_para_bd
+    resultado = ahora_para_bd()
+    assert resultado.tzinfo is None

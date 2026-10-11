@@ -286,7 +286,7 @@ def test_grupo_repr_activo_s_es_true():
     data = GrupoConceptoSerializer(_GRUPO_DICT).data
     assert data["activo"] is True
     assert data["id"] == 1
-    assert data["creado"] == "2026-10-10T00:00:00-05:00"
+    assert data["creado"] == "2026-10-10"
     assert data["conceptos"][0]["codigo"] == 30
 
 

@@ -37,6 +37,11 @@ def ahora_bogota():
     return dj_tz.localtime(dj_tz.now())
 
 
+def ahora_para_bd():
+    """Datetime naive local Bogotá — para columnas DATE de Oracle."""
+    return ahora_bogota().replace(tzinfo=None)
+
+
 def hoy_bogota():
     """Fecha actual en Bogotá — reemplaza date.today()."""
     return dj_tz.localdate()

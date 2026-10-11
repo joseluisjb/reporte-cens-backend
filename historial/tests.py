@@ -320,9 +320,8 @@ _CMD = "historial.management.commands.actualizar_estados_mensual"
 
 
 def test_comando_sin_argumentos():
-    mock_conn, mock_cursor = _mock_conn()
     with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK) as mock_gc, \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora"), \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         out = StringIO()
         call_command("actualizar_estados_mensual", stdout=out)
@@ -338,10 +337,9 @@ def test_comando_sin_argumentos():
 
 
 def test_comando_con_fecha_y_grupo():
-    mock_conn, mock_cursor = _mock_conn()
     resultado = {**_RESULTADO_MOCK, "grupo": {"id": 1, "nombre": "Grupo A"}}
     with patch(f"{_CMD}.generar_corte", return_value=resultado) as mock_gc, \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora"), \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         out = StringIO()
         call_command("actualizar_estados_mensual",
@@ -352,9 +350,8 @@ def test_comando_con_fecha_y_grupo():
 
 
 def test_comando_simular():
-    mock_conn, mock_cursor = _mock_conn()
     with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK), \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora") as mock_reg, \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic), \
          patch(f"{_CMD}.transaction.set_rollback") as mock_rollback:
         out = StringIO()
@@ -362,8 +359,8 @@ def test_comando_simular():
     salida = out.getvalue()
     assert "SIMULACIÓN" in salida
     mock_rollback.assert_called_once_with(True)
-    # La bitácora no debe haberse insertado
-    mock_cursor.execute.assert_not_called()
+    # La bitácora no debe haberse insertada en simulación
+    mock_reg.assert_not_called()
 
 
 def test_comando_fecha_invalida_formato():

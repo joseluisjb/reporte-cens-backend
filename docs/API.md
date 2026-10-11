@@ -136,7 +136,7 @@ Lista todos los grupos con sus conceptos.
     "nombre": "Grupo A",
     "activo": true,
     "conceptos": [{"codigo": 30, "descripcion": "Energía activa"}],
-    "creado": "2026-10-10T00:00:00-05:00"
+    "creado": "2026-10-10"
   }
 ]
 ```
