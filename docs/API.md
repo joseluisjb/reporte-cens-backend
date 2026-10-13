@@ -157,6 +157,111 @@ Cambia la contraseña propia y pone `must_change_password` en `false`. La sesió
 
 ---
 
+### Gestión de usuarios (RF28)
+
+Solo accesible para `ADMINISTRADOR`. Un `ANALISTA_CARTERA` recibe `403`. Un usuario con `must_change_password = true` recibe `403` con `code: "password_change_required"` antes de llegar a cualquier endpoint de esta sección.
+
+El objeto `user` tiene los mismos campos que en autenticación: `{id, nombre, email, rol, is_active, last_login, must_change_password}`.
+
+#### GET /api/users/
+
+Lista todos los usuarios (activos e inactivos).
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Respuesta 200** — arreglo plano:
+
+```json
+[
+  {
+    "id": 1,
+    "nombre": "Admin NexoVolt",
+    "email": "admin@nexovolt.co",
+    "rol": "ADMINISTRADOR",
+    "is_active": true,
+    "last_login": "2026-10-13T10:00:00-05:00",
+    "must_change_password": false
+  }
+]
+```
+
+#### POST /api/users/
+
+Crea un usuario. Genera una contraseña temporal aleatoria (12 caracteres, con mayúscula, minúscula, número y símbolo), la guarda con hash Argon2, marca `must_change_password = true` y la **envía por correo** al nuevo usuario. La contraseña nunca aparece en la respuesta ni en los logs.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Cuerpo**
+
+```json
+{"nombre": "Carlos Ruiz", "email": "cruiz@nexovolt.co", "rol": "ANALISTA_CARTERA"}
+```
+
+`rol` debe ser `ANALISTA_CARTERA` o `ADMINISTRADOR`.
+
+**Respuesta 201**
+
+```json
+{
+  "user": {
+    "id": 3,
+    "nombre": "Carlos Ruiz",
+    "email": "cruiz@nexovolt.co",
+    "rol": "ANALISTA_CARTERA",
+    "is_active": true,
+    "last_login": null,
+    "must_change_password": true
+  },
+  "temporary_password": null
+}
+```
+
+**Errores**
+
+- `400 Bad Request` — campos faltantes, formato de correo inválido, rol inválido (error por campo)
+- `400 Bad Request` — `{"email": ["Ya existe un usuario con ese correo."]}` — correo duplicado
+- `401 Unauthorized` — sin sesión
+- `403 Forbidden` — rol insuficiente o contraseña temporal pendiente
+
+#### GET /api/users/{id}/
+
+Detalle de un usuario.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Respuesta 200**: mismo objeto que un elemento del listado.
+
+**Errores**
+
+- `404 Not Found` — usuario no encontrado
+
+#### PATCH /api/users/{id}/
+
+Edita `nombre`, `email`, `rol` y/o `is_active`. Todos los campos son opcionales. Sirve para editar datos y para activar o desactivar; no hay DELETE.
+
+Un administrador no puede desactivarse a sí mismo ni cambiar su propio rol a `ANALISTA_CARTERA`.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Cuerpo** (todos los campos son opcionales)
+
+```json
+{"nombre": "Nuevo nombre", "email": "nuevo@nexovolt.co", "rol": "ADMINISTRADOR", "is_active": false}
+```
+
+**Respuesta 200**: objeto `user` directo (sin envoltura).
+
+**Errores**
+
+- `400 Bad Request` — `{"is_active": ["No puedes desactivar tu propio usuario."]}` — autodesactivación
+- `400 Bad Request` — `{"rol": ["No puedes cambiar tu propio rol."]}` — cambio de rol propio
+- `400 Bad Request` — `{"email": ["Ya existe un usuario con ese correo."]}` — correo duplicado
+- `404 Not Found` — usuario no encontrado
+- `401 Unauthorized` — sin sesión
+- `403 Forbidden` — rol insuficiente o contraseña temporal pendiente
+
+---
+
 ### Conceptos de energía
 
 #### GET /api/conceptos/

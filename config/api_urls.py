@@ -9,6 +9,8 @@ from usuarios.views import (
     CambioContrasenaView,
     CierreSesionView,
     CsrfView,
+    GestionUsuarioDetalleView,
+    GestionUsuariosView,
     InicioSesionView,
     UsuarioActualView,
 )
@@ -27,4 +29,6 @@ urlpatterns = [
     path("auth/logout/", CierreSesionView.as_view(), name="auth-logout"),
     path("auth/me/", UsuarioActualView.as_view(), name="auth-me"),
     path("auth/change-password/", CambioContrasenaView.as_view(), name="auth-change-password"),
+    path("users/", GestionUsuariosView.as_view(), name="users-list"),
+    path("users/<int:pk>/", GestionUsuarioDetalleView.as_view(), name="users-detail"),
 ] + router.urls
