@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "usuarios.middleware.CambioContrasenaObligatorio",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -99,20 +100,50 @@ DATABASES = {
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
+AUTH_USER_MODEL = "usuarios.Usuario"
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.AllowAllUsersModelBackend",
+]
+
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "OPTIONS": {"user_attributes": ("email", "nombre")},
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+        "NAME": "usuarios.validadores.ValidadorMayuscula",
+    },
+    {
+        "NAME": "usuarios.validadores.ValidadorNumero",
     },
 ]
+
+SESSION_COOKIE_AGE = int(float(os.getenv("DJANGO_SESSION_MINUTES", "10")) * 60)
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_FAILURE_VIEW = "usuarios.errores.csrf_fallido"
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    "DJANGO_CSRF_TRUSTED_ORIGINS", "http://localhost:5173"
+).split(",")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 # Internationalization
@@ -138,6 +169,13 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "usuarios.autenticacion.AutenticacionSesion",
+    ],
+    "EXCEPTION_HANDLER": "usuarios.errores.manejador_errores",
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.getenv("DJANGO_LOGIN_RATE", "10/min"),
+    },
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],

@@ -6,19 +6,29 @@
 |---|---|
 | URL base | `/api/` |
 | Formato | JSON |
-| Autenticación | Pendiente (RF25) |
+| Autenticación | Sesión por cookie de Django (`sessionid`) y token CSRF (RF25, RF26) |
 | Roles disponibles | `ANALISTA_CARTERA`, `ADMINISTRADOR` |
 
-## Autenticación — estado actual
+## Autenticación
 
-RF25 no está implementado. Todos los endpoints de negocio requieren el permiso `EsAnalistaOAdministrador` (rol `ANALISTA_CARTERA` o `ADMINISTRADOR` en `request.user.rol`). Hasta que RF25 esté disponible no hay login, tokens ni cabeceras de sesión.
+La sesión viaja en la cookie `sessionid` (HttpOnly, `SameSite=Lax`, `Secure` fuera de desarrollo). No hay tokens ni cabeceras de autorización.
+
+- **CSRF.** Todo `POST`, `PATCH`, `PUT` o `DELETE` debe enviar la cabecera `X-CSRFToken` con el valor de la cookie `csrftoken`, que entrega `GET /api/auth/csrf/`. Si falta o no coincide: `403` con `code: "csrf_failed"`.
+- **Inactividad (RF26).** La sesión vence a los 10 minutos sin peticiones (`DJANGO_SESSION_MINUTES`). Cada petición la renueva. Al vencer, cualquier endpoint responde `401`.
+- **Sin sesión.** `401` con `{"detail": "Tu sesión venció. Inicia sesión de nuevo.", "code": "not_authenticated"}`.
+- **Roles (RF27).** Un rol sin permiso recibe `403` con `{"detail": "No tienes permiso para realizar esta acción.", "code": "permission_denied"}`.
+- **Contraseña temporal.** Mientras `must_change_password` sea `true`, todo `/api/` fuera de `/api/auth/` y `/api/salud/` responde `403` con `code: "password_change_required"`.
+- **Usuario desactivado.** Pierde la sesión abierta en la siguiente petición (`401`).
+- **Contraseñas.** Se guardan con hash Argon2. Reglas: mínimo 8 caracteres, al menos una mayúscula y al menos un número; no puede ser una contraseña común ni parecerse al correo o al nombre.
+
+El primer Administrador se crea con `python manage.py createsuperuser` (pide correo, nombre y contraseña).
 
 ## Formato de errores
 
-Error simple:
+Error simple (`code` es opcional e identifica el error de forma estable):
 
 ```json
-{"detail": "Mensaje de error."}
+{"detail": "Mensaje de error.", "code": "permission_denied"}
 ```
 
 Error con lista (solo `/validar/`):
@@ -36,7 +46,7 @@ Error de validación de campo (DRF estándar):
 ## Pendiente / Provisional
 
 - Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
-- `ejecutada_por` siempre es `null` hasta RF25.
+- `ejecutada_por` sigue en `null`: `NV_CORTE` y `NV_BITACORA` están ligadas a la tabla anterior `NV_USUARIO`, que aún no se une con `USUARIOS_USUARIO`.
 - No hay paginación automática en el listado de cortes (sin límite). El endpoint de deudores acepta `limite` y `desplazamiento` (defecto 20/0, máximo 100).
 
 ---
@@ -54,6 +64,96 @@ Verifica disponibilidad del servidor. No requiere autenticación.
 ```json
 {"estado": "ok"}
 ```
+
+---
+
+### Autenticación (RF25, RF26)
+
+El objeto `user` es `{"id", "nombre", "email", "rol", "is_active", "last_login", "must_change_password"}`. `last_login` es fecha y hora ISO 8601 con zona, o `null`.
+
+#### GET /api/auth/csrf/
+
+Entrega la cookie `csrftoken`. No requiere autenticación.
+
+**Respuesta 204**: sin cuerpo.
+
+#### POST /api/auth/login/
+
+Abre la sesión. No requiere autenticación, pero sí la cabecera `X-CSRFToken`. El correo no distingue mayúsculas.
+
+**Cuerpo**
+
+```json
+{"email": "jperez@example.com", "password": "..."}
+```
+
+**Respuesta 200**
+
+```json
+{
+  "user": {
+    "id": 2,
+    "nombre": "Juan Pérez",
+    "email": "jperez@example.com",
+    "rol": "ANALISTA_CARTERA",
+    "is_active": true,
+    "last_login": "2026-10-12T21:00:00-05:00",
+    "must_change_password": false
+  }
+}
+```
+
+**Errores**
+
+- `400 Bad Request` — falta un campo o el correo no tiene formato válido (error por campo)
+- `401 Unauthorized` — `{"detail": "Correo o contraseña incorrectos.", "code": "authentication_failed"}`; la respuesta es la misma si el correo no existe
+- `403 Forbidden` — `{"detail": "Tu usuario está desactivado. Contacta al administrador.", "code": "user_inactive"}`, solo si la contraseña es correcta
+- `403 Forbidden` — `code: "csrf_failed"`
+- `429 Too Many Requests` — `{"detail": "Demasiados intentos. Intenta de nuevo en unos minutos.", "code": "throttled"}`; el límite es de 10 intentos por minuto por dirección IP (`DJANGO_LOGIN_RATE`)
+
+#### POST /api/auth/logout/
+
+Cierra la sesión y la elimina del servidor.
+
+**Rol requerido**: cualquier usuario con sesión
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `401 Unauthorized` — sin sesión
+
+#### GET /api/auth/me/
+
+Devuelve el usuario de la sesión. También renueva la sesión.
+
+**Rol requerido**: cualquier usuario con sesión
+
+**Respuesta 200**: `{"user": {...}}`, igual que el login.
+
+**Errores**
+
+- `401 Unauthorized` — sin sesión o sesión vencida
+
+#### POST /api/auth/change-password/
+
+Cambia la contraseña propia y pone `must_change_password` en `false`. La sesión actual sigue abierta; las demás sesiones del usuario se cierran.
+
+**Rol requerido**: cualquier usuario con sesión
+
+**Cuerpo**
+
+```json
+{"current_password": "...", "new_password": "..."}
+```
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `400 Bad Request` — `{"current_password": ["La contraseña actual no es correcta."]}`
+- `400 Bad Request` — `{"new_password": ["La contraseña debe tener al menos una mayúscula."]}` (un mensaje por cada regla incumplida; también si es igual a la actual)
+- `401 Unauthorized` — sin sesión
 
 ---
 
