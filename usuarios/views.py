@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from usuarios.autenticacion import LimiteInicioSesion
+from usuarios.autenticacion import LimiteInicioSesion, LimiteInicioSesionPorCorreo
 from usuarios.serializers import (
     CambioContrasenaSerializer,
     InicioSesionSerializer,
@@ -31,7 +31,7 @@ class CsrfView(APIView):
 class InicioSesionView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [LimiteInicioSesion]
+    throttle_classes = [LimiteInicioSesion, LimiteInicioSesionPorCorreo]
 
     def post(self, request):
         serializer = InicioSesionSerializer(data=request.data)
