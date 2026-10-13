@@ -2,7 +2,7 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.exceptions import PermissionDenied
 from hashlib import sha256
 
-from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
+from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle, ScopedRateThrottle
 
 from usuarios.errores import MENSAJE_CSRF
 from usuarios.models import normalizar_email
@@ -33,3 +33,7 @@ class LimiteInicioSesionPorCorreo(SimpleRateThrottle):
             return None
         huella = sha256(normalizar_email(correo).encode()).hexdigest()
         return f"throttle_login_correo_{huella}"
+
+
+class LimiteRecuperacion(AnonRateThrottle):
+    scope = "recuperacion"

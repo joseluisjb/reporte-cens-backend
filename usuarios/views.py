@@ -2,16 +2,24 @@ from django.contrib.auth import authenticate, login, logout, update_session_auth
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from rest_framework import status
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from usuarios.autenticacion import LimiteInicioSesion, LimiteInicioSesionPorCorreo
+from usuarios.auditoria import registrar_auditoria
+from usuarios.autenticacion import LimiteInicioSesion, LimiteInicioSesionPorCorreo, LimiteRecuperacion
+from usuarios.permisos import EsAdministrador
 from usuarios.serializers import (
+    ActualizarUsuarioSerializer,
     CambioContrasenaSerializer,
+    CrearUsuarioSerializer,
     InicioSesionSerializer,
+    RecuperarPasswordSerializer,
+    RestablecerPasswordSerializer,
     UsuarioSerializer,
 )
+import usuarios.servicios as servicios
 
 
 def _sobre_usuario(usuario):
@@ -81,3 +89,99 @@ class CambioContrasenaView(APIView):
         usuario.save(update_fields=["password", "must_change_password"])
         update_session_auth_hash(request, usuario)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RecuperarPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [LimiteRecuperacion]
+
+    def post(self, request):
+        serializer = RecuperarPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        servicios.solicitar_recuperacion_password(serializer.validated_data["email"])
+        return Response(
+            {"detail": "Si el correo está registrado, recibirás un enlace."},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RestablecerPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [LimiteRecuperacion]
+
+    def post(self, request):
+        serializer = RestablecerPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            servicios.restablecer_password(
+                serializer.validated_data["token"],
+                serializer.validated_data["new_password"],
+            )
+        except servicios.TokenInvalido:
+            raise ValidationError({"token": ["El enlace no es válido o ya venció."]})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GestionUsuariosView(APIView):
+    permission_classes = [EsAdministrador]
+
+    def get(self, request):
+        usuarios = servicios.listar_usuarios()
+        return Response(UsuarioSerializer(usuarios, many=True).data)
+
+    def post(self, request):
+        serializer = CrearUsuarioSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            usuario = servicios.crear_usuario(serializer.validated_data)
+        except servicios.UsuarioYaExiste as exc:
+            raise ValidationError({exc.campo: ["Ya existe un usuario con ese correo."]})
+        except servicios.EnvioCorreoFallido:
+            return Response(
+                {"detail": "No se pudo enviar el correo con la contraseña temporal. El usuario no fue creado."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        registrar_auditoria(
+            "CREAR", "USUARIO", usuario.pk,
+            f"Usuario {usuario.email} creado con rol {usuario.rol}",
+            request.user.pk,
+        )
+        return Response(
+            {"user": UsuarioSerializer(usuario).data, "temporary_password": None},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class GestionUsuarioDetalleView(APIView):
+    permission_classes = [EsAdministrador]
+
+    def get(self, request, pk):
+        try:
+            usuario = servicios.obtener_usuario(pk)
+        except servicios.UsuarioNoEncontrado:
+            raise NotFound()
+        return Response(UsuarioSerializer(usuario).data)
+
+    def patch(self, request, pk):
+        serializer = ActualizarUsuarioSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            usuario = servicios.actualizar_usuario(pk, serializer.validated_data, request.user)
+        except servicios.UsuarioNoEncontrado:
+            raise NotFound()
+        except servicios.AutodesactivacionProhibida:
+            raise ValidationError({"is_active": ["No puedes desactivar tu propio usuario."]})
+        except servicios.CambioRolProhibido:
+            raise ValidationError({"rol": ["No puedes cambiar tu propio rol."]})
+        except servicios.UsuarioYaExiste as exc:
+            raise ValidationError({exc.campo: ["Ya existe un usuario con ese correo."]})
+        registrar_auditoria(
+            "EDITAR", "USUARIO", usuario.pk,
+            f"Usuario {usuario.email} actualizado: {list(serializer.validated_data)}",
+            request.user.pk,
+        )
+        return Response(UsuarioSerializer(usuario).data)

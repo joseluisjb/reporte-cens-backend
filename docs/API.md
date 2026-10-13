@@ -67,9 +67,9 @@ Verifica disponibilidad del servidor. No requiere autenticación.
 
 ---
 
-### Autenticación (RF25, RF26)
+### Autenticación (RF25, RF26, RF29)
 
-El objeto `user` es `{"id", "nombre", "email", "rol", "is_active", "last_login", "must_change_password"}`. `last_login` es fecha y hora ISO 8601 con zona, o `null`.
+El objeto `user` es `{"id", "nombre", "email", "rol", "is_active", "last_login", "must_change_password"}`. `last_login` es fecha y hora ISO 8601 con zona, o `null`. `must_change_password` indica si el usuario debe cambiar su contraseña temporal antes de usar la API; el login siempre lo devuelve para que el frontend pueda redirigir al formulario de cambio.
 
 #### GET /api/auth/csrf/
 
@@ -135,6 +135,55 @@ Devuelve el usuario de la sesión. También renueva la sesión.
 
 - `401 Unauthorized` — sin sesión o sesión vencida
 
+#### POST /api/auth/password-reset/
+
+Solicita un enlace de recuperación de contraseña. Responde **siempre 202 con el mismo cuerpo** (existe o no el correo) para no revelar qué correos están registrados. Si el correo existe y el usuario está activo, se genera un token de un solo uso (`uidb64.token`) y se envía por correo un enlace `{FRONTEND_URL}/restablecer?token=XXXX`. El token vence en 30 minutos (`PASSWORD_RESET_TIMEOUT = 1800`).
+
+**Rol requerido**: ninguno (público)
+
+**Límite de intentos**: 5 por hora por IP (`DJANGO_PASSWORD_RESET_RATE`)
+
+**Cuerpo**
+
+```json
+{"email": "jperez@example.com"}
+```
+
+**Respuesta 202**
+
+```json
+{"detail": "Si el correo está registrado, recibirás un enlace."}
+```
+
+**Errores**
+
+- `400 Bad Request` — `{"email": [...]}` — campo ausente o formato inválido
+- `429 Too Many Requests` — límite de intentos superado
+
+#### POST /api/auth/password-reset/confirm/
+
+Restablece la contraseña usando el token del enlace. Al completarse pone `must_change_password = false`.
+
+**Rol requerido**: ninguno (público)
+
+**Límite de intentos**: 5 por hora por IP (`DJANGO_PASSWORD_RESET_RATE`)
+
+**Cuerpo**
+
+```json
+{"token": "uidb64abc.tok-xyz", "new_password": "NuevaClaveSegura1"}
+```
+
+`new_password` debe cumplir las mismas reglas que `change-password`: mínimo 8 caracteres, al menos una mayúscula y al menos un número.
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `400 Bad Request` — `{"token": ["El enlace no es válido o ya venció."]}` — token vencido, ya usado o malformado
+- `400 Bad Request` — `{"new_password": [...]}` — contraseña inválida (un mensaje por regla incumplida)
+- `429 Too Many Requests` — límite de intentos superado
+
 #### POST /api/auth/change-password/
 
 Cambia la contraseña propia y pone `must_change_password` en `false`. La sesión actual sigue abierta; las demás sesiones del usuario se cierran.
@@ -154,6 +203,112 @@ Cambia la contraseña propia y pone `must_change_password` en `false`. La sesió
 - `400 Bad Request` — `{"current_password": ["La contraseña actual no es correcta."]}`
 - `400 Bad Request` — `{"new_password": ["La contraseña debe tener al menos una mayúscula."]}` (un mensaje por cada regla incumplida; también si es igual a la actual)
 - `401 Unauthorized` — sin sesión
+
+---
+
+### Gestión de usuarios (RF28)
+
+Solo accesible para `ADMINISTRADOR`. Un `ANALISTA_CARTERA` recibe `403`. Un usuario con `must_change_password = true` recibe `403` con `code: "password_change_required"` antes de llegar a cualquier endpoint de esta sección.
+
+El objeto `user` tiene los mismos campos que en autenticación: `{id, nombre, email, rol, is_active, last_login, must_change_password}`.
+
+#### GET /api/users/
+
+Lista todos los usuarios (activos e inactivos).
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Respuesta 200** — arreglo plano:
+
+```json
+[
+  {
+    "id": 1,
+    "nombre": "Admin NexoVolt",
+    "email": "admin@nexovolt.co",
+    "rol": "ADMINISTRADOR",
+    "is_active": true,
+    "last_login": "2026-10-13T10:00:00-05:00",
+    "must_change_password": false
+  }
+]
+```
+
+#### POST /api/users/
+
+Crea un usuario. Genera una contraseña temporal aleatoria (12 caracteres, con mayúscula, minúscula, número y símbolo), la guarda con hash Argon2, marca `must_change_password = true` y la **envía por correo** al nuevo usuario. La contraseña nunca aparece en la respuesta ni en los logs.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Cuerpo**
+
+```json
+{"nombre": "Carlos Ruiz", "email": "cruiz@nexovolt.co", "rol": "ANALISTA_CARTERA"}
+```
+
+`rol` debe ser `ANALISTA_CARTERA` o `ADMINISTRADOR`.
+
+**Respuesta 201**
+
+```json
+{
+  "user": {
+    "id": 3,
+    "nombre": "Carlos Ruiz",
+    "email": "cruiz@nexovolt.co",
+    "rol": "ANALISTA_CARTERA",
+    "is_active": true,
+    "last_login": null,
+    "must_change_password": true
+  },
+  "temporary_password": null
+}
+```
+
+**Errores**
+
+- `400 Bad Request` — campos faltantes, formato de correo inválido, rol inválido (error por campo)
+- `400 Bad Request` — `{"email": ["Ya existe un usuario con ese correo."]}` — correo duplicado
+- `401 Unauthorized` — sin sesión
+- `403 Forbidden` — rol insuficiente o contraseña temporal pendiente
+- `502 Bad Gateway` — `{"detail": "No se pudo enviar el correo con la contraseña temporal. El usuario no fue creado."}` — el servidor de correo no respondió; la creación se revierte
+
+#### GET /api/users/{id}/
+
+Detalle de un usuario.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Respuesta 200**: mismo objeto que un elemento del listado.
+
+**Errores**
+
+- `404 Not Found` — usuario no encontrado
+
+#### PATCH /api/users/{id}/
+
+Edita `nombre`, `email`, `rol` y/o `is_active`. Todos los campos son opcionales. Sirve para editar datos y para activar o desactivar; no hay DELETE.
+
+Un administrador no puede desactivarse a sí mismo ni cambiar su propio rol a `ANALISTA_CARTERA`.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Cuerpo** (todos los campos son opcionales)
+
+```json
+{"nombre": "Nuevo nombre", "email": "nuevo@nexovolt.co", "rol": "ADMINISTRADOR", "is_active": false}
+```
+
+**Respuesta 200**: objeto `user` directo (sin envoltura).
+
+**Errores**
+
+- `400 Bad Request` — `{"is_active": ["No puedes desactivar tu propio usuario."]}` — autodesactivación
+- `400 Bad Request` — `{"rol": ["No puedes cambiar tu propio rol."]}` — cambio de rol propio
+- `400 Bad Request` — `{"email": ["Ya existe un usuario con ese correo."]}` — correo duplicado
+- `404 Not Found` — usuario no encontrado
+- `401 Unauthorized` — sin sesión
+- `403 Forbidden` — rol insuficiente o contraseña temporal pendiente
 
 ---
 

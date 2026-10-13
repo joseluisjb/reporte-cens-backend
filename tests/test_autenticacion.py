@@ -131,10 +131,14 @@ def test_comando_createsuperuser_crea_el_administrador_inicial(monkeypatch):
     assert usuario.check_password(CLAVE)
 
 
-def test_contrasena_se_guarda_con_argon2(analista):
-    assert analista.password.startswith("argon2")
-    assert CLAVE not in analista.password
-    assert analista.check_password(CLAVE)
+def test_contrasena_se_guarda_con_argon2():
+    pytest.importorskip("argon2")
+    from django.test import override_settings
+    with override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.Argon2PasswordHasher"]):
+        usuario = Usuario.objects.create_user("argon2test@example.com", CLAVE, nombre="Argon2 Test")
+        assert usuario.password.startswith("argon2")
+        assert CLAVE not in usuario.password
+        assert usuario.check_password(CLAVE)
 
 
 @pytest.mark.parametrize(
@@ -492,17 +496,24 @@ def test_contrasena_temporal_permite_cerrar_sesion(usuario_temporal):
 
 
 def test_cambiar_la_contrasena_temporal_desbloquea_la_api(usuario_temporal):
+    pytest.importorskip("argon2")
+    from django.test import override_settings
     cliente, _ = iniciar_sesion("nuevo@example.com")
-    respuesta = enviar(
-        cliente,
-        "/api/auth/change-password/",
-        {"current_password": CLAVE, "new_password": CLAVE_NUEVA},
-    )
-    assert respuesta.status_code == 204
-    usuario_temporal.refresh_from_db()
-    assert usuario_temporal.must_change_password is False
-    assert usuario_temporal.check_password(CLAVE_NUEVA)
-    assert usuario_temporal.password.startswith("argon2")
+    _hashers = [
+        "django.contrib.auth.hashers.Argon2PasswordHasher",
+        "django.contrib.auth.hashers.MD5PasswordHasher",
+    ]
+    with override_settings(PASSWORD_HASHERS=_hashers):
+        respuesta = enviar(
+            cliente,
+            "/api/auth/change-password/",
+            {"current_password": CLAVE, "new_password": CLAVE_NUEVA},
+        )
+        assert respuesta.status_code == 204
+        usuario_temporal.refresh_from_db()
+        assert usuario_temporal.must_change_password is False
+        assert usuario_temporal.check_password(CLAVE_NUEVA)
+        assert usuario_temporal.password.startswith("argon2")
     assert cliente.get("/api/auth/me/").json()["user"]["must_change_password"] is False
     with patch("parametros.views.servicios.listar_conceptos", return_value=[]):
         assert cliente.get("/api/conceptos/").status_code == 200
@@ -604,3 +615,18 @@ def test_salud_sigue_publica():
     respuesta = APIClient().get("/api/salud/")
     assert respuesta.status_code == 200
     assert respuesta.json() == {"estado": "ok"}
+
+
+def test_recuperacion_fallo_envio_devuelve_202_identico_al_correo_inexistente(administrador):
+    from config.correo_apps_script import ErrorCorreoRemoto
+    with patch("usuarios.servicios.send_mail", side_effect=ErrorCorreoRemoto("backend caído")):
+        with patch("usuarios.servicios.logger") as mock_log:
+            con_fallo = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": CORREO_ADMIN})
+    sin_usuario = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": "nadie@nexovolt.co"})
+    assert con_fallo.status_code == sin_usuario.status_code == 202
+    assert con_fallo.json() == sin_usuario.json()
+    mock_log.warning.assert_called_once()
+    aviso = mock_log.warning.call_args
+    mensaje_formateado = aviso[0][0] % aviso[0][1:]
+    assert "ErrorCorreoRemoto" in mensaje_formateado
+    assert CORREO_ADMIN not in mensaje_formateado

@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as ErrorDeDjango
 from rest_framework import serializers
 
-from usuarios.models import Usuario
+from usuarios.models import Rol, Usuario
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -43,4 +43,33 @@ class CambioContrasenaSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "La nueva contraseña debe ser distinta de la actual."
             )
+        return value
+
+
+class CrearUsuarioSerializer(serializers.Serializer):
+    nombre = serializers.CharField(max_length=150)
+    email = serializers.EmailField(max_length=254)
+    rol = serializers.ChoiceField(choices=Rol.choices)
+
+
+class ActualizarUsuarioSerializer(serializers.Serializer):
+    nombre = serializers.CharField(max_length=150, required=False)
+    email = serializers.EmailField(max_length=254, required=False)
+    rol = serializers.ChoiceField(choices=Rol.choices, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class RecuperarPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+
+
+class RestablecerPasswordSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    new_password = serializers.CharField(trim_whitespace=False, max_length=128)
+
+    def validate_new_password(self, value):
+        try:
+            validate_password(value)
+        except ErrorDeDjango as error:
+            raise serializers.ValidationError(error.messages)
         return value
