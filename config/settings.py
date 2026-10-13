@@ -142,6 +142,9 @@ EMAIL_HOST_USER = os.getenv("DJANGO_EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("DJANGO_EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DJANGO_DEFAULT_FROM_EMAIL", "NexoVolt <noreply@nexovolt.co>")
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+PASSWORD_RESET_TIMEOUT = 1800
+
 SESSION_COOKIE_AGE = int(float(os.getenv("DJANGO_SESSION_MINUTES", "10")) * 60)
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_COOKIE_HTTPONLY = True
@@ -187,6 +190,7 @@ REST_FRAMEWORK = {
     "NUM_PROXIES": int(os.getenv("DJANGO_NUM_PROXIES", "0")),
     "DEFAULT_THROTTLE_RATES": {
         "login": os.getenv("DJANGO_LOGIN_RATE", "10/min"),
+        "recuperacion": os.getenv("DJANGO_PASSWORD_RESET_RATE", "5/hour"),
     },
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",

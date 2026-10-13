@@ -12,6 +12,8 @@ from usuarios.views import (
     GestionUsuarioDetalleView,
     GestionUsuariosView,
     InicioSesionView,
+    RecuperarPasswordView,
+    RestablecerPasswordView,
     UsuarioActualView,
 )
 
@@ -29,6 +31,8 @@ urlpatterns = [
     path("auth/logout/", CierreSesionView.as_view(), name="auth-logout"),
     path("auth/me/", UsuarioActualView.as_view(), name="auth-me"),
     path("auth/change-password/", CambioContrasenaView.as_view(), name="auth-change-password"),
+    path("auth/password-reset/", RecuperarPasswordView.as_view(), name="auth-password-reset"),
+    path("auth/password-reset/confirm/", RestablecerPasswordView.as_view(), name="auth-password-reset-confirm"),
     path("users/", GestionUsuariosView.as_view(), name="users-list"),
     path("users/<int:pk>/", GestionUsuarioDetalleView.as_view(), name="users-detail"),
 ] + router.urls

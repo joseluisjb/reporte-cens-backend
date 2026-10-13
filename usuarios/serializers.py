@@ -57,3 +57,19 @@ class ActualizarUsuarioSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254, required=False)
     rol = serializers.ChoiceField(choices=Rol.choices, required=False)
     is_active = serializers.BooleanField(required=False)
+
+
+class RecuperarPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+
+
+class RestablecerPasswordSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    new_password = serializers.CharField(trim_whitespace=False, max_length=128)
+
+    def validate_new_password(self, value):
+        try:
+            validate_password(value)
+        except ErrorDeDjango as error:
+            raise serializers.ValidationError(error.messages)
+        return value

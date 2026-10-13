@@ -1,10 +1,14 @@
 import secrets
 import string
 
+from django.conf import settings
+from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
-from usuarios.models import Rol, Usuario
+from usuarios.models import Rol, Usuario, normalizar_email
 
 
 class UsuarioYaExiste(Exception):
@@ -21,6 +25,10 @@ class AutodesactivacionProhibida(Exception):
 
 
 class CambioRolProhibido(Exception):
+    pass
+
+
+class TokenInvalido(Exception):
     pass
 
 
@@ -79,6 +87,51 @@ def crear_usuario(datos):
         fail_silently=False,
     )
     return usuario
+
+
+def solicitar_recuperacion_password(email):
+    try:
+        usuario = Usuario.objects.get(email=normalizar_email(email), is_active=True)
+    except Usuario.DoesNotExist:
+        return
+
+    uid = urlsafe_base64_encode(force_bytes(usuario.pk))
+    token = default_token_generator.make_token(usuario)
+    token_completo = f"{uid}.{token}"
+    enlace = f"{settings.FRONTEND_URL}/restablecer?token={token_completo}"
+
+    send_mail(
+        subject="Recuperación de contraseña — NexoVolt",
+        message=(
+            f"Hola {usuario.nombre},\n\n"
+            "Recibimos una solicitud para restablecer tu contraseña en NexoVolt.\n\n"
+            f"Usa el siguiente enlace (válido por 30 minutos):\n\n    {enlace}\n\n"
+            "Si no realizaste esta solicitud, ignora este correo."
+        ),
+        from_email=None,
+        recipient_list=[usuario.email],
+        fail_silently=False,
+    )
+
+
+def restablecer_password(token_completo, nueva_password):
+    partes = token_completo.split(".", 1)
+    if len(partes) != 2:
+        raise TokenInvalido()
+    uid_b64, token = partes
+
+    try:
+        uid = force_str(urlsafe_base64_decode(uid_b64))
+        usuario = Usuario.objects.get(pk=uid)
+    except (ValueError, TypeError, OverflowError, Usuario.DoesNotExist):
+        raise TokenInvalido()
+
+    if not default_token_generator.check_token(usuario, token):
+        raise TokenInvalido()
+
+    usuario.set_password(nueva_password)
+    usuario.must_change_password = False
+    usuario.save(update_fields=["password", "must_change_password"])
 
 
 def actualizar_usuario(usuario_id, datos, solicitante):
