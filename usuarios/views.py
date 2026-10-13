@@ -140,6 +140,11 @@ class GestionUsuariosView(APIView):
             usuario = servicios.crear_usuario(serializer.validated_data)
         except servicios.UsuarioYaExiste as exc:
             raise ValidationError({exc.campo: ["Ya existe un usuario con ese correo."]})
+        except servicios.EnvioCorreoFallido:
+            return Response(
+                {"detail": "No se pudo enviar el correo con la contraseña temporal. El usuario no fue creado."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
         registrar_auditoria(
             "CREAR", "USUARIO", usuario.pk,
             f"Usuario {usuario.email} creado con rol {usuario.rol}",

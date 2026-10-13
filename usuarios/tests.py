@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 
@@ -12,6 +13,7 @@ def limpiar_cache():
     cache.clear()
 
 from tests.ayudas import usuario_con_rol
+from usuarios.apps import verificar_email_backend_produccion
 from usuarios.models import Rol, Usuario
 from usuarios.serializers import (
     ActualizarUsuarioSerializer,
@@ -404,3 +406,52 @@ def test_confirmar_sin_campos_devuelve_400():
     assert resp.status_code == 400
     assert "token" in resp.data
     assert "new_password" in resp.data
+
+
+# ── verificar_email_backend_produccion ───────────────────────────────────────
+
+def test_backend_smtp_en_produccion_es_valido():
+    verificar_email_backend_produccion(False, "django.core.mail.backends.smtp.EmailBackend")
+
+
+def test_backend_consola_en_produccion_falla():
+    with pytest.raises(ImproperlyConfigured):
+        verificar_email_backend_produccion(False, "django.core.mail.backends.console.EmailBackend")
+
+
+def test_backend_locmem_en_produccion_falla():
+    with pytest.raises(ImproperlyConfigured):
+        verificar_email_backend_produccion(False, "django.core.mail.backends.locmem.EmailBackend")
+
+
+def test_backend_dummy_en_produccion_falla():
+    with pytest.raises(ImproperlyConfigured):
+        verificar_email_backend_produccion(False, "django.core.mail.backends.dummy.EmailBackend")
+
+
+def test_backend_consola_en_debug_es_valido():
+    verificar_email_backend_produccion(True, "django.core.mail.backends.console.EmailBackend")
+
+
+def test_backend_locmem_en_debug_es_valido():
+    verificar_email_backend_produccion(True, "django.core.mail.backends.locmem.EmailBackend")
+
+
+def test_backend_apps_script_en_produccion_es_valido():
+    verificar_email_backend_produccion(False, "config.correo_apps_script.AppsScriptEmailBackend")
+
+
+# ── Vista: POST /api/users/ — fallo de correo ────────────────────────────────
+
+@patch("usuarios.views.servicios.crear_usuario")
+def test_crear_fallo_correo_devuelve_502(mock_crear):
+    mock_crear.side_effect = servicios.EnvioCorreoFallido()
+    request = factory.post(
+        "/api/users/",
+        {"nombre": "X", "email": "x@y.com", "rol": "ANALISTA_CARTERA"},
+        format="json",
+    )
+    force_authenticate(request, user=_admin())
+    resp = GestionUsuariosView.as_view()(request)
+    assert resp.status_code == 502
+    assert "detail" in resp.data

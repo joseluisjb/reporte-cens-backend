@@ -271,6 +271,7 @@ Crea un usuario. Genera una contraseña temporal aleatoria (12 caracteres, con m
 - `400 Bad Request` — `{"email": ["Ya existe un usuario con ese correo."]}` — correo duplicado
 - `401 Unauthorized` — sin sesión
 - `403 Forbidden` — rol insuficiente o contraseña temporal pendiente
+- `502 Bad Gateway` — `{"detail": "No se pudo enviar el correo con la contraseña temporal. El usuario no fue creado."}` — el servidor de correo no respondió; la creación se revierte
 
 #### GET /api/users/{id}/
 

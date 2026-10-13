@@ -1,3 +1,4 @@
+import logging
 import secrets
 import string
 
@@ -9,6 +10,8 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from usuarios.models import Rol, Usuario, normalizar_email
+
+logger = logging.getLogger(__name__)
 
 
 class UsuarioYaExiste(Exception):
@@ -29,6 +32,10 @@ class CambioRolProhibido(Exception):
 
 
 class TokenInvalido(Exception):
+    pass
+
+
+class EnvioCorreoFallido(Exception):
     pass
 
 
@@ -71,21 +78,23 @@ def crear_usuario(datos):
                 rol=datos["rol"],
                 must_change_password=True,
             )
+            send_mail(
+                subject="Tu cuenta en NexoVolt",
+                message=(
+                    f"Hola {usuario.nombre},\n\n"
+                    "Tu cuenta en NexoVolt ha sido creada. Tu contraseña temporal es:\n\n"
+                    f"    {contrasena}\n\n"
+                    "Debes cambiarla al iniciar sesión por primera vez.\n\n"
+                    "Si no solicitaste esta cuenta, contacta al administrador."
+                ),
+                from_email=None,
+                recipient_list=[usuario.email],
+                fail_silently=False,
+            )
     except IntegrityError:
         raise UsuarioYaExiste("email")
-    send_mail(
-        subject="Tu cuenta en NexoVolt",
-        message=(
-            f"Hola {usuario.nombre},\n\n"
-            "Tu cuenta en NexoVolt ha sido creada. Tu contraseña temporal es:\n\n"
-            f"    {contrasena}\n\n"
-            "Debes cambiarla al iniciar sesión por primera vez.\n\n"
-            "Si no solicitaste esta cuenta, contacta al administrador."
-        ),
-        from_email=None,
-        recipient_list=[usuario.email],
-        fail_silently=False,
-    )
+    except Exception as exc:
+        raise EnvioCorreoFallido() from exc
     return usuario
 
 
@@ -100,18 +109,21 @@ def solicitar_recuperacion_password(email):
     token_completo = f"{uid}.{token}"
     enlace = f"{settings.FRONTEND_URL}/restablecer?token={token_completo}"
 
-    send_mail(
-        subject="Recuperación de contraseña — NexoVolt",
-        message=(
-            f"Hola {usuario.nombre},\n\n"
-            "Recibimos una solicitud para restablecer tu contraseña en NexoVolt.\n\n"
-            f"Usa el siguiente enlace (válido por 30 minutos):\n\n    {enlace}\n\n"
-            "Si no realizaste esta solicitud, ignora este correo."
-        ),
-        from_email=None,
-        recipient_list=[usuario.email],
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            subject="Recuperación de contraseña — NexoVolt",
+            message=(
+                f"Hola {usuario.nombre},\n\n"
+                "Recibimos una solicitud para restablecer tu contraseña en NexoVolt.\n\n"
+                f"Usa el siguiente enlace (válido por 30 minutos):\n\n    {enlace}\n\n"
+                "Si no realizaste esta solicitud, ignora este correo."
+            ),
+            from_email=None,
+            recipient_list=[usuario.email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        logger.warning("Fallo al enviar correo de recuperación de contraseña: %s", type(exc).__name__)
 
 
 def restablecer_password(token_completo, nueva_password):

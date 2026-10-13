@@ -263,3 +263,28 @@ def test_analista_no_puede_hacer_patch(analista):
     cliente = _cliente_autenticado(analista)
     respuesta = cliente.patch(f"/api/users/{analista.pk}/", {"nombre": "X"}, format="json")
     assert respuesta.status_code == 403
+
+
+def test_crear_usuario_fallo_correo_devuelve_502_y_no_crea_usuario(administrador):
+    with patch("usuarios.servicios.send_mail", side_effect=Exception("SMTP error")):
+        respuesta = _cliente_autenticado(administrador).post(
+            "/api/users/",
+            {"nombre": "Fallido", "email": "fallido@nexovolt.co", "rol": "ANALISTA_CARTERA"},
+            format="json",
+        )
+    assert respuesta.status_code == 502
+    assert "detail" in respuesta.json()
+    assert not Usuario.objects.filter(email="fallido@nexovolt.co").exists()
+
+
+def test_crear_usuario_error_correo_remoto_devuelve_502_y_no_crea_usuario(administrador):
+    from config.correo_apps_script import ErrorCorreoRemoto
+    with patch("usuarios.servicios.send_mail", side_effect=ErrorCorreoRemoto("backend no disponible")):
+        respuesta = _cliente_autenticado(administrador).post(
+            "/api/users/",
+            {"nombre": "Remoto", "email": "remoto@nexovolt.co", "rol": "ANALISTA_CARTERA"},
+            format="json",
+        )
+    assert respuesta.status_code == 502
+    assert "detail" in respuesta.json()
+    assert not Usuario.objects.filter(email="remoto@nexovolt.co").exists()
