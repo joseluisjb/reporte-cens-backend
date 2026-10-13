@@ -117,12 +117,13 @@ class RestablecerPasswordView(APIView):
         serializer = RestablecerPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            servicios.restablecer_password(
+            usuario = servicios.restablecer_password(
                 serializer.validated_data["token"],
                 serializer.validated_data["new_password"],
             )
         except servicios.TokenInvalido:
             raise ValidationError({"token": ["El enlace no es válido o ya venció."]})
+        request._request.actor_auditoria = usuario
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -179,8 +180,10 @@ class GestionUsuarioDetalleView(APIView):
             raise ValidationError({"rol": ["No puedes cambiar tu propio rol."]})
         except servicios.UsuarioYaExiste as exc:
             raise ValidationError({exc.campo: ["Ya existe un usuario con ese correo."]})
+        activo = serializer.validated_data.get("is_active")
+        accion = "EDITAR" if activo is None else ("ACTIVAR" if activo else "DESACTIVAR")
         registrar_auditoria(
-            "EDITAR", "USUARIO", usuario.pk,
+            accion, "USUARIO", usuario.pk,
             f"Usuario {usuario.email} actualizado: {list(serializer.validated_data)}",
             request.user.pk,
         )

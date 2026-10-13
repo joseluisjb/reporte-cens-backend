@@ -46,7 +46,7 @@ Error de validación de campo (DRF estándar):
 ## Pendiente / Provisional
 
 - Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
-- `ejecutada_por` sigue en `null`: `NV_CORTE` y `NV_BITACORA` están ligadas a la tabla anterior `NV_USUARIO`, que aún no se une con `USUARIOS_USUARIO`.
+- `ejecutada_por` sigue en `null`: `NV_CORTE` está ligada a la tabla anterior `NV_USUARIO`, que aún no se une con `USUARIOS_USUARIO`. `NV_BITACORA` ya no depende de ella (RF30).
 - No hay paginación automática en el listado de cortes (sin límite). El endpoint de deudores acepta `limite` y `desplazamiento` (defecto 20/0, máximo 100).
 
 ---
@@ -808,6 +808,69 @@ Línea de tiempo de una obligación: todos los cortes no anulados en los que apa
 **Errores**
 
 - `404 Not Found` — obligación no encontrada
+
+---
+
+### Auditoría (RF30)
+
+Los registros se guardan en `NV_BITACORA`. Se generan solos cuando la acción termina bien (respuesta 2xx); una acción rechazada no deja registro. No se pueden editar ni borrar desde la API. El detalle nunca incluye contraseñas, tokens ni datos personales de deudores.
+
+Acciones que se registran:
+
+| Módulo | Acciones |
+|---|---|
+| Seguridad | Inicio de sesión, cierre de sesión, contraseña cambiada, contraseña restablecida |
+| Usuarios | Usuario creado, editado, activado, desactivado |
+| Parametrización | Concepto creado, editado, desactivado · Grupo creado, editado, desactivado, eliminado |
+| Extracción | Corte generado, validado, eliminado · Envío registrado · Actualización mensual · Consulta de obligaciones, de reporte enviado y de deudores |
+
+Las acciones sin usuario (por ejemplo, la actualización mensual programada) aparecen con `usuario: "Sistema"`, y `usuario_id` y `rol` en `null`.
+
+#### GET /api/auditoria/
+
+Lista los registros, del más reciente al más antiguo.
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Parámetros query** (todos opcionales)
+
+| Parámetro | Tipo | Descripción |
+|---|---|---|
+| `limite` | entero | Defecto 20, máximo 100 |
+| `desplazamiento` | entero | Defecto 0 |
+| `desde` | `AAAA-MM-DD` | Fecha inicial, inclusive |
+| `hasta` | `AAAA-MM-DD` | Fecha final, inclusive |
+| `usuario` | entero | Id del usuario que hizo la acción |
+| `tipo_accion` | texto | `inicio_sesion`, `cierre_sesion`, `consulta`, `calculo`, `generacion`, `exportacion`, `modificacion`, `correccion`, `eliminacion`, `creacion`, `edicion`, `desactivacion` |
+| `modulo` | texto | `Seguridad`, `Usuarios`, `Parametrización`, `Extracción` |
+
+**Respuesta 200**
+
+```json
+{
+  "total": 1,
+  "resultados": [
+    {
+      "id": 7,
+      "fecha_hora": "2026-10-12T08:30:00-05:00",
+      "usuario_id": 3,
+      "usuario": "Rosa Martínez",
+      "rol": "ADMINISTRADOR",
+      "accion": "Usuario desactivado",
+      "tipo_accion": "desactivacion",
+      "modulo": "Usuarios",
+      "detalle": "Usuario jperez@example.com actualizado: ['is_active']"
+    }
+  ]
+}
+```
+
+**Errores**
+
+- `400 Bad Request` — filtro inválido, por campo: `{"desde": ["Usa una fecha válida (AAAA-MM-DD)."]}`, `{"hasta": ["La fecha final no puede ser anterior a la inicial."]}`, `{"usuario": ["Indica el id numérico del usuario."]}`, `{"tipo_accion": ["Tipo de acción no válido."]}`, `{"modulo": ["Módulo no válido."]}`
+- `400 Bad Request` — `limite` o `desplazamiento` inválidos (`{"detail": ...}`)
+- `401 Unauthorized` — sin sesión
+- `403 Forbidden` — el usuario no es Administrador
 
 ---
 
