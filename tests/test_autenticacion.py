@@ -282,6 +282,88 @@ def test_login_limita_los_intentos(analista):
     }
 
 
+def intento_fallido(cliente, email, **extra):
+    return cliente.post(
+        "/api/auth/login/",
+        {"email": email, "password": "ClaveMala1"},
+        format="json",
+        HTTP_X_CSRFTOKEN=cliente.cookies["csrftoken"].value,
+        **extra,
+    )
+
+
+def test_limite_de_login_ignora_x_forwarded_for_inventado():
+    cliente = cliente_con_csrf()
+    for i in range(10):
+        respuesta = intento_fallido(
+            cliente, f"persona{i}@example.com", HTTP_X_FORWARDED_FOR=f"10.0.0.{i}"
+        )
+        assert respuesta.status_code == 401
+    respuesta = intento_fallido(
+        cliente, "persona10@example.com", HTTP_X_FORWARDED_FOR="10.0.0.10"
+    )
+    assert respuesta.status_code == 429
+
+
+def test_limite_de_login_por_correo_aunque_cambie_la_ip(analista):
+    cliente = cliente_con_csrf()
+    for i in range(10):
+        respuesta = intento_fallido(cliente, CORREO_ANALISTA, REMOTE_ADDR=f"10.0.0.{i}")
+        assert respuesta.status_code == 401
+    respuesta = intento_fallido(cliente, CORREO_ANALISTA.upper(), REMOTE_ADDR="10.0.0.10")
+    assert respuesta.status_code == 429
+    assert respuesta.json()["code"] == "throttled"
+
+
+def test_limite_por_correo_no_bloquea_a_otros_usuarios(analista, administrador):
+    cliente = cliente_con_csrf()
+    for i in range(10):
+        intento_fallido(cliente, CORREO_ANALISTA, REMOTE_ADDR=f"10.0.0.{i}")
+    otro = cliente_con_csrf()
+    respuesta = otro.post(
+        "/api/auth/login/",
+        {"email": CORREO_ADMIN, "password": CLAVE},
+        format="json",
+        HTTP_X_CSRFTOKEN=otro.cookies["csrftoken"].value,
+        REMOTE_ADDR="10.0.1.1",
+    )
+    assert respuesta.status_code == 200
+
+
+def test_limite_de_login_con_proxy_usa_la_ip_que_agrega_el_proxy(settings):
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}
+    cliente = cliente_con_csrf()
+    for i in range(10):
+        respuesta = intento_fallido(
+            cliente, f"persona{i}@example.com", HTTP_X_FORWARDED_FOR=f"10.0.0.{i}, 203.0.113.7"
+        )
+        assert respuesta.status_code == 401
+    bloqueada = intento_fallido(
+        cliente, "persona10@example.com", HTTP_X_FORWARDED_FOR="10.0.0.10, 203.0.113.7"
+    )
+    assert bloqueada.status_code == 429
+    otra_ip = intento_fallido(
+        cliente, "persona11@example.com", HTTP_X_FORWARDED_FOR="10.0.0.11, 203.0.113.8"
+    )
+    assert otra_ip.status_code == 401
+
+
+def test_login_con_cuerpo_que_no_es_objeto_responde_400():
+    cliente = cliente_con_csrf()
+    respuesta = cliente.post(
+        "/api/auth/login/",
+        ["no", "es", "objeto"],
+        format="json",
+        HTTP_X_CSRFTOKEN=cliente.cookies["csrftoken"].value,
+    )
+    assert respuesta.status_code == 400
+
+
+def test_panel_admin_no_esta_expuesto():
+    assert APIClient().get("/admin/login/").status_code == 404
+    assert APIClient().get("/admin/").status_code == 404
+
+
 def test_me_sin_sesion_responde_401():
     respuesta = APIClient().get("/api/auth/me/")
     assert respuesta.status_code == 401

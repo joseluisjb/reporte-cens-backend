@@ -109,7 +109,7 @@ Abre la sesión. No requiere autenticación, pero sí la cabecera `X-CSRFToken`.
 - `401 Unauthorized` — `{"detail": "Correo o contraseña incorrectos.", "code": "authentication_failed"}`; la respuesta es la misma si el correo no existe
 - `403 Forbidden` — `{"detail": "Tu usuario está desactivado. Contacta al administrador.", "code": "user_inactive"}`, solo si la contraseña es correcta
 - `403 Forbidden` — `code: "csrf_failed"`
-- `429 Too Many Requests` — `{"detail": "Demasiados intentos. Intenta de nuevo en unos minutos.", "code": "throttled"}`; el límite es de 10 intentos por minuto por dirección IP (`DJANGO_LOGIN_RATE`)
+- `429 Too Many Requests` — `{"detail": "Demasiados intentos. Intenta de nuevo en unos minutos.", "code": "throttled"}`; el límite es de 10 intentos por minuto por dirección IP y también por correo (`DJANGO_LOGIN_RATE`). Detrás de un proxy hay que definir `DJANGO_NUM_PROXIES` con el número de proxies delante del backend; con `0` se usa la IP de la conexión y se ignora `X-Forwarded-For`
 
 #### POST /api/auth/logout/
 

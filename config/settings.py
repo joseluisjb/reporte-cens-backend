@@ -173,6 +173,7 @@ REST_FRAMEWORK = {
         "usuarios.autenticacion.AutenticacionSesion",
     ],
     "EXCEPTION_HANDLER": "usuarios.errores.manejador_errores",
+    "NUM_PROXIES": int(os.getenv("DJANGO_NUM_PROXIES", "0")),
     "DEFAULT_THROTTLE_RATES": {
         "login": os.getenv("DJANGO_LOGIN_RATE", "10/min"),
     },
