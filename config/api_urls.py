@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from config.auditoria import AuditoriaView
 from config.views import SaludView
 from parametros.views import ConceptoViewSet, GrupoConceptoViewSet
 from cartera.views import ExtraccionViewSet
@@ -35,4 +36,5 @@ urlpatterns = [
     path("auth/password-reset/confirm/", RestablecerPasswordView.as_view(), name="auth-password-reset-confirm"),
     path("users/", GestionUsuariosView.as_view(), name="users-list"),
     path("users/<int:pk>/", GestionUsuarioDetalleView.as_view(), name="users-detail"),
+    path("auditoria/", AuditoriaView.as_view(), name="auditoria"),
 ] + router.urls
