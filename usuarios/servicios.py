@@ -122,8 +122,8 @@ def solicitar_recuperacion_password(email):
             recipient_list=[usuario.email],
             fail_silently=False,
         )
-    except Exception:
-        logger.warning("Fallo al enviar correo de recuperación de contraseña.")
+    except Exception as exc:
+        logger.warning("Fallo al enviar correo de recuperación de contraseña: %s", type(exc).__name__)
 
 
 def restablecer_password(token_completo, nueva_password):

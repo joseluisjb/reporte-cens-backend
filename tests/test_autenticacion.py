@@ -620,7 +620,13 @@ def test_salud_sigue_publica():
 def test_recuperacion_fallo_envio_devuelve_202_identico_al_correo_inexistente(administrador):
     from config.correo_apps_script import ErrorCorreoRemoto
     with patch("usuarios.servicios.send_mail", side_effect=ErrorCorreoRemoto("backend caído")):
-        con_fallo = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": CORREO_ADMIN})
+        with patch("usuarios.servicios.logger") as mock_log:
+            con_fallo = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": CORREO_ADMIN})
     sin_usuario = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": "nadie@nexovolt.co"})
     assert con_fallo.status_code == sin_usuario.status_code == 202
     assert con_fallo.json() == sin_usuario.json()
+    mock_log.warning.assert_called_once()
+    aviso = mock_log.warning.call_args
+    mensaje_formateado = aviso[0][0] % aviso[0][1:]
+    assert "ErrorCorreoRemoto" in mensaje_formateado
+    assert CORREO_ADMIN not in mensaje_formateado
