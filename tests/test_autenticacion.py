@@ -615,3 +615,12 @@ def test_salud_sigue_publica():
     respuesta = APIClient().get("/api/salud/")
     assert respuesta.status_code == 200
     assert respuesta.json() == {"estado": "ok"}
+
+
+def test_recuperacion_fallo_envio_devuelve_202_identico_al_correo_inexistente(administrador):
+    from config.correo_apps_script import ErrorCorreoRemoto
+    with patch("usuarios.servicios.send_mail", side_effect=ErrorCorreoRemoto("backend caído")):
+        con_fallo = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": CORREO_ADMIN})
+    sin_usuario = enviar(cliente_con_csrf(), "/api/auth/password-reset/", {"email": "nadie@nexovolt.co"})
+    assert con_fallo.status_code == sin_usuario.status_code == 202
+    assert con_fallo.json() == sin_usuario.json()
