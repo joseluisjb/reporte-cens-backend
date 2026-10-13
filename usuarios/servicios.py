@@ -144,6 +144,7 @@ def restablecer_password(token_completo, nueva_password):
     usuario.set_password(nueva_password)
     usuario.must_change_password = False
     usuario.save(update_fields=["password", "must_change_password"])
+    return usuario
 
 
 def actualizar_usuario(usuario_id, datos, solicitante):
