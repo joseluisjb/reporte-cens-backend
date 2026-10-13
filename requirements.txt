@@ -1,5 +1,3 @@
-# Desarrollo local y pruebas. Las dependencias de ejecución viven en
-# requirements.docker.txt (el que usa el Dockerfile) para no duplicarlas.
 -r requirements.docker.txt
 pytest==9.1.1
 pytest-django==4.14.0
