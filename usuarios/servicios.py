@@ -32,6 +32,10 @@ class TokenInvalido(Exception):
     pass
 
 
+class EnvioCorreoFallido(Exception):
+    pass
+
+
 _SIMBOLOS = "!@#$%^&*()-_=+"
 _ALFABETO = string.ascii_letters + string.digits + _SIMBOLOS
 
@@ -71,21 +75,23 @@ def crear_usuario(datos):
                 rol=datos["rol"],
                 must_change_password=True,
             )
+            send_mail(
+                subject="Tu cuenta en NexoVolt",
+                message=(
+                    f"Hola {usuario.nombre},\n\n"
+                    "Tu cuenta en NexoVolt ha sido creada. Tu contraseña temporal es:\n\n"
+                    f"    {contrasena}\n\n"
+                    "Debes cambiarla al iniciar sesión por primera vez.\n\n"
+                    "Si no solicitaste esta cuenta, contacta al administrador."
+                ),
+                from_email=None,
+                recipient_list=[usuario.email],
+                fail_silently=False,
+            )
     except IntegrityError:
         raise UsuarioYaExiste("email")
-    send_mail(
-        subject="Tu cuenta en NexoVolt",
-        message=(
-            f"Hola {usuario.nombre},\n\n"
-            "Tu cuenta en NexoVolt ha sido creada. Tu contraseña temporal es:\n\n"
-            f"    {contrasena}\n\n"
-            "Debes cambiarla al iniciar sesión por primera vez.\n\n"
-            "Si no solicitaste esta cuenta, contacta al administrador."
-        ),
-        from_email=None,
-        recipient_list=[usuario.email],
-        fail_silently=False,
-    )
+    except Exception as exc:
+        raise EnvioCorreoFallido() from exc
     return usuario
 
 

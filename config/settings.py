@@ -141,6 +141,9 @@ EMAIL_USE_TLS = os.getenv("DJANGO_EMAIL_USE_TLS", "False").lower() == "true"
 EMAIL_HOST_USER = os.getenv("DJANGO_EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("DJANGO_EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DJANGO_DEFAULT_FROM_EMAIL", "NexoVolt <noreply@nexovolt.co>")
+EMAIL_TIMEOUT = int(os.getenv("DJANGO_EMAIL_TIMEOUT", "20"))
+APPS_SCRIPT_URL = os.getenv("DJANGO_APPS_SCRIPT_URL", "")
+APPS_SCRIPT_TOKEN = os.getenv("DJANGO_APPS_SCRIPT_TOKEN", "")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 PASSWORD_RESET_TIMEOUT = 1800
