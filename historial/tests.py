@@ -372,9 +372,8 @@ def test_comando_fecha_invalida_formato():
 
 def test_comando_error_grupo_no_encontrado():
     from cartera.servicios import GrupoNoEncontrado
-    mock_conn, mock_cursor = _mock_conn()
     with patch(f"{_CMD}.generar_corte", side_effect=GrupoNoEncontrado), \
-         patch(f"{_CMD}.connection", mock_conn), \
+         patch(f"{_CMD}.registrar_bitacora"), \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         with pytest.raises(CommandError):
             call_command("actualizar_estados_mensual", grupo_id=99)
