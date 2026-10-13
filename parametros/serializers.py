@@ -16,7 +16,7 @@ class ConceptoReportableSerializer(serializers.Serializer):
     def to_representation(self, instance):
         return {
             "codigo":      instance["codigo_concepto"],
-            "descripcion": instance["descripcion"],
+            "descripcion": instance["descripcion"] or "",
             "activo":      instance["reportable"] == "S",
             "observacion": instance["observacion"],
         }
