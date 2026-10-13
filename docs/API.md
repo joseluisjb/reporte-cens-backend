@@ -326,6 +326,8 @@ Lista conceptos de energía. Filtro opcional: `?activo=true|false`.
 [{"codigo": 1, "descripcion": "Energía activa", "activo": true, "observacion": null}]
 ```
 
+`descripcion` devuelve `""` cuando el valor en la base de datos es `NULL`.
+
 #### POST /api/conceptos/
 
 Crea un concepto.
@@ -348,6 +350,7 @@ Crea un concepto.
 
 **Errores**
 
+- `400 Bad Request` — `descripcion` vacía o de solo espacios
 - `409 Conflict` — el código ya existe
 
 #### PATCH /api/conceptos/{codigo}/
@@ -370,6 +373,7 @@ Actualiza `descripcion`, `observacion` y/o `activo`. Todos los campos son opcion
 
 **Errores**
 
+- `400 Bad Request` — `descripcion` vacía o de solo espacios (si se envía)
 - `404 Not Found` — código no encontrado
 
 ---

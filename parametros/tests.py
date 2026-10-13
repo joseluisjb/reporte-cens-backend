@@ -83,6 +83,32 @@ def test_descripcion_mayor_60_invalida():
     assert "descripcion" in s.errors
 
 
+def test_repr_descripcion_none_devuelve_cadena_vacia():
+    concepto = {"codigo_concepto": 5, "descripcion": None, "reportable": "S", "observacion": None}
+    data = ConceptoReportableSerializer(concepto).data
+    assert data["descripcion"] == ""
+
+
+def test_post_descripcion_vacia_o_espacios_devuelve_400():
+    for valor in ("", "   "):
+        request = factory.post("/api/conceptos/", {"codigo": 5, "descripcion": valor}, format="json")
+        force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
+        response = ConceptoViewSet.as_view({"post": "create"})(request)
+        assert response.status_code == 400, f"esperado 400 para descripcion={valor!r}"
+        assert "descripcion" in response.data
+        assert any("blanco" in str(m).lower() for m in response.data["descripcion"])
+
+
+def test_patch_descripcion_vacia_o_espacios_devuelve_400():
+    for valor in ("", "   "):
+        request = factory.patch("/api/conceptos/1/", {"descripcion": valor}, format="json")
+        force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
+        response = ConceptoViewSet.as_view({"patch": "partial_update"})(request, pk="1")
+        assert response.status_code == 400, f"esperado 400 para descripcion={valor!r}"
+        assert "descripcion" in response.data
+        assert any("blanco" in str(m).lower() for m in response.data["descripcion"])
+
+
 def test_actualizar_serializer_convierte_activo():
     s = ConceptoActualizarSerializer(data={"activo": False})
     assert s.is_valid(), s.errors
