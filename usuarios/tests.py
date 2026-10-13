@@ -1,12 +1,31 @@
 from unittest.mock import patch
 
 import pytest
+from django.core.cache import cache
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+
+@pytest.fixture(autouse=True)
+def limpiar_cache():
+    cache.clear()
+    yield
+    cache.clear()
+
+from tests.ayudas import usuario_con_rol
 from usuarios.models import Rol, Usuario
-from usuarios.serializers import ActualizarUsuarioSerializer, CrearUsuarioSerializer
+from usuarios.serializers import (
+    ActualizarUsuarioSerializer,
+    CrearUsuarioSerializer,
+    RecuperarPasswordSerializer,
+    RestablecerPasswordSerializer,
+)
 import usuarios.servicios as servicios
-from usuarios.views import GestionUsuarioDetalleView, GestionUsuariosView
+from usuarios.views import (
+    GestionUsuarioDetalleView,
+    GestionUsuariosView,
+    RecuperarPasswordView,
+    RestablecerPasswordView,
+)
 
 
 factory = APIRequestFactory()
@@ -240,3 +259,148 @@ def test_patch_devuelve_403_para_analista():
     force_authenticate(request, user=_analista())
     resp = GestionUsuarioDetalleView.as_view()(request, pk=10)
     assert resp.status_code == 403
+
+
+# ── Serializer: RecuperarPasswordSerializer ───────────────────────────────────
+
+def test_recuperar_serializer_valido():
+    s = RecuperarPasswordSerializer(data={"email": "user@test.com"})
+    assert s.is_valid(), s.errors
+
+
+def test_recuperar_serializer_correo_invalido():
+    s = RecuperarPasswordSerializer(data={"email": "no-es-correo"})
+    assert not s.is_valid()
+    assert "email" in s.errors
+
+
+def test_recuperar_serializer_correo_obligatorio():
+    s = RecuperarPasswordSerializer(data={})
+    assert not s.is_valid()
+    assert "email" in s.errors
+
+
+# ── Serializer: RestablecerPasswordSerializer ─────────────────────────────────
+
+def test_restablecer_serializer_valido():
+    s = RestablecerPasswordSerializer(data={"token": "abc.xyz", "new_password": "ClaveSegura1"})
+    assert s.is_valid(), s.errors
+
+
+def test_restablecer_serializer_token_obligatorio():
+    s = RestablecerPasswordSerializer(data={"new_password": "ClaveSegura1"})
+    assert not s.is_valid()
+    assert "token" in s.errors
+
+
+def test_restablecer_serializer_password_sin_mayuscula():
+    s = RestablecerPasswordSerializer(data={"token": "abc.xyz", "new_password": "sinmayuscula1"})
+    assert not s.is_valid()
+    assert "new_password" in s.errors
+    assert any("mayúscula" in m for m in s.errors["new_password"])
+
+
+def test_restablecer_serializer_password_sin_numero():
+    s = RestablecerPasswordSerializer(data={"token": "abc.xyz", "new_password": "SinNumeroAqui"})
+    assert not s.is_valid()
+    assert "new_password" in s.errors
+    assert any("número" in m for m in s.errors["new_password"])
+
+
+def test_restablecer_serializer_password_muy_corta():
+    s = RestablecerPasswordSerializer(data={"token": "abc.xyz", "new_password": "Corta1A"})
+    assert not s.is_valid()
+    assert "new_password" in s.errors
+
+
+# ── Vista: POST /api/auth/password-reset/ ────────────────────────────────────
+
+@patch("usuarios.views.servicios.solicitar_recuperacion_password")
+def test_recuperar_siempre_devuelve_202_con_correo_valido(mock_solicitar):
+    mock_solicitar.return_value = None
+    request = factory.post("/api/auth/password-reset/", {"email": "user@test.com"}, format="json")
+    resp = RecuperarPasswordView.as_view()(request)
+    assert resp.status_code == 202
+    assert "detail" in resp.data
+    mock_solicitar.assert_called_once_with("user@test.com")
+
+
+@patch("usuarios.views.servicios.solicitar_recuperacion_password")
+def test_recuperar_siempre_devuelve_202_aunque_correo_no_exista(mock_solicitar):
+    mock_solicitar.return_value = None
+    request = factory.post("/api/auth/password-reset/", {"email": "nadie@test.com"}, format="json")
+    resp = RecuperarPasswordView.as_view()(request)
+    assert resp.status_code == 202
+
+
+def test_recuperar_correo_mal_formado_devuelve_400():
+    request = factory.post("/api/auth/password-reset/", {"email": "no-correo"}, format="json")
+    resp = RecuperarPasswordView.as_view()(request)
+    assert resp.status_code == 400
+    assert "email" in resp.data
+
+
+def test_recuperar_sin_correo_devuelve_400():
+    request = factory.post("/api/auth/password-reset/", {}, format="json")
+    resp = RecuperarPasswordView.as_view()(request)
+    assert resp.status_code == 400
+
+
+@patch("usuarios.views.servicios.solicitar_recuperacion_password")
+def test_recuperar_respuesta_no_revela_si_existe_el_correo(mock_solicitar):
+    mock_solicitar.return_value = None
+    r1 = RecuperarPasswordView.as_view()(
+        factory.post("/api/auth/password-reset/", {"email": "existe@test.com"}, format="json")
+    )
+    r2 = RecuperarPasswordView.as_view()(
+        factory.post("/api/auth/password-reset/", {"email": "noexiste@test.com"}, format="json")
+    )
+    assert r1.status_code == r2.status_code == 202
+    assert r1.data == r2.data
+
+
+# ── Vista: POST /api/auth/password-reset/confirm/ ────────────────────────────
+
+@patch("usuarios.views.servicios.restablecer_password")
+def test_confirmar_token_valido_devuelve_204(mock_restablecer):
+    mock_restablecer.return_value = None
+    request = factory.post(
+        "/api/auth/password-reset/confirm/",
+        {"token": "uid64abc.tok-abc123", "new_password": "ClaveSegura1"},
+        format="json",
+    )
+    resp = RestablecerPasswordView.as_view()(request)
+    assert resp.status_code == 204
+    mock_restablecer.assert_called_once_with("uid64abc.tok-abc123", "ClaveSegura1")
+
+
+@patch("usuarios.views.servicios.restablecer_password")
+def test_confirmar_token_invalido_devuelve_400(mock_restablecer):
+    mock_restablecer.side_effect = servicios.TokenInvalido()
+    request = factory.post(
+        "/api/auth/password-reset/confirm/",
+        {"token": "token-malo", "new_password": "ClaveSegura1"},
+        format="json",
+    )
+    resp = RestablecerPasswordView.as_view()(request)
+    assert resp.status_code == 400
+    assert "token" in resp.data
+
+
+def test_confirmar_password_debil_devuelve_400():
+    request = factory.post(
+        "/api/auth/password-reset/confirm/",
+        {"token": "uid.tok", "new_password": "sinmayuscula1"},
+        format="json",
+    )
+    resp = RestablecerPasswordView.as_view()(request)
+    assert resp.status_code == 400
+    assert "new_password" in resp.data
+
+
+def test_confirmar_sin_campos_devuelve_400():
+    request = factory.post("/api/auth/password-reset/confirm/", {}, format="json")
+    resp = RestablecerPasswordView.as_view()(request)
+    assert resp.status_code == 400
+    assert "token" in resp.data
+    assert "new_password" in resp.data

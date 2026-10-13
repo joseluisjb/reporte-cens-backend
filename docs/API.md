@@ -67,9 +67,9 @@ Verifica disponibilidad del servidor. No requiere autenticación.
 
 ---
 
-### Autenticación (RF25, RF26)
+### Autenticación (RF25, RF26, RF29)
 
-El objeto `user` es `{"id", "nombre", "email", "rol", "is_active", "last_login", "must_change_password"}`. `last_login` es fecha y hora ISO 8601 con zona, o `null`.
+El objeto `user` es `{"id", "nombre", "email", "rol", "is_active", "last_login", "must_change_password"}`. `last_login` es fecha y hora ISO 8601 con zona, o `null`. `must_change_password` indica si el usuario debe cambiar su contraseña temporal antes de usar la API; el login siempre lo devuelve para que el frontend pueda redirigir al formulario de cambio.
 
 #### GET /api/auth/csrf/
 
@@ -134,6 +134,55 @@ Devuelve el usuario de la sesión. También renueva la sesión.
 **Errores**
 
 - `401 Unauthorized` — sin sesión o sesión vencida
+
+#### POST /api/auth/password-reset/
+
+Solicita un enlace de recuperación de contraseña. Responde **siempre 202 con el mismo cuerpo** (existe o no el correo) para no revelar qué correos están registrados. Si el correo existe y el usuario está activo, se genera un token de un solo uso (`uidb64.token`) y se envía por correo un enlace `{FRONTEND_URL}/restablecer?token=XXXX`. El token vence en 30 minutos (`PASSWORD_RESET_TIMEOUT = 1800`).
+
+**Rol requerido**: ninguno (público)
+
+**Límite de intentos**: 5 por hora por IP (`DJANGO_PASSWORD_RESET_RATE`)
+
+**Cuerpo**
+
+```json
+{"email": "jperez@example.com"}
+```
+
+**Respuesta 202**
+
+```json
+{"detail": "Si el correo está registrado, recibirás un enlace."}
+```
+
+**Errores**
+
+- `400 Bad Request` — `{"email": [...]}` — campo ausente o formato inválido
+- `429 Too Many Requests` — límite de intentos superado
+
+#### POST /api/auth/password-reset/confirm/
+
+Restablece la contraseña usando el token del enlace. Al completarse pone `must_change_password = false`.
+
+**Rol requerido**: ninguno (público)
+
+**Límite de intentos**: 5 por hora por IP (`DJANGO_PASSWORD_RESET_RATE`)
+
+**Cuerpo**
+
+```json
+{"token": "uidb64abc.tok-xyz", "new_password": "NuevaClaveSegura1"}
+```
+
+`new_password` debe cumplir las mismas reglas que `change-password`: mínimo 8 caracteres, al menos una mayúscula y al menos un número.
+
+**Respuesta 204**: sin cuerpo.
+
+**Errores**
+
+- `400 Bad Request` — `{"token": ["El enlace no es válido o ya venció."]}` — token vencido, ya usado o malformado
+- `400 Bad Request` — `{"new_password": [...]}` — contraseña inválida (un mensaje por regla incumplida)
+- `429 Too Many Requests` — límite de intentos superado
 
 #### POST /api/auth/change-password/
 

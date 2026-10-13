@@ -8,13 +8,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from usuarios.auditoria import registrar_auditoria
-from usuarios.autenticacion import LimiteInicioSesion, LimiteInicioSesionPorCorreo
+from usuarios.autenticacion import LimiteInicioSesion, LimiteInicioSesionPorCorreo, LimiteRecuperacion
 from usuarios.permisos import EsAdministrador
 from usuarios.serializers import (
     ActualizarUsuarioSerializer,
     CambioContrasenaSerializer,
     CrearUsuarioSerializer,
     InicioSesionSerializer,
+    RecuperarPasswordSerializer,
+    RestablecerPasswordSerializer,
     UsuarioSerializer,
 )
 import usuarios.servicios as servicios
@@ -86,6 +88,41 @@ class CambioContrasenaView(APIView):
         usuario.must_change_password = False
         usuario.save(update_fields=["password", "must_change_password"])
         update_session_auth_hash(request, usuario)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RecuperarPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [LimiteRecuperacion]
+
+    def post(self, request):
+        serializer = RecuperarPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        servicios.solicitar_recuperacion_password(serializer.validated_data["email"])
+        return Response(
+            {"detail": "Si el correo está registrado, recibirás un enlace."},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RestablecerPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [LimiteRecuperacion]
+
+    def post(self, request):
+        serializer = RestablecerPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            servicios.restablecer_password(
+                serializer.validated_data["token"],
+                serializer.validated_data["new_password"],
+            )
+        except servicios.TokenInvalido:
+            raise ValidationError({"token": ["El enlace no es válido o ya venció."]})
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
