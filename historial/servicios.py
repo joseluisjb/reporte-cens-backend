@@ -22,10 +22,10 @@ def listar_reportes_enviados(desde=None, hasta=None):
     params = []
     if desde is not None:
         params.append(desde)
-        sql += f" AND c.FECHA_ENVIO >= :{len(params)}"
+        sql += " AND c.FECHA_ENVIO >= %s"
     if hasta is not None:
         params.append(hasta)
-        sql += f" AND c.FECHA_ENVIO <= :{len(params)}"
+        sql += " AND c.FECHA_ENVIO <= %s"
     sql += (
         " GROUP BY c.CORTE_ID, c.FECHA_CORTE, c.FECHA_ENVIO, c.TOTAL_REGISTROS, "
         "c.OBSERVACION, c.GRUPO_NOMBRE"
@@ -52,14 +52,14 @@ def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT COUNT(*) FROM NEXOVOLT.NV_CORTE "
-            "WHERE CORTE_ID = :1 AND ESTADO = 'ENVIADO'",
+            "WHERE CORTE_ID = %s AND ESTADO = 'ENVIADO'",
             [corte_id],
         )
         if cursor.fetchone()[0] == 0:
             raise ReporteNoEncontrado()
 
         cursor.execute(
-            "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1",
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s",
             [corte_id],
         )
         total = cursor.fetchone()[0]
@@ -72,9 +72,9 @@ def listar_detalle_reporte(corte_id, limite=20, desplazamiento=0):
             "rd.N_CREDITOS, rd.FECHA_ULTIMO_PAGO "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
-            "WHERE rd.CORTE_ID = :1 "
+            "WHERE rd.CORTE_ID = %s "
             "ORDER BY rd.OBLIGACION_ID "
-            "OFFSET :2 ROWS FETCH NEXT :3 ROWS ONLY",
+            "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
             [corte_id, desplazamiento, limite],
         )
         filas = cursor.fetchall()
@@ -109,10 +109,10 @@ def buscar_deudores(cliente_id=None, numero_obligacion=None, limite=20, desplaza
     params = []
     if cliente_id is not None:
         params.append(cliente_id)
-        where += f" AND o.CLIENTE_ID = :{len(params)}"
+        where += " AND o.CLIENTE_ID = %s"
     if numero_obligacion is not None:
         params.append(numero_obligacion)
-        where += f" AND o.NUMERO_OBLIGACION_TU = :{len(params)}"
+        where += " AND o.NUMERO_OBLIGACION_TU = %s"
 
     sql_base = (
         "FROM NEXOVOLT.NV_OBLIGACION o "
@@ -135,8 +135,8 @@ def buscar_deudores(cliente_id=None, numero_obligacion=None, limite=20, desplaza
             "SELECT o.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, o.CLIENTE_ID, "
             "o.NUMERO_PROCESO, o.FECHA_INICIO, rd.ESTADO_TU, rd.VALOR_SALDO "
             f"{sql_base} "
-            f"ORDER BY o.OBLIGACION_ID "
-            f"OFFSET :{len(params_pag) - 1} ROWS FETCH NEXT :{len(params_pag)} ROWS ONLY",
+            "ORDER BY o.OBLIGACION_ID "
+            "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
             params_pag,
         )
         filas = cursor.fetchall()
@@ -159,7 +159,7 @@ def buscar_deudores(cliente_id=None, numero_obligacion=None, limite=20, desplaza
 def linea_tiempo_deudor(obligacion_id):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT COUNT(*) FROM NEXOVOLT.NV_OBLIGACION WHERE OBLIGACION_ID = :1",
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_OBLIGACION WHERE OBLIGACION_ID = %s",
             [obligacion_id],
         )
         if cursor.fetchone()[0] == 0:
@@ -170,7 +170,7 @@ def linea_tiempo_deudor(obligacion_id):
             "rd.CUOTAS_MORA, rd.VALOR_MORA, rd.VALOR_SALDO, c.ESTADO AS ESTADO_CORTE "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_CORTE c ON rd.CORTE_ID = c.CORTE_ID "
-            "WHERE rd.OBLIGACION_ID = :1 AND c.ESTADO != 'ANULADO' "
+            "WHERE rd.OBLIGACION_ID = %s AND c.ESTADO != 'ANULADO' "
             "ORDER BY c.FECHA_CORTE",
             [obligacion_id],
         )

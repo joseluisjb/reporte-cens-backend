@@ -43,7 +43,7 @@ def _fila_a_dict(row):
 
 
 def _buscar_por_codigo(codigo):
-    sql = f"SELECT {_COLS} FROM NV_CONCEPTO_REPORTABLE WHERE CODIGO_CONCEPTO = :1"
+    sql = f"SELECT {_COLS} FROM NV_CONCEPTO_REPORTABLE WHERE CODIGO_CONCEPTO = %s"
     with connection.cursor() as cursor:
         cursor.execute(sql, [codigo])
         row = cursor.fetchone()
@@ -54,7 +54,7 @@ def listar_conceptos(activo=None):
     sql = f"SELECT {_COLS} FROM NV_CONCEPTO_REPORTABLE"
     params = []
     if activo is not None:
-        sql += " WHERE REPORTABLE = :1"
+        sql += " WHERE REPORTABLE = %s"
         params.append("S" if activo else "N")
     sql += " ORDER BY CODIGO_CONCEPTO"
     with connection.cursor() as cursor:
@@ -67,7 +67,7 @@ def crear_concepto(datos):
     sql = (
         "INSERT INTO NV_CONCEPTO_REPORTABLE "
         "(CODIGO_CONCEPTO, DESCRIPCION, REPORTABLE, OBSERVACION) "
-        "VALUES (:1, :2, :3, :4)"
+        "VALUES (%s, %s, %s, %s)"
     )
     try:
         with connection.cursor() as cursor:
@@ -88,13 +88,13 @@ def actualizar_concepto(codigo, datos):
     for clave, col in _MAPA.items():
         if clave in datos:
             params.append(datos[clave])
-            sets.append(f"{col} = :{len(params)}")
+            sets.append(f"{col} = %s")
     if not sets:
         return _buscar_por_codigo(codigo)
     params.append(codigo)
     sql = (
         f"UPDATE NV_CONCEPTO_REPORTABLE SET {', '.join(sets)} "
-        f"WHERE CODIGO_CONCEPTO = :{len(params)}"
+        f"WHERE CODIGO_CONCEPTO = %s"
     )
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
@@ -106,7 +106,7 @@ def actualizar_concepto(codigo, datos):
 def _validar_conceptos(codigos):
     if not codigos:
         raise ConceptoInvalido(None)
-    placeholders = ", ".join([f":{i + 1}" for i in range(len(codigos))])
+    placeholders = ", ".join(["%s"] * len(codigos))
     sql = (
         f"SELECT CODIGO_CONCEPTO FROM NV_CONCEPTO_REPORTABLE "
         f"WHERE CODIGO_CONCEPTO IN ({placeholders}) AND REPORTABLE = 'S'"
@@ -120,7 +120,7 @@ def _validar_conceptos(codigos):
 
 
 def _insertar_detalle(grupo_id, codigos):
-    sql = "INSERT INTO NV_GRUPO_CONCEPTO_DET (GRUPO_ID, CODIGO_CONCEPTO) VALUES (:1, :2)"
+    sql = "INSERT INTO NV_GRUPO_CONCEPTO_DET (GRUPO_ID, CODIGO_CONCEPTO) VALUES (%s, %s)"
     with connection.cursor() as cursor:
         cursor.executemany(sql, [(grupo_id, codigo) for codigo in codigos])
 
@@ -132,7 +132,7 @@ def _buscar_grupo_por_id(grupo_id):
         "FROM NV_GRUPO_CONCEPTO g "
         "LEFT JOIN NV_GRUPO_CONCEPTO_DET d ON g.GRUPO_ID = d.GRUPO_ID "
         "LEFT JOIN NV_CONCEPTO_REPORTABLE c ON d.CODIGO_CONCEPTO = c.CODIGO_CONCEPTO "
-        "WHERE g.GRUPO_ID = :1 "
+        "WHERE g.GRUPO_ID = %s "
         "ORDER BY d.CODIGO_CONCEPTO"
     )
     with connection.cursor() as cursor:
@@ -205,7 +205,7 @@ def crear_grupo(datos):
                 cursor.execute(
                     "INSERT INTO NV_GRUPO_CONCEPTO "
                     "(GRUPO_ID, NOMBRE, ACTIVO, FECHA_CREACION) "
-                    "VALUES (:1, :2, 'S', :3)",
+                    "VALUES (%s, %s, 'S', %s)",
                     [grupo_id, datos["nombre"], ahora_para_bd()],
                 )
         except IntegrityError:
@@ -220,7 +220,7 @@ def actualizar_grupo(grupo_id, datos):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT COUNT(*) FROM NV_GRUPO_CONCEPTO WHERE GRUPO_ID = :1", [grupo_id]
+                "SELECT COUNT(*) FROM NV_GRUPO_CONCEPTO WHERE GRUPO_ID = %s", [grupo_id]
             )
             if cursor.fetchone()[0] == 0:
                 raise GrupoNoEncontrado()
@@ -230,13 +230,13 @@ def actualizar_grupo(grupo_id, datos):
         for clave, col in _MAPA.items():
             if clave in datos:
                 params.append(datos[clave])
-                sets.append(f"{col} = :{len(params)}")
+                sets.append(f"{col} = %s")
 
         if sets:
             params.append(grupo_id)
             sql = (
                 f"UPDATE NV_GRUPO_CONCEPTO SET {', '.join(sets)} "
-                f"WHERE GRUPO_ID = :{len(params)}"
+                f"WHERE GRUPO_ID = %s"
             )
             try:
                 with connection.cursor() as cursor:
@@ -248,7 +248,7 @@ def actualizar_grupo(grupo_id, datos):
             _validar_conceptos(datos["conceptos"])
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM NV_GRUPO_CONCEPTO_DET WHERE GRUPO_ID = :1", [grupo_id]
+                    "DELETE FROM NV_GRUPO_CONCEPTO_DET WHERE GRUPO_ID = %s", [grupo_id]
                 )
             _insertar_detalle(grupo_id, datos["conceptos"])
 
@@ -258,7 +258,7 @@ def actualizar_grupo(grupo_id, datos):
 def eliminar_grupo(grupo_id):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT COUNT(*) FROM NV_CORTE WHERE GRUPO_ID = :1 AND ESTADO = 'BORRADOR'",
+            "SELECT COUNT(*) FROM NV_CORTE WHERE GRUPO_ID = %s AND ESTADO = 'BORRADOR'",
             [grupo_id],
         )
         if cursor.fetchone()[0] > 0:
@@ -266,7 +266,7 @@ def eliminar_grupo(grupo_id):
 
     with connection.cursor() as cursor:
         cursor.execute(
-            "DELETE FROM NV_GRUPO_CONCEPTO WHERE GRUPO_ID = :1", [grupo_id]
+            "DELETE FROM NV_GRUPO_CONCEPTO WHERE GRUPO_ID = %s", [grupo_id]
         )
         if cursor.rowcount == 0:
             raise GrupoNoEncontrado()

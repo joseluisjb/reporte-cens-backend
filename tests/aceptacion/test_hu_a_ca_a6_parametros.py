@@ -87,7 +87,7 @@ def test_cp_a_33_el_administrador_desactiva_un_concepto():
 
     assert response.status_code == 200
     assert response.data["activo"] is False
-    assert "REPORTABLE = :1" in oraculo.sql_completo
+    assert "REPORTABLE = %s" in oraculo.sql_completo
 
 
 # ── CP-A-34 · el listado de la extracción solo trae los activos ───────────────

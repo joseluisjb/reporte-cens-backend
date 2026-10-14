@@ -67,7 +67,7 @@ def _todos_los_conceptos_reportables():
 def _validar_grupo(grupo_id):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT NOMBRE, ACTIVO FROM NEXOVOLT.NV_GRUPO_CONCEPTO WHERE GRUPO_ID = :1",
+            "SELECT NOMBRE, ACTIVO FROM NEXOVOLT.NV_GRUPO_CONCEPTO WHERE GRUPO_ID = %s",
             [grupo_id],
         )
         row = cursor.fetchone()
@@ -79,7 +79,7 @@ def _validar_grupo(grupo_id):
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT CODIGO_CONCEPTO FROM NEXOVOLT.NV_GRUPO_CONCEPTO_DET "
-            "WHERE GRUPO_ID = :1 ORDER BY CODIGO_CONCEPTO",
+            "WHERE GRUPO_ID = %s ORDER BY CODIGO_CONCEPTO",
             [grupo_id],
         )
         rows = cursor.fetchall()
@@ -90,7 +90,7 @@ def _validar_grupo(grupo_id):
 def _verificar_corte_existente(fecha_corte):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT CORTE_ID, ESTADO FROM NEXOVOLT.NV_CORTE WHERE FECHA_CORTE = :1",
+            "SELECT CORTE_ID, ESTADO FROM NEXOVOLT.NV_CORTE WHERE FECHA_CORTE = %s",
             [fecha_corte],
         )
         row = cursor.fetchone()
@@ -115,10 +115,10 @@ def _verificar_corte_existente(fecha_corte):
 def _limpiar_corte(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(
-            "DELETE FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1", [corte_id]
+            "DELETE FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s", [corte_id]
         )
         cursor.execute(
-            "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA WHERE CORTE_ID = :1", [corte_id]
+            "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA WHERE CORTE_ID = %s", [corte_id]
         )
 
 
@@ -132,7 +132,7 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "INSERT INTO NEXOVOLT.NV_CORTE "
                 "(CORTE_ID, FECHA_CORTE, TIPO_REPORTE, ESTADO, FECHA_GENERACION, "
                 "USUARIO_ID, TOTAL_REGISTROS, GRUPO_ID, GRUPO_NOMBRE, CONCEPTOS_USADOS) "
-                "VALUES (:1, :2, '01', 'BORRADOR', :3, NULL, 0, :4, :5, :6)",
+                "VALUES (%s, %s, '01', 'BORRADOR', %s, NULL, 0, %s, %s, %s)",
                 [corte_id, fecha_corte, ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados],
             )
         return corte_id
@@ -140,9 +140,9 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE NEXOVOLT.NV_CORTE "
-                "SET FECHA_GENERACION = :1, TOTAL_REGISTROS = 0, "
-                "GRUPO_ID = :2, GRUPO_NOMBRE = :3, CONCEPTOS_USADOS = :4 "
-                "WHERE CORTE_ID = :5",
+                "SET FECHA_GENERACION = %s, TOTAL_REGISTROS = 0, "
+                "GRUPO_ID = %s, GRUPO_NOMBRE = %s, CONCEPTOS_USADOS = %s "
+                "WHERE CORTE_ID = %s",
                 [ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
             )
         return corte_id_existente
@@ -161,7 +161,7 @@ def _insertar_obligaciones_nuevas():
     sql_insert = (
         "INSERT INTO NEXOVOLT.NV_OBLIGACION "
         "(OBLIGACION_ID, CLIENTE_ID, NUMERO_PROCESO, NUMERO_OBLIGACION_TU, FECHA_INICIO) "
-        "VALUES (NEXOVOLT.SEQ_NV_OBLIGACION.NEXTVAL, :1, :2, :3, :4)"
+        "VALUES (NEXOVOLT.SEQ_NV_OBLIGACION.NEXTVAL, %s, %s, %s, %s)"
     )
     with connection.cursor() as cursor:
         cursor.executemany(sql_insert, [(r[0], r[1], r[2], r[3]) for r in filas])
@@ -191,17 +191,17 @@ def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre):
     with connection.cursor() as cursor:
         cursor.execute(
             "UPDATE NEXOVOLT.NV_CORTE "
-            "SET TOTAL_REGISTROS = (SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1) "
-            "WHERE CORTE_ID = :1",
-            [corte_id],
+            "SET TOTAL_REGISTROS = (SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s) "
+            "WHERE CORTE_ID = %s",
+            [corte_id, corte_id],
         )
         cursor.execute(
-            "SELECT TOTAL_REGISTROS, FECHA_GENERACION FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1",
+            "SELECT TOTAL_REGISTROS, FECHA_GENERACION FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s",
             [corte_id],
         )
         total, fecha_gen = cursor.fetchone()
         cursor.execute(
-            "SELECT NVL(SUM(VALOR_SALDO), 0) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1",
+            "SELECT NVL(SUM(VALOR_SALDO), 0) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s",
             [corte_id],
         )
         saldo = cursor.fetchone()[0]
@@ -299,7 +299,7 @@ def listar_cortes():
 def obtener_corte(corte_id):
     sql = (
         _SQL_RESUMEN
-        + "WHERE c.CORTE_ID = :1"
+        + "WHERE c.CORTE_ID = %s"
         + _SQL_RESUMEN_GROUP
     )
     with connection.cursor() as cursor:
@@ -326,13 +326,13 @@ def obtener_ultimo_corte():
 def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT COUNT(*) FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
         )
         if cursor.fetchone()[0] == 0:
             raise CorteNoEncontrado()
 
         cursor.execute(
-            "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1",
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s",
             [corte_id],
         )
         total = cursor.fetchone()[0]
@@ -343,9 +343,9 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
             "rd.VALOR_MORA, rd.VALOR_SALDO, rd.N_CREDITOS "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
-            "WHERE rd.CORTE_ID = :1 "
+            "WHERE rd.CORTE_ID = %s "
             "ORDER BY rd.OBLIGACION_ID "
-            "OFFSET :2 ROWS FETCH NEXT :3 ROWS ONLY",
+            "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
             [corte_id, desplazamiento, limite],
         )
         filas = cursor.fetchall()
@@ -371,7 +371,7 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
 def validar_corte(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT ESTADO FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+            "SELECT ESTADO FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
         )
         row = cursor.fetchone()
     if row is None:
@@ -382,7 +382,7 @@ def validar_corte(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT REGLA, SEVERIDAD, MENSAJE FROM NEXOVOLT.V_VALIDACION_CORTE "
-            "WHERE CORTE_ID = :1",
+            "WHERE CORTE_ID = %s",
             [corte_id],
         )
         filas = cursor.fetchall()
@@ -395,7 +395,7 @@ def validar_corte(corte_id):
 
     with connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'VALIDADO' WHERE CORTE_ID = :1",
+            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'VALIDADO' WHERE CORTE_ID = %s",
             [corte_id],
         )
 
@@ -408,7 +408,7 @@ def validar_corte(corte_id):
 def registrar_envio(corte_id, fecha_envio=None):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT ESTADO, FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1",
+            "SELECT ESTADO, FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s",
             [corte_id],
         )
         row = cursor.fetchone()
@@ -432,8 +432,8 @@ def registrar_envio(corte_id, fecha_envio=None):
 
     with connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'ENVIADO', FECHA_ENVIO = :1 "
-            "WHERE CORTE_ID = :2",
+            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'ENVIADO', FECHA_ENVIO = %s "
+            "WHERE CORTE_ID = %s",
             [fecha_envio, corte_id],
         )
 
@@ -445,7 +445,7 @@ def eliminar_borrador(corte_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT ESTADO, FECHA_CORTE, GRUPO_NOMBRE "
-                "FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1",
+                "FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s",
                 [corte_id],
             )
             row = cursor.fetchone()
@@ -459,12 +459,12 @@ def eliminar_borrador(corte_id):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                "DELETE FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = :1", [corte_id]
+                "DELETE FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s", [corte_id]
             )
             cursor.execute(
-                "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA WHERE CORTE_ID = :1", [corte_id]
+                "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA WHERE CORTE_ID = %s", [corte_id]
             )
             cursor.execute(
-                "DELETE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = :1", [corte_id]
+                "DELETE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
             )
         registrar_bitacora("ELIMINACION_BORRADOR", "NV_CORTE", corte_id, detalle)
