@@ -1,9 +1,13 @@
+import logging
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, time, timedelta
 
-from django.db import connection
+from django.db import connection, transaction
 
 from config.formatos import ahora_para_bd, timestamp_str
+
+logger = logging.getLogger(__name__)
 
 usuario_actual = ContextVar("usuario_actual", default=None)
 
@@ -92,6 +96,16 @@ def registrar_bitacora(accion, entidad, entidad_id, detalle, usuario_id=None, us
                 modulo,
             ],
         )
+
+
+@contextmanager
+def tolerar_fallo_bitacora(accion):
+    # El punto de guardado evita que un INSERT fallido dañe la transacción de afuera.
+    try:
+        with transaction.atomic():
+            yield
+    except Exception:
+        logger.exception("No se pudo registrar en la bitácora la acción %s", accion)
 
 
 def consultar_bitacora(filtros, limite, desplazamiento):

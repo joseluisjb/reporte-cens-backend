@@ -1,4 +1,10 @@
-from config.settings import *
+import os
+
+# Se define antes del import: settings.py exige la clave cuando DEBUG es False.
+if not os.environ.get("DJANGO_SECRET_KEY"):
+    os.environ["DJANGO_SECRET_KEY"] = "clave-solo-para-pruebas"
+
+from config.settings import *  # noqa: E402
 
 DEBUG = True
 

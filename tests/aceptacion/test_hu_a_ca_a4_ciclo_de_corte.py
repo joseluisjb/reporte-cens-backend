@@ -34,7 +34,7 @@ _COMANDO = "historial.management.commands.actualizar_estados_mensual"
 
 def _fila_resumen(estado):
     """Fila de NV_CORTE tal como la devuelve la consulta de resumen."""
-    return (CORTE_ID, FECHA_CORTE, estado, FECHA_EJECUCION, 5, None, None, 45_000_000)
+    return (CORTE_ID, FECHA_CORTE, estado, FECHA_EJECUCION, 5, None, None, 45_000_000, None)
 
 
 def _llamar(vista, metodo, ruta, datos=None, oraculo=None):
