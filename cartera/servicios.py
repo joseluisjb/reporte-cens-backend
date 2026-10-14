@@ -2,6 +2,7 @@ from django.db import connection, transaction
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota
+from usuarios.models import Usuario
 
 
 # ── Excepciones ───────────────────────────────────────────────────────────────
@@ -122,7 +123,9 @@ def _limpiar_corte(corte_id):
         )
 
 
-def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, conceptos_usados):
+def _persistir_corte(
+    corte_id_existente, fecha_corte, grupo_id, grupo_nombre, conceptos_usados, usuario_id=None
+):
     if corte_id_existente is None:
         with connection.cursor() as cursor:
             cursor.execute("SELECT NEXOVOLT.SEQ_NV_CORTE.NEXTVAL FROM DUAL")
@@ -132,18 +135,21 @@ def _persistir_corte(corte_id_existente, fecha_corte, grupo_id, grupo_nombre, co
                 "INSERT INTO NEXOVOLT.NV_CORTE "
                 "(CORTE_ID, FECHA_CORTE, TIPO_REPORTE, ESTADO, FECHA_GENERACION, "
                 "USUARIO_ID, TOTAL_REGISTROS, GRUPO_ID, GRUPO_NOMBRE, CONCEPTOS_USADOS) "
-                "VALUES (%s, %s, '01', 'BORRADOR', %s, NULL, 0, %s, %s, %s)",
-                [corte_id, fecha_corte, ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados],
+                "VALUES (%s, %s, '01', 'BORRADOR', %s, %s, 0, %s, %s, %s)",
+                [corte_id, fecha_corte, ahora_para_bd(), usuario_id, grupo_id, grupo_nombre,
+                 conceptos_usados],
             )
         return corte_id
     else:
+        # Regenerar el borrador lo deja a nombre de quien lo regeneró.
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE NEXOVOLT.NV_CORTE "
-                "SET FECHA_GENERACION = %s, TOTAL_REGISTROS = 0, "
+                "SET FECHA_GENERACION = %s, TOTAL_REGISTROS = 0, USUARIO_ID = %s, "
                 "GRUPO_ID = %s, GRUPO_NOMBRE = %s, CONCEPTOS_USADOS = %s "
                 "WHERE CORTE_ID = %s",
-                [ahora_para_bd(), grupo_id, grupo_nombre, conceptos_usados, corte_id_existente],
+                [ahora_para_bd(), usuario_id, grupo_id, grupo_nombre, conceptos_usados,
+                 corte_id_existente],
             )
         return corte_id_existente
 
@@ -187,7 +193,7 @@ def _insertar_reporte_detalle():
         cursor.execute(sql)
 
 
-def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre):
+def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por=None):
     with connection.cursor() as cursor:
         cursor.execute(
             "UPDATE NEXOVOLT.NV_CORTE "
@@ -213,25 +219,33 @@ def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre):
         "obligaciones":     total or 0,
         "saldo_consolidado": int(saldo),
         "estado":           "BORRADOR",
-        "ejecutada_por":    None,
+        "ejecutada_por":    ejecutada_por,
     }
 
 
 _SQL_RESUMEN = (
     "SELECT c.CORTE_ID, c.FECHA_CORTE, c.ESTADO, c.FECHA_GENERACION, "
     "NVL(c.TOTAL_REGISTROS, 0), c.GRUPO_ID, c.GRUPO_NOMBRE, "
-    "NVL(SUM(d.VALOR_SALDO), 0) "
+    "NVL(SUM(d.VALOR_SALDO), 0), c.USUARIO_ID "
     "FROM NEXOVOLT.NV_CORTE c "
     "LEFT JOIN NEXOVOLT.NV_REPORTE_DETALLE d ON c.CORTE_ID = d.CORTE_ID "
 )
 _SQL_RESUMEN_GROUP = (
     " GROUP BY c.CORTE_ID, c.FECHA_CORTE, c.ESTADO, c.FECHA_GENERACION, "
-    "c.TOTAL_REGISTROS, c.GRUPO_ID, c.GRUPO_NOMBRE"
+    "c.TOTAL_REGISTROS, c.GRUPO_ID, c.GRUPO_NOMBRE, c.USUARIO_ID"
 )
 
 
-def _fila_a_resumen(row):
-    corte_id, fecha_corte, estado, fecha_gen, total, grupo_id, grupo_nombre, saldo = row
+def _nombres_de_usuarios(filas):
+    # El nombre se toma de la tabla de usuarios de Django (no hay columna de nombre en NV_CORTE).
+    ids = {fila[8] for fila in filas if fila[8] is not None}
+    if not ids:
+        return {}
+    return dict(Usuario.objects.filter(pk__in=ids).values_list("pk", "nombre"))
+
+
+def _fila_a_resumen(row, nombres=None):
+    corte_id, fecha_corte, estado, fecha_gen, total, grupo_id, grupo_nombre, saldo, usuario_id = row
     return {
         "id":               corte_id,
         "fecha_corte":      fecha_corte,
@@ -240,13 +254,17 @@ def _fila_a_resumen(row):
         "obligaciones":     total or 0,
         "saldo_consolidado": int(saldo),
         "estado":           estado,
-        "ejecutada_por":    None,
+        # null si lo generó el proceso mensual o si el corte es anterior a la fila 42.
+        "ejecutada_por":    (nombres or {}).get(usuario_id),
     }
 
 
 # ── API pública ───────────────────────────────────────────────────────────────
 
-def generar_corte(fecha_corte, grupo_id=None):
+def generar_corte(fecha_corte, grupo_id=None, usuario=None):
+    # `usuario` es el de la sesión; el proceso mensual (RF9) no lo pasa y el corte queda sin autor.
+    usuario_id = getattr(usuario, "pk", None)
+    ejecutada_por = getattr(usuario, "nombre", None) if usuario_id is not None else None
     with transaction.atomic():
         if fecha_corte > hoy_bogota():
             raise FechaInvalida("La fecha de corte no puede ser futura.")
@@ -275,12 +293,12 @@ def generar_corte(fecha_corte, grupo_id=None):
             _limpiar_corte(corte_id_existente)
 
         corte_id = _persistir_corte(
-            corte_id_existente, fecha_corte, grupo_id, grupo_nombre, conceptos_usados
+            corte_id_existente, fecha_corte, grupo_id, grupo_nombre, conceptos_usados, usuario_id
         )
 
         _insertar_obligaciones_nuevas()
         _insertar_reporte_detalle()
-        return _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre)
+        return _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por)
 
 
 def listar_cortes():
@@ -293,7 +311,8 @@ def listar_cortes():
     with connection.cursor() as cursor:
         cursor.execute(sql)
         rows = cursor.fetchall()
-    return [_fila_a_resumen(r) for r in rows]
+    nombres = _nombres_de_usuarios(rows)
+    return [_fila_a_resumen(r, nombres) for r in rows]
 
 
 def obtener_corte(corte_id):
@@ -305,7 +324,7 @@ def obtener_corte(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(sql, [corte_id])
         row = cursor.fetchone()
-    return _fila_a_resumen(row) if row else None
+    return _fila_a_resumen(row, _nombres_de_usuarios([row])) if row else None
 
 
 def obtener_ultimo_corte():
@@ -320,7 +339,7 @@ def obtener_ultimo_corte():
     with connection.cursor() as cursor:
         cursor.execute(sql)
         row = cursor.fetchone()
-    return _fila_a_resumen(row) if row else None
+    return _fila_a_resumen(row, _nombres_de_usuarios([row])) if row else None
 
 
 def listar_obligaciones(corte_id, limite=20, desplazamiento=0):

@@ -24,6 +24,7 @@ class ExtraccionViewSet(viewsets.ViewSet):
             resumen = servicios.generar_corte(
                 fecha_corte=datos["fecha_corte"],
                 grupo_id=datos.get("grupo_id"),
+                usuario=request.user,
             )
         except servicios.FechaInvalida as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

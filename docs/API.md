@@ -52,7 +52,7 @@ Una ruta que no existe responde `404` en JSON, también con `DJANGO_DEBUG=False`
 ## Pendiente / Provisional
 
 - Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
-- `ejecutada_por` sigue en `null`: `NV_CORTE` está ligada a la tabla anterior `NV_USUARIO`, que aún no se une con `USUARIOS_USUARIO`. `NV_BITACORA` ya no depende de ella (RF30).
+- `ejecutada_por` (fila 42): el corte guarda en `NV_CORTE.USUARIO_ID` el usuario de la sesión y la API devuelve su nombre, tomado de `USUARIOS_USUARIO`. **Requiere aplicar antes `config/sql/09_fila42_nv_corte_usuario.sql`**, que quita la llave de `NV_CORTE` hacia la tabla anterior `NV_USUARIO` (como el 08 hizo con `NV_BITACORA`); sin él, generar un corte con sesión falla.
 - No hay paginación automática en el listado de cortes (sin límite). El endpoint de deudores acepta `limite` y `desplazamiento` (defecto 20/0, máximo 100).
 
 ---
@@ -507,11 +507,11 @@ Genera un corte de cartera.
   "obligaciones": 150,
   "saldo_consolidado": 45000000,
   "estado": "BORRADOR",
-  "ejecutada_por": null
+  "ejecutada_por": "Juan Pérez"
 }
 ```
 
-`grupo` es `null` cuando no se usó grupo.
+`grupo` es `null` cuando no se usó grupo. `ejecutada_por` es el nombre del usuario que generó (o regeneró) el corte; es `null` si lo generó el proceso mensual (RF9) o si el corte es anterior a la fila 42.
 
 **Errores**
 

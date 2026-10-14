@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: NexoVolt — API REST (Iteración 1)
-  version: 0.7.0-borrador
+  version: 0.8.0-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
@@ -40,6 +40,10 @@ info:
     `{ motivo }` en `POST /auth/logout/` (AF), `404` en JSON para rutas inexistentes (AD), el texto
     del `409` sin la ruta de la API (AC) y la auditoría que ya no tumba una acción si falla (AG).
     Nada de esto rompe al frontend actual: el backend sigue aceptando un logout sin cuerpo.
+
+    La **versión 0.8** (14/10/2026) documenta `ejecutada_por` con el nombre de quien generó el corte
+    (fila 42, diferencia Y), en la misma rama del backend. Necesita aplicar antes en Oracle
+    `config/sql/09_fila42_nv_corte_usuario.sql`. No cambia la forma de la respuesta.
 
     ## Reglas generales
 
@@ -1763,7 +1767,12 @@ components:
         ejecutada_por:
           type: string
           nullable: true
-          description: "Nombre de quien generó el corte. Hoy siempre `null`: no hay usuario autenticado (diferencia Y del README)."
+          example: Juan Pérez
+          description: |
+            Nombre del usuario que generó (o regeneró) el corte. `null` si lo generó el proceso
+            mensual (RF9) o si el corte es anterior a la fila 42. Implementado en la rama del backend
+            `fix/api-mensajes-seguridad-auditoria` (PR #34, sin fusionar; diferencia Y del README);
+            hasta la fusión, `main` lo devuelve siempre `null`.
     ReglaMensaje:
       type: object
       required: [regla, mensaje]
