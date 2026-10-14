@@ -1,12 +1,12 @@
 from contextlib import contextmanager
 from datetime import datetime
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch, call
 
 import pytest
 from django.db import IntegrityError
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from tests.ayudas import usuario_con_rol
+from tests.ayudas import usuario_con_rol, _mock_conn
 
 
 @contextmanager
@@ -125,17 +125,6 @@ def test_actualizar_serializer_sin_activo_no_agrega_reportable():
 # ---------------------------------------------------------------------------
 # Servicios — cursor simulado
 # ---------------------------------------------------------------------------
-
-def _mock_conn(fetchall=None, fetchone=None):
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_conn.cursor.return_value.__exit__.return_value = False
-    if fetchall is not None:
-        mock_cursor.fetchall.return_value = fetchall
-    if fetchone is not None:
-        mock_cursor.fetchone.return_value = fetchone
-    return mock_conn, mock_cursor
 
 
 def test_listar_conceptos_sin_filtro():

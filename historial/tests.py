@@ -1,14 +1,14 @@
 from contextlib import contextmanager
 from datetime import date, datetime
 from io import StringIO
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import call, patch
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from tests.ayudas import usuario_con_rol
+from tests.ayudas import usuario_con_rol, _mock_conn
 
 from historial import servicios
 from historial.serializers import ReporteEnviadoSerializer, DeudorSerializer
@@ -16,17 +16,6 @@ from historial.views import ReporteViewSet, DeudorViewSet
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _mock_conn(fetchall=None, fetchone=None):
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_conn.cursor.return_value.__exit__.return_value = False
-    if fetchall is not None:
-        mock_cursor.fetchall.return_value = fetchall
-    if fetchone is not None:
-        mock_cursor.fetchone.return_value = fetchone
-    return mock_conn, mock_cursor
 
 
 @contextmanager

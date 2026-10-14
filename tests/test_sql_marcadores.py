@@ -1,15 +1,18 @@
 """
-Recorrido AST que verifica que ninguna cadena SQL pasada a cursor.execute /
-cursor.executemany contenga:
-  - marcadores Oracle del estilo :1, :2 o :nombre  (deben ser %s)
-  - un % que no sea %s ni %%  (deben escaparse como %%)
+Verificación de marcadores SQL: recorrido AST estático y validación en tiempo
+de ejecución via FormatStylePlaceholderCursor._fix_for_params.
 
-Excluye directorios: tests, migrations, scripts (scripts usa oracledb directo,
-no el cursor de Django, y su sintaxis SQL es diferente).
+El recorrido AST detecta marcadores Oracle (:1, :nombre) y % sin escapar en
+literales de cadena.  validar_sql detecta en ejecución mismatches entre el
+número de %s y los parámetros reales.
 """
 import ast
 import re
 from pathlib import Path
+
+import pytest
+
+from tests.ayudas import validar_sql
 
 
 _DIRS_EXCLUIDOS = {"tests", "migrations", "scripts", ".venv"}
@@ -98,3 +101,41 @@ def test_sin_marcadores_oracle_ni_porcentaje_desnudo():
     assert not todos, (
         f"{len(todos)} problema(s) encontrado(s):\n" + "\n".join(todos)
     )
+
+
+# ── Validación en tiempo de ejecución ────────────────────────────────────────
+
+def test_validar_sql_marcador_correcto():
+    validar_sql("SELECT * FROM t WHERE id = %s", [1])
+
+
+def test_validar_sql_sin_params():
+    validar_sql("SELECT * FROM t", None)
+
+
+def test_validar_sql_lista_vacia_sin_marcadores():
+    validar_sql("SELECT * FROM t", [])
+
+
+def test_validar_sql_marcador_oracle_lanza():
+    with pytest.raises(TypeError):
+        validar_sql("SELECT * FROM t WHERE id = :1", [1])
+
+
+def test_validar_sql_params_sobrantes_lanza():
+    with pytest.raises(TypeError):
+        validar_sql("SELECT * FROM t WHERE id = %s", [1, 2])
+
+
+def test_validar_sql_params_faltantes_lanza():
+    with pytest.raises(TypeError):
+        validar_sql("SELECT * FROM t WHERE a = %s AND b = %s", [1])
+
+
+def test_validar_sql_varios_correcto():
+    validar_sql("INSERT INTO t (a, b) VALUES (%s, %s)", [(1, 2), (3, 4)], varios=True)
+
+
+def test_validar_sql_varios_params_sobrantes_lanza():
+    with pytest.raises(TypeError):
+        validar_sql("INSERT INTO t (a) VALUES (%s)", [(1, 2)], varios=True)

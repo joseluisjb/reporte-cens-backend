@@ -1,11 +1,11 @@
 from contextlib import contextmanager
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from tests.ayudas import usuario_con_rol
+from tests.ayudas import usuario_con_rol, _mock_conn
 
 from cartera import servicios
 from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer
@@ -17,18 +17,6 @@ from cartera.views import ExtraccionViewSet
 @contextmanager
 def _noop_atomic():
     yield
-
-
-def _mock_conn(fetchall=None, fetchone=None):
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_conn.cursor.return_value.__exit__.return_value = False
-    if fetchall is not None:
-        mock_cursor.fetchall.return_value = fetchall
-    if fetchone is not None:
-        mock_cursor.fetchone.return_value = fetchone
-    return mock_conn, mock_cursor
 
 
 _FECHA_PASADA = date(2026, 9, 30)
@@ -150,11 +138,7 @@ def test_corte_insertado_antes_de_vistas():
     """INSERT/UPDATE de NV_CORTE ocurre antes que SELECT de V_CALCULO_CORTE."""
     sqls_ejecutados = []
 
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_conn.cursor.return_value.__exit__.return_value = False
-
+    mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         (None,),            # MAX(FECHA_CORTE) — sin enviados
         None,               # _verificar_corte_existente — sin misma fecha
