@@ -118,8 +118,8 @@ def test_listar_reportes_filtro_desde_hasta():
         servicios.listar_reportes_enviados(desde=desde, hasta=hasta)
     sql = mock_cursor.execute.call_args[0][0]
     params = mock_cursor.execute.call_args[0][1]
-    assert "FECHA_ENVIO >= :1" in sql
-    assert "FECHA_ENVIO <= :2" in sql
+    assert "FECHA_ENVIO >= %s" in sql
+    assert "FECHA_ENVIO <= %s" in sql
     assert params == [desde, hasta]
 
 
@@ -129,7 +129,7 @@ def test_listar_reportes_solo_filtro_desde():
     with patch("historial.servicios.connection", mock_conn):
         servicios.listar_reportes_enviados(desde=desde)
     sql = mock_cursor.execute.call_args[0][0]
-    assert "FECHA_ENVIO >= :1" in sql
+    assert "FECHA_ENVIO >= %s" in sql
     assert "FECHA_ENVIO <=" not in sql
 
 
@@ -168,7 +168,7 @@ def test_buscar_deudores_por_cliente_id():
         result = servicios.buscar_deudores(cliente_id=900001)
     sql = mock_cursor.execute.call_args[0][0]
     params = mock_cursor.execute.call_args[0][1]
-    assert "CLIENTE_ID = :1" in sql
+    assert "CLIENTE_ID = %s" in sql
     assert params == [900001, 0, 20]
     assert result["total"] == 1
     assert len(result["resultados"]) == 1
@@ -181,7 +181,7 @@ def test_buscar_deudores_por_numero_obligacion():
         result = servicios.buscar_deudores(numero_obligacion="OBL001")
     sql = mock_cursor.execute.call_args[0][0]
     params = mock_cursor.execute.call_args[0][1]
-    assert "NUMERO_OBLIGACION_TU = :1" in sql
+    assert "NUMERO_OBLIGACION_TU = %s" in sql
     assert params == ["OBL001", 0, 20]
     assert result["resultados"][0]["numero_obligacion"] == "OBL001"
 
