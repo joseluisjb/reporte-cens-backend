@@ -24,6 +24,7 @@ class ExtraccionViewSet(viewsets.ViewSet):
             resumen = servicios.generar_corte(
                 fecha_corte=datos["fecha_corte"],
                 grupo_id=datos.get("grupo_id"),
+                usuario=request.user,
             )
         except servicios.FechaInvalida as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -46,7 +47,7 @@ class ExtraccionViewSet(viewsets.ViewSet):
             return Response(
                 {"detail": (
                     f"Ya existe un corte en BORRADOR con fecha {exc.fecha}. "
-                    f"Elimínelo con DELETE /api/extracciones/{exc.corte_id}/ o complételo primero."
+                    "Elimínelo o complételo antes de generar otro."
                 )},
                 status=status.HTTP_409_CONFLICT,
             )

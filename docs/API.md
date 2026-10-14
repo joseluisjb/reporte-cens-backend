@@ -43,10 +43,16 @@ Error de validación de campo (DRF estándar):
 {"campo": ["Este campo es requerido."]}
 ```
 
+Una ruta que no existe responde `404` en JSON, también con `DJANGO_DEBUG=False`:
+
+```json
+{"detail": "Recurso no encontrado."}
+```
+
 ## Pendiente / Provisional
 
 - Las reglas de negocio sobre reemplazo de BORRADOR y conflictos de estado (`409`) están marcadas como **pendiente de decisión del equipo** en todos los endpoints de extracción.
-- `ejecutada_por` sigue en `null`: `NV_CORTE` está ligada a la tabla anterior `NV_USUARIO`, que aún no se une con `USUARIOS_USUARIO`. `NV_BITACORA` ya no depende de ella (RF30).
+- `ejecutada_por` (fila 42): el corte guarda en `NV_CORTE.USUARIO_ID` el usuario de la sesión y la API devuelve su nombre, tomado de `USUARIOS_USUARIO`. **Requiere aplicar antes `config/sql/09_fila42_nv_corte_usuario.sql`**, que quita la llave de `NV_CORTE` hacia la tabla anterior `NV_USUARIO` (como el 08 hizo con `NV_BITACORA`); sin él, generar un corte con sesión falla.
 - No hay paginación automática en el listado de cortes (sin límite). El endpoint de deudores acepta `limite` y `desplazamiento` (defecto 20/0, máximo 100).
 
 ---
@@ -116,6 +122,14 @@ Abre la sesión. No requiere autenticación, pero sí la cabecera `X-CSRFToken`.
 Cierra la sesión y la elimina del servidor.
 
 **Rol requerido**: cualquier usuario con sesión
+
+**Cuerpo** (opcional)
+
+```json
+{"motivo": "inactividad"}
+```
+
+`motivo` puede ser `"inactividad"` o `"manual"`. Solo cambia el detalle de la auditoría: `"Cierre por inactividad"` o `"Cierre manual"`. Sin cuerpo, o con otro valor, queda como `"Cierre manual"`.
 
 **Respuesta 204**: sin cuerpo.
 
@@ -493,17 +507,17 @@ Genera un corte de cartera.
   "obligaciones": 150,
   "saldo_consolidado": 45000000,
   "estado": "BORRADOR",
-  "ejecutada_por": null
+  "ejecutada_por": "Juan Pérez"
 }
 ```
 
-`grupo` es `null` cuando no se usó grupo.
+`grupo` es `null` cuando no se usó grupo. `ejecutada_por` es el nombre del usuario que generó (o regeneró) el corte; es `null` si lo generó el proceso mensual (RF9) o si el corte es anterior a la fila 42.
 
 **Errores**
 
 - `400 Bad Request` — `fecha_corte` ausente o futura
 - `404 Not Found` — grupo no encontrado
-- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha (mensaje incluye `DELETE /api/extracciones/{id}/` para eliminarlo); `fecha_corte` no es posterior a la del último corte enviado
+- `409 Conflict` — grupo inactivo; corte con esa fecha en estado distinto de BORRADOR; ya existe un BORRADOR con distinta fecha (`"Ya existe un corte en BORRADOR con fecha 2026-08-31. Elimínelo o complételo antes de generar otro."`); `fecha_corte` no es posterior a la del último corte enviado
 
 #### GET /api/extracciones/
 
@@ -732,7 +746,7 @@ Detalle de obligaciones de un reporte enviado con paginación.
 }
 ```
 
-Notas de campo: `tipo_id_tu` código de 2 caracteres (Tabla 4a SSR, e.g. `"01"`). `estado_tu` código de 2 caracteres (Tabla 4b SSR, e.g. `"01"`). `edad_mora` código de 2 caracteres `"00"`–`"14"` (Tabla SSR). `valor_mora` y `valor_saldo` pueden ser `null`. `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visibles, prefijados con `******`).
+Notas de campo: `tipo_id_tu` código de 2 caracteres (Tabla 2, tipo de identificación, e.g. `"01"`). `estado_tu` código de 2 caracteres (Tabla 4b SSR, e.g. `"01"`). `edad_mora` código de 2 caracteres `"00"`–`"14"` (Tabla SSR). `valor_mora` y `valor_saldo` pueden ser `null`. `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visibles, prefijados con `******`).
 
 **Errores**
 
@@ -825,6 +839,8 @@ Acciones que se registran:
 | Extracción | Corte generado, validado, eliminado · Envío registrado · Actualización mensual · Consulta de obligaciones, de reporte enviado y de deudores |
 
 Las acciones sin usuario (por ejemplo, la actualización mensual programada) aparecen con `usuario: "Sistema"`, y `usuario_id` y `rol` en `null`.
+
+Si no se puede escribir en `NV_BITACORA` (por ejemplo, porque falta aplicar `config/sql/08_rf30_nv_bitacora.sql`), la acción principal termina igual y el fallo queda en el log del servidor.
 
 #### GET /api/auditoria/
 

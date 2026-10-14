@@ -245,11 +245,92 @@ def test_sin_grupo_conceptos_usados_son_todos_reportables():
         params for sql, params in inserts
         if params and "INSERT" in sql and "NV_CORTE" in sql
     )
-    # Orden tras añadir ahora_para_bd(): [corte_id, fecha_corte, fecha_gen, grupo_id, grupo_nombre, conceptos_usados]
-    conceptos_usados = insert_corte_params[5]
+    # Orden: [corte_id, fecha_corte, fecha_gen, usuario_id, grupo_id, grupo_nombre, conceptos_usados]
+    conceptos_usados = insert_corte_params[6]
     assert conceptos_usados == "30,61,90"
-    assert insert_corte_params[3] is None   # grupo_id nulo
-    assert insert_corte_params[4] is None   # grupo_nombre nulo
+    assert insert_corte_params[3] is None   # usuario_id nulo (sin usuario: proceso mensual)
+    assert insert_corte_params[4] is None   # grupo_id nulo
+    assert insert_corte_params[5] is None   # grupo_nombre nulo
+
+
+# ── Fila 42 — quién generó el corte (ejecutada_por) ──────────────────────────
+
+def _fetchone_corte_nuevo():
+    return [
+        (None,),            # MAX(FECHA_CORTE) — sin enviados
+        None,               # _verificar_corte_existente — sin misma fecha
+        None,               # _verificar_corte_existente — sin borrador
+        (1,),               # _persistir_corte — NEXTVAL
+        (5, _FECHA_GEN),    # _finalizar_y_resumir — TOTAL, FECHA_GENERACION
+        (0,),               # _finalizar_y_resumir — SUM
+    ]
+
+
+def test_generar_corte_guarda_el_usuario_de_la_sesion_y_devuelve_su_nombre():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = _fetchone_corte_nuevo()
+    mock_cursor.fetchall.side_effect = [[(30,)], []]
+    llamadas = []
+    mock_cursor.execute.side_effect = lambda sql, params=None: llamadas.append((sql, params))
+    analista = usuario_con_rol("ANALISTA_CARTERA")
+    analista.pk, analista.nombre = 7, "Juan Pérez"
+
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        resumen = servicios.generar_corte(fecha_corte=_FECHA_PASADA, usuario=analista)
+
+    insert = next(p for s, p in llamadas if p and "INSERT" in s and "NV_CORTE" in s)
+    assert insert[3] == 7
+    assert resumen["ejecutada_por"] == "Juan Pérez"
+
+
+def test_regenerar_borrador_lo_deja_a_nombre_de_quien_lo_regenero():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(None,), (3, "BORRADOR"), (5, _FECHA_GEN), (0,)]
+    mock_cursor.fetchall.side_effect = [[(30,)], []]
+    llamadas = []
+    mock_cursor.execute.side_effect = lambda sql, params=None: llamadas.append((sql, params))
+    analista = usuario_con_rol("ANALISTA_CARTERA")
+    analista.pk, analista.nombre = 9, "Laura Díaz"
+
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        resumen = servicios.generar_corte(fecha_corte=_FECHA_PASADA, usuario=analista)
+
+    sql, params = next((s, p) for s, p in llamadas if "UPDATE" in s and "NV_CORTE" in s and "USUARIO_ID" in s)
+    assert params[1] == 9
+    assert resumen["ejecutada_por"] == "Laura Díaz"
+
+
+def test_listar_cortes_trae_el_nombre_de_quien_genero_cada_uno():
+    mock_conn, mock_cursor = _mock_conn(fetchall=[
+        (2, "2026-09-30", "BORRADOR", None, 5, None, None, 0, 7),
+        (1, "2026-08-31", "ENVIADO", None, 3, None, None, 0, None),  # proceso mensual o anterior
+    ])
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios._nombres_de_usuarios", return_value={7: "Juan Pérez"}) as nombres:
+        cortes = servicios.listar_cortes()
+    assert [c["ejecutada_por"] for c in cortes] == ["Juan Pérez", None]
+    nombres.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_nombres_de_usuarios_los_toma_de_la_tabla_de_django():
+    from usuarios.models import Usuario
+    juan = Usuario.objects.create_user("jperez@example.com", "ClaveSegura1", nombre="Juan Pérez")
+    filas = [(1, None, None, None, 0, None, None, 0, juan.pk), (2, None, None, None, 0, None, None, 0, None)]
+    assert servicios._nombres_de_usuarios(filas) == {juan.pk: "Juan Pérez"}
+    assert servicios._nombres_de_usuarios([filas[1]]) == {}
+
+
+def test_crear_corte_por_api_pasa_el_usuario_de_la_sesion():
+    analista = usuario_con_rol("ANALISTA_CARTERA")
+    request = factory.post("/api/extracciones/", {"fecha_corte": "2026-09-30"}, format="json")
+    force_authenticate(request, user=analista)
+    with patch("cartera.views.servicios.generar_corte", return_value=_RESUMEN) as generar:
+        response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 201
+    assert generar.call_args.kwargs["usuario"] is analista
 
 
 # ── Servicios — resumen ───────────────────────────────────────────────────────
@@ -371,7 +452,11 @@ def test_post_409_borrador_otra_fecha():
                side_effect=servicios.BorradorOtraFecha(date(2026, 8, 31), corte_id=3)):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 409
-    assert "BORRADOR" in response.data["detail"]
+    assert response.data["detail"] == (
+        "Ya existe un corte en BORRADOR con fecha 2026-08-31. "
+        "Elimínelo o complételo antes de generar otro."
+    )
+    assert "/api/" not in response.data["detail"]
 
 
 def test_post_409_estado_fijo():
@@ -501,7 +586,7 @@ def test_validar_corte_sin_errores_actualiza_estado():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),   # SELECT ESTADO
-        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),  # obtener_corte
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),  # obtener_corte
     ]
     mock_cursor.fetchall.return_value = []   # V_VALIDACION_CORTE → sin errores
     with patch("cartera.servicios.connection", mock_conn):
@@ -514,7 +599,7 @@ def test_validar_corte_devuelve_advertencias():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),
-        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = [
         ("SIN_FECHA_LIMITE_PAGO", "INFORMATIVA", "No se encontró una factura"),
@@ -556,7 +641,7 @@ def test_registrar_envio_usa_hoy_sin_fecha():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
-        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0),
+        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     with patch("cartera.servicios.connection", mock_conn):
         servicios.registrar_envio(1)
@@ -740,7 +825,7 @@ def test_validar_corte_filtra_por_corte_id():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),
-        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0),
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = []
     with patch("cartera.servicios.connection", mock_conn):
@@ -769,6 +854,19 @@ def test_eliminar_borrador_ejecuta_deletes():
         "ELIMINACION_BORRADOR", "NV_CORTE", 7,
         "Fecha: 2026-09-30, Grupo: Grupo A",
     )
+
+
+def test_eliminar_borrador_termina_aunque_falle_la_bitacora():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR", date(2026, 9, 30), None)
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora",
+               side_effect=RuntimeError("falta NV_BITACORA")), \
+         patch("config.bitacora.logger") as mock_log:
+        servicios.eliminar_borrador(7)
+    mock_log.exception.assert_called_once()
+    assert mock_log.exception.call_args.args[1] == "ELIMINACION_BORRADOR"
 
 
 def test_eliminar_borrador_no_encontrado():

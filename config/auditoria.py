@@ -43,9 +43,11 @@ DESACTIVACIONES = {
 
 DETALLES_FIJOS = {
     "INICIO_SESION": "Acceso correcto",
-    "CIERRE_SESION": "Cierre manual",
     "CONTRASENA_RESTABLECIDA": "Restablecimiento con enlace del correo",
 }
+
+# Además de los PATCH, rutas cuyo cuerpo se lee para el detalle.
+CUERPO_LEIDO = {("POST", "auth-logout")}
 
 CAMPOS_EDITABLES = ("nombre", "descripcion", "observacion", "activo", "conceptos")
 
@@ -58,6 +60,11 @@ def _autenticado(usuario):
 
 
 def _detalle(accion, cuerpo, datos):
+    if accion == "CIERRE_SESION":
+        # Un frontend sin el campo `motivo` sigue quedando como cierre manual.
+        if cuerpo.get("motivo") == "inactividad":
+            return "Cierre por inactividad"
+        return "Cierre manual"
     if accion in DETALLES_FIJOS:
         return DETALLES_FIJOS[accion]
     campos = [campo for campo in CAMPOS_EDITABLES if campo in cuerpo]
@@ -83,8 +90,8 @@ class RegistroAuditoria:
         return respuesta
 
     def process_view(self, request, view_func, view_args, view_kwargs):
-        ruta = request.resolver_match
-        if request.method != "PATCH" or (request.method, ruta.url_name) not in RUTAS:
+        clave = (request.method, request.resolver_match.url_name)
+        if clave not in RUTAS or (request.method != "PATCH" and clave not in CUERPO_LEIDO):
             return None
         try:
             cuerpo = json.loads(request.body or b"{}")
