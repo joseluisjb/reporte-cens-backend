@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: NexoVolt — API REST (Iteración 1)
-  version: 0.5.0-borrador
+  version: 0.7.0-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
@@ -27,6 +27,20 @@ info:
     `DELETE /extracciones/{id}/`, pagina la búsqueda de deudores y marca como resueltas las
     diferencias que el backend ya corrigió (README y `DISCREPANCIAS.md`).
 
+    La **versión 0.6** confirma la autenticación (RF25–RF27, Dilan), los usuarios y la recuperación
+    de contraseña (RF28–RF29, José Luis) y la auditoría (RF30–RF31, Dilan) contra el código del
+    backend, revisado el 13/10/2026 en la rama `main` (commit `260d31e`). Esas operaciones pasan de
+    *implementadas en el frontend* o *propuestas* a *implementadas en el backend*. Agrega
+    `GET /users/{id}/`, el `502` de `POST /users/` cuando no sale el correo y los registros del
+    log hechos por el sistema (`usuario_id` y `rol` en `null`). También documenta que
+    `GET /conceptos/` devuelve `descripcion: ""` cuando la base la tiene vacía.
+
+    La **versión 0.7** (14/10/2026) recoge los arreglos del backend en la rama
+    `fix/api-mensajes-seguridad-auditoria` (PR #34 a `dev`, sin fusionar todavía): cuerpo opcional
+    `{ motivo }` en `POST /auth/logout/` (AF), `404` en JSON para rutas inexistentes (AD), el texto
+    del `409` sin la ruta de la API (AC) y la auditoría que ya no tumba una acción si falla (AG).
+    Nada de esto rompe al frontend actual: el backend sigue aceptando un logout sin cuerpo.
+
     ## Reglas generales
 
     **Sesión y CSRF.** Sesión por cookie de Django (`sessionid`, HttpOnly). Para métodos que
@@ -43,9 +57,10 @@ info:
     operación indica sus roles en `x-roles`. `x-roles` usa los nombres legibles; el valor en la API
     es el código de `Rol`. Un rol sin permiso recibe `403`; sin sesión, `401`.
 
-    **Primer ingreso.** Un usuario con `must_change_password = true` solo puede usar
-    `/auth/me/`, `/auth/logout/` y `/auth/change-password/`; el resto responde `403` con
-    `code: "password_change_required"`.
+    **Primer ingreso.** Un usuario con `must_change_password = true` solo puede usar las rutas de
+    `/auth/` (entre ellas `/auth/me/`, `/auth/logout/` y `/auth/change-password/`) y `/salud/`; el
+    resto responde `403` con `code: "password_change_required"`. Un usuario desactivado pierde la
+    sesión abierta en su siguiente petición (`401`).
 
     **Errores.** Formato de DRF, siempre en español (RF31):
     `{ "detail": "..." }` para errores generales o `{ "campo": ["mensaje", ...] }` para errores de
@@ -53,7 +68,9 @@ info:
     (por ejemplo, un `403` por CSRF de uno por permisos). La extracción y el historial del backend
     responden con `{ detail }` en español también para reglas de negocio con `400`, `404` y `409`
     (fecha futura, grupo inexistente o inactivo, corte en otro estado); solo la validación del
-    cuerpo (campo ausente o con formato inválido) llega por campo.
+    cuerpo (campo ausente o con formato inválido) llega por campo. Una ruta que no existe responde
+    `404` con `{ "detail": "Recurso no encontrado." }` en JSON, no con la página HTML de Django
+    (0.7; diferencia AD, rama `fix/api-mensajes-seguridad-auditoria`).
 
     **Formatos.** JSON UTF-8. Fechas y horas en ISO 8601 con zona (`America/Bogota`, UTC−05:00).
     Fechas de corte como `YYYY-MM-DD`. Montos en pesos colombianos como número (sin símbolo ni
@@ -69,7 +86,8 @@ info:
     `400` con su propio mensaje. El backend ya lo cumple (rama `dev`).
 
     **Datos reservados.** Los datos de CENS son confidenciales: el log de auditoría no guarda
-    contraseñas ni datos personales completos. `numero_identificacion` llega **enmascarado** en las
+    contraseñas ni datos personales de deudores (sí guarda el correo del usuario creado o editado;
+    diferencia AE del README). `numero_identificacion` llega **enmascarado** en las
     obligaciones de un corte y en el detalle histórico (solo los últimos 4 dígitos).
     El frontend lo vuelve a enmascarar en pantalla por si acaso.
 
@@ -89,9 +107,9 @@ servers:
 
 tags:
   - name: Autenticación
-    description: RF25, RF26, RF29 · Dilan (login, sesión) y José Luis (recuperación)
+    description: RF25, RF26, RF29 · Dilan (login, sesión) y José Luis (recuperación) · implementado en el backend
   - name: Usuarios
-    description: RF28 · José Luis · solo Administrador
+    description: RF28 · José Luis · implementado en el backend · solo Administrador
   - name: Utilidades
     description: Salud del servidor
   - name: Conceptos de energía
@@ -105,7 +123,7 @@ tags:
   - name: Historial
     description: RF6, RF8 (RF9 es un comando mensual, sin endpoint) · José Luis y Clara · implementado en el backend · Analista y Administrador
   - name: Auditoría
-    description: RF30 · Dilan · solo Administrador
+    description: RF30, RF31 · Dilan · implementado en el backend · solo Administrador
 
 security:
   - sessionCookie: []
@@ -116,7 +134,7 @@ paths:
     get:
       tags: [Autenticación]
       summary: Obtener la cookie CSRF
-      description: Entrega la cookie `csrftoken` (`ensure_csrf_cookie`). *Implementado en el frontend.*
+      description: Entrega la cookie `csrftoken` (`ensure_csrf_cookie`). *Implementado en el backend.*
       operationId: authCsrf
       security: []
       x-roles: [público]
@@ -133,9 +151,12 @@ paths:
       tags: [Autenticación]
       summary: Iniciar sesión (RF25)
       description: |
-        Valida correo y contraseña y abre la sesión. *Implementado en el frontend.*
-        Un usuario desactivado recibe `403` solo si la contraseña es correcta (no se revela nada
-        con una contraseña incorrecta). Cada intento exitoso queda en el log de auditoría.
+        Valida correo y contraseña y abre la sesión. *Implementado en el backend.*
+        Exige el encabezado `X-CSRFToken` aunque no haya sesión. El correo no distingue mayúsculas.
+        Un correo que no existe recibe la misma respuesta `401` que una contraseña incorrecta. Un
+        usuario desactivado recibe `403` solo si la contraseña es correcta (no se revela nada
+        con una contraseña incorrecta). Límite: 10 intentos por minuto por dirección IP y otros 10
+        por correo. Cada inicio de sesión exitoso queda en el log de auditoría.
       operationId: authLogin
       security: []
       x-roles: [público]
@@ -160,22 +181,40 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
-              example: { detail: 'Correo o contraseña incorrectos.' }
+              example: { detail: 'Correo o contraseña incorrectos.', code: authentication_failed }
         '403':
-          description: Usuario desactivado.
+          description: Usuario desactivado (`user_inactive`) o token CSRF ausente o inválido (`csrf_failed`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
-              example: { detail: 'Tu usuario está desactivado. Contacta al administrador.', code: user_inactive }
+              examples:
+                desactivado:
+                  summary: Usuario desactivado (contraseña correcta)
+                  value: { detail: 'Tu usuario está desactivado. Contacta al administrador.', code: user_inactive }
+                csrf:
+                  summary: Falta el encabezado X-CSRFToken o no coincide
+                  value: { detail: 'No se pudo verificar la seguridad de la solicitud. Recarga la página e intenta de nuevo.', code: csrf_failed }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /auth/logout/:
     post:
       tags: [Autenticación]
       summary: Cerrar sesión (RF26)
-      description: Invalida la sesión en el servidor. *Implementado en el frontend.*
+      description: |
+        Invalida la sesión en el servidor. *Implementado en el backend.* Queda en el log de
+        auditoría. El cuerpo es **opcional** (0.7): `motivo: inactividad` deja el detalle
+        "Cierre por inactividad"; `manual`, otro valor o ningún cuerpo dejan "Cierre manual". El
+        frontend envía `inactividad` cuando vence la sesión (RF26) y `manual` en los demás casos.
+        El backend lo implementa en la rama `fix/api-mensajes-seguridad-auditoria` (PR #34, sin
+        fusionar); mientras tanto, `main` ignora el cuerpo y todo queda como "Cierre manual"
+        (diferencia AF del README).
       operationId: authLogout
       x-roles: [Analista de Cartera, Administrador]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogoutRequest' }
       responses:
         '204': { description: Sesión cerrada. }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -186,7 +225,7 @@ paths:
       summary: Usuario de la sesión actual
       description: |
         Devuelve el usuario autenticado. **También sirve de "ping"**: el frontend lo llama cada
-        ~5 minutos mientras el usuario trabaja para renovar la sesión. *Implementado en el frontend.*
+        ~5 minutos mientras el usuario trabaja para renovar la sesión. *Implementado en el backend.*
       operationId: authMe
       x-roles: [Analista de Cartera, Administrador]
       responses:
@@ -204,7 +243,10 @@ paths:
       description: |
         Usado en el cambio obligatorio del primer ingreso y en cualquier cambio voluntario.
         Pone `must_change_password = false`. Reglas de la nueva contraseña: mínimo 8 caracteres,
-        al menos una mayúscula y al menos un número. *Implementado en el frontend.*
+        al menos una mayúscula y al menos un número; además, el backend rechaza una contraseña
+        común, una que se parezca al correo o al nombre y una igual a la actual. La sesión actual
+        sigue abierta y las demás sesiones del usuario se cierran. Queda en el log de auditoría.
+        *Implementado en el backend.*
       operationId: authChangePassword
       x-roles: [Analista de Cartera, Administrador]
       requestBody:
@@ -230,9 +272,10 @@ paths:
       summary: Solicitar enlace de recuperación (RF29)
       description: |
         Responde **siempre igual (`202`)**, exista o no el correo, para no revelar qué correos están
-        registrados. Si existe, se envía al correo corporativo un enlace
-        `{FRONTEND_URL}/restablecer?token=XXXX` de **un solo uso** y vencimiento corto (propuesta:
-        30 minutos). Con límite de intentos por correo/IP. *Implementado en el frontend.*
+        registrados. Si el correo existe y el usuario está activo, se envía un enlace
+        `{FRONTEND_URL}/restablecer?token=XXXX` de **un solo uso** que vence en 30 minutos. El
+        token tiene la forma `uidb64.token`. Límite: 5 solicitudes por hora por dirección IP.
+        *Implementado en el backend.*
       operationId: authPasswordReset
       security: []
       x-roles: [público]
@@ -255,7 +298,10 @@ paths:
     post:
       tags: [Autenticación]
       summary: Restablecer la contraseña con el token (RF29)
-      description: El token es de un solo uso. *Implementado en el frontend.*
+      description: |
+        El token es de un solo uso. Pone `must_change_password = false`. Comparte con
+        `/auth/password-reset/` el límite de 5 intentos por hora por dirección IP. Queda en el log de
+        auditoría. *Implementado en el backend.*
       operationId: authPasswordResetConfirm
       security: []
       x-roles: [público]
@@ -279,7 +325,7 @@ paths:
     get:
       tags: [Usuarios]
       summary: Listar usuarios (RF28)
-      description: "*Implementado en el frontend.*"
+      description: "*Implementado en el backend.*"
       operationId: usersList
       x-roles: [Administrador]
       responses:
@@ -299,9 +345,11 @@ paths:
         Crea el usuario con `must_change_password = true` y genera una **contraseña temporal que se
         envía por correo** al usuario (decisión del equipo). La respuesta **no** incluye la
         contraseña: `temporary_password` viene en `null` o ausente, y el frontend muestra "La
-        contraseña temporal se envió a su correo". En desarrollo el correo sale por consola
-        (`EmailBackend` de consola). El correo es único. Queda en el log de auditoría.
-        *Implementado en el frontend.*
+        contraseña temporal se envió a su correo". La contraseña temporal tiene 12 caracteres, con
+        mayúscula, minúscula, número y símbolo. El backend envía el correo por un servicio externo
+        (Google Apps Script) y, si el envío falla, **no crea el usuario** y responde `502`. Por eso
+        para probar este flujo hace falta un buzón real del probador. El correo es único. Queda en
+        el log de auditoría. *Implementado en el backend.*
       operationId: usersCreate
       x-roles: [Administrador]
       requestBody:
@@ -323,8 +371,33 @@ paths:
               example: { email: ['Ya existe un usuario con ese correo.'] }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '502':
+          description: No se pudo enviar el correo con la contraseña temporal; la creación se revierte.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'No se pudo enviar el correo con la contraseña temporal. El usuario no fue creado.' }
 
   /users/{id}/:
+    get:
+      tags: [Usuarios]
+      summary: Detalle de un usuario (RF28)
+      description: |
+        Mismo objeto que un elemento del listado. *Implementado en el backend.* El frontend no lo
+        usa: la pantalla de usuarios trabaja con el listado.
+      operationId: usersRetrieve
+      x-roles: [Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Usuario (objeto `user` directo, sin envoltura).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [Usuarios]
       summary: Editar, activar o desactivar un usuario (RF28)
@@ -333,7 +406,8 @@ paths:
         usuarios se desactivan, no se borran.
 
         Reglas del servidor: un administrador **no puede desactivarse a sí mismo** ni
-        **cambiarse su propio rol**. Queda en el log de auditoría. *Implementado en el frontend.*
+        **cambiarse su propio rol**. Queda en el log de auditoría como usuario editado, activado o
+        desactivado según el cuerpo. *Implementado en el backend.*
       operationId: usersUpdate
       x-roles: [Administrador]
       parameters:
@@ -395,8 +469,9 @@ paths:
       description: |
         Tabla de parámetros que define qué conceptos de facturación son energía (en Oracle,
         `NV_CONCEPTO_REPORTABLE`, columna `REPORTABLE`). La extracción lee **solo los códigos
-        activos**. Sin paginación. La búsqueda por texto se hace en el cliente. *Implementado en el
-        backend.*
+        activos**. Sin paginación. La búsqueda por texto se hace en el cliente. Si la columna
+        `DESCRIPCION` está vacía en la base, `descripcion` llega como `""` (desde `a7f7ecc`).
+        *Implementado en el backend.*
       operationId: conceptosList
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -419,7 +494,8 @@ paths:
       summary: Agregar un código de concepto (RF35)
       description: |
         Se crea activo salvo que se indique lo contrario. El código es único: si ya existe responde
-        `409`. *Implementado en el backend.* Solo el Administrador. Debe quedar en el log de auditoría.
+        `409`. Una `descripcion` vacía o de solo espacios responde `400` por campo.
+        *Implementado en el backend.* Solo el Administrador. Queda en el log de auditoría.
       operationId: conceptosCreate
       x-roles: [Administrador]
       requestBody:
@@ -450,7 +526,9 @@ paths:
       description: |
         Cambiar `activo` no borra el código: deja de usarse en las próximas extracciones y se conserva
         para el historial. No hay `DELETE` ni se puede cambiar el `codigo`. Un cuerpo vacío devuelve
-        el recurso sin cambios. *Implementado en el backend.* Debe quedar en el log de auditoría.
+        el recurso sin cambios. Si se envía `descripcion`, no puede estar vacía ni ser de solo
+        espacios (`400`). *Implementado en el backend.* Queda en el log de auditoría (como concepto
+        desactivado cuando el cuerpo trae `activo: false`).
       operationId: conceptosUpdate
       x-roles: [Administrador]
       parameters:
@@ -605,7 +683,7 @@ paths:
       summary: Eliminar un grupo de conceptos (RF43)
       description: |
         Responde `409` si el grupo está asociado a un corte en estado `BORRADOR`. *Implementado en el
-        backend.* Debe quedar en el log de auditoría.
+        backend.* Queda en el log de auditoría.
       operationId: gruposDelete
       x-roles: [Administrador]
       parameters:
@@ -730,9 +808,9 @@ paths:
           description: |
             Grupo inactivo, corte existente que no se puede reemplazar, ya hay un borrador de otra
             fecha o la fecha de corte no es posterior a la del último corte enviado. El texto del
-            borrador de otra fecha es el que propone el contrato: hoy el backend
-            incluye la ruta `DELETE /api/extracciones/{id}/` en el mensaje, y ese texto lo ve el
-            usuario (diferencia AC del README).
+            borrador de otra fecha ya no incluye la ruta de la API: el backend lo corrigió en la
+            rama `fix/api-mensajes-seguridad-auditoria` (PR #34, sin fusionar; diferencia AC del
+            README). Hasta que se fusione, `main` todavía muestra `DELETE /api/extracciones/{id}/`.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
@@ -802,8 +880,8 @@ paths:
         Borra un corte que está en `BORRADOR`, junto con sus obligaciones e inconsistencias, y deja
         la eliminación en la bitácora (`NV_BITACORA`, acción `ELIMINACION_BORRADOR`). Sirve para
         salir de un borrador equivocado, porque solo puede haber uno a la vez. Un corte en otro
-        estado no se puede eliminar (`409`). Implementado en el backend. Debe quedar en el
-        log de auditoría (RF30, eliminación).
+        estado no se puede eliminar (`409`). Implementado en el backend. En el log de auditoría
+        aparece como "Corte eliminado" (`tipo_accion: eliminacion`).
       operationId: extraccionesDelete
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -1271,12 +1349,29 @@ paths:
       tags: [Auditoría]
       summary: Consultar el log de auditoría (RF30)
       description: |
-        Quién, cuándo y qué acción se realizó. Se registra automáticamente (middleware o decorador)
-        la actividad sobre la cartera y sobre la administración. Más reciente primero. El detalle
-        **no** contiene contraseñas ni datos personales completos. Los registros no se editan ni se
-        borran desde la API. Pagina con `limite` y `desplazamiento` y responde `{ total, resultados }`,
-        la misma convención que el resto de la API (decisión de Johan). **Propuesta** para la
-        pantalla de Omar (maqueta 8).
+        Quién, cuándo y qué acción se realizó. Los registros están en `NV_BITACORA`. Un middleware
+        (`config.auditoria.RegistroAuditoria`) los crea solos cuando la acción **termina bien**
+        (respuesta 2xx): una acción rechazada no deja registro. Más reciente primero (por
+        `fecha_hora` y luego por `id`). El detalle **no** contiene contraseñas, tokens ni datos
+        personales de deudores. Los registros no se editan ni se borran desde la API. Pagina con
+        `limite` y `desplazamiento` y responde `{ total, resultados }`, la misma convención que el
+        resto de la API. *Implementado en el backend* (`6f596bb`); la pantalla es de Omar (maqueta 8).
+
+        Acciones que se registran (`accion` es el texto; entre paréntesis, su `tipo_accion`):
+        - **Seguridad:** Inicio de sesión (`inicio_sesion`), Cierre de sesión (`cierre_sesion`),
+          Contraseña cambiada y Contraseña restablecida (`edicion`).
+        - **Usuarios:** Usuario creado (`creacion`), Usuario editado y Usuario activado
+          (`edicion`), Usuario desactivado (`desactivacion`).
+        - **Parametrización:** Concepto creado, editado y desactivado; Grupo de conceptos creado,
+          editado, desactivado y eliminado (`creacion`, `edicion`, `desactivacion`, `eliminacion`).
+        - **Extracción:** Corte generado y Actualización mensual (`calculo`), Corte validado y Envío
+          registrado (`modificacion`), Corte eliminado (`eliminacion`), Consulta de obligaciones,
+          de reporte enviado, de deudores y de historial de deudor (`consulta`).
+
+        Nadie produce todavía `generacion`, `exportacion` ni `correccion`: quedan para el
+        generador del archivo y la corrección de obligaciones (Iteración 2). Las acciones sin
+        usuario (la actualización mensual programada, RF9) llegan con `usuario: "Sistema"` y con
+        `usuario_id` y `rol` en `null`.
       operationId: auditoriaList
       x-roles: [Administrador]
       parameters:
@@ -1448,7 +1543,7 @@ components:
     Rol:
       type: string
       enum: [ANALISTA_CARTERA, ADMINISTRADOR]
-      description: Códigos que usa el backend (`request.user.rol`). El frontend los muestra como "Analista de Cartera" y "Administrador". Pendiente de confirmar por Dilan al construir la autenticación.
+      description: Códigos que usa el backend (`request.user.rol`, modelo `usuarios.Usuario`). El frontend los muestra como "Analista de Cartera" y "Administrador". Confirmado en el backend (RF25, 0.6).
     User:
       type: object
       required: [id, nombre, email, rol, is_active, last_login, must_change_password]
@@ -1471,6 +1566,15 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string, format: password }
+    LogoutRequest:
+      type: object
+      description: Opcional (0.7). Solo cambia el detalle del registro de auditoría.
+      properties:
+        motivo:
+          type: string
+          enum: [manual, inactividad]
+          description: "`inactividad` → \"Cierre por inactividad\"; `manual` → \"Cierre manual\"."
+      example: { motivo: inactividad }
     ChangePasswordRequest:
       type: object
       required: [current_password, new_password]
@@ -1479,7 +1583,7 @@ components:
         new_password:
           type: string
           format: password
-          description: Mínimo 8 caracteres, al menos una mayúscula y al menos un número.
+          description: Mínimo 8 caracteres, al menos una mayúscula y al menos un número. El backend también rechaza contraseñas comunes, parecidas al correo o al nombre e iguales a la actual (un mensaje por regla, en `new_password`).
     PasswordResetRequest:
       type: object
       required: [email]
@@ -1493,7 +1597,7 @@ components:
         new_password:
           type: string
           format: password
-          description: Mismas reglas que `change-password`.
+          description: Mismas reglas que `change-password`, salvo la de parecerse al correo o al nombre y la de ser igual a la actual, que aquí el backend no comprueba.
     UserCreateRequest:
       type: object
       required: [nombre, email, rol]
@@ -1525,7 +1629,7 @@ components:
       required: [codigo, descripcion, activo]
       properties:
         codigo: { type: integer, minimum: 1, maximum: 9999, example: 30, description: Código del concepto de facturación en el sistema comercial de CENS (catálogo del 02/10/2026). }
-        descripcion: { type: string, maxLength: 60, example: CUOTA FINANCIACION ENERGIA }
+        descripcion: { type: string, maxLength: 60, example: CUOTA FINANCIACION ENERGIA, description: "`\"\"` si la base no tiene descripción (la columna admite nulos)." }
         activo: { type: boolean, description: "`true` = Activo (reportable); `false` = Inactivo." }
         observacion: { type: string, maxLength: 200, nullable: true }
         fecha_creacion:
@@ -1554,7 +1658,11 @@ components:
       required: [codigo, descripcion]
       properties:
         codigo: { type: integer, example: 30 }
-        descripcion: { type: string, example: CUOTA FINANCIACION ENERGIA }
+        descripcion:
+          type: string
+          nullable: true
+          example: CUOTA FINANCIACION ENERGIA
+          description: Puede llegar `null` si la base no tiene descripción; a diferencia de `GET /conceptos/`, el backend no la cambia por `""` dentro de los grupos.
     GrupoConcepto:
       type: object
       required: [id, nombre, activo, conceptos, creado]
@@ -1899,14 +2007,30 @@ components:
       required: [id, fecha_hora, usuario_id, usuario, rol, accion, tipo_accion, modulo, detalle]
       properties:
         id: { type: integer }
-        fecha_hora: { type: string, format: date-time }
-        usuario_id: { type: integer, example: 2, description: Id del usuario que realizó la acción. }
-        usuario: { type: string, example: Rosa Martínez, description: Nombre para mostrar. }
-        rol: { $ref: '#/components/schemas/Rol' }
-        accion: { type: string, example: Usuario creado, description: Texto legible en español. }
+        fecha_hora: { type: string, format: date-time, example: '2026-10-12T08:30:00-05:00' }
+        usuario_id:
+          type: integer
+          nullable: true
+          example: 2
+          description: Id del usuario que realizó la acción; `null` en las acciones del sistema.
+        usuario:
+          type: string
+          example: Rosa Martínez
+          description: Nombre para mostrar, guardado al momento de la acción (no cambia si después se edita el usuario). `Sistema` cuando no hubo usuario.
+        rol:
+          type: string
+          enum: [ANALISTA_CARTERA, ADMINISTRADOR, null]
+          nullable: true
+          description: Código de `Rol` al momento de la acción; `null` en las acciones del sistema.
+        accion: { type: string, example: Usuario desactivado, description: Texto legible en español (lista en `GET /auditoria/`). }
         tipo_accion: { $ref: '#/components/schemas/TipoAccion' }
         modulo: { $ref: '#/components/schemas/Modulo' }
         detalle:
           type: string
-          example: María Gómez
-          description: Sin contraseñas ni datos personales completos.
+          example: "Usuario jperez@example.com actualizado: ['is_active']"
+          description: |
+            Sin contraseñas, tokens ni datos personales de deudores; `""` si no hay. Ejemplos del
+            backend: `Acceso correcto`, `Cierre manual`, `Cierre por inactividad` (0.7),
+            `Campos: descripcion, activo`,
+            `Fecha de corte 2026-08-31`. En usuarios incluye el correo del usuario afectado y los
+            nombres de los campos que cambiaron (diferencia AE del README).
