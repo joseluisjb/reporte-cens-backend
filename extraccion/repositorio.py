@@ -14,7 +14,7 @@ def deudores_vigentes(limite=None):
     )
     params = []
     if limite is not None:
-        sql += " FETCH FIRST :1 ROWS ONLY"
+        sql += " FETCH FIRST %s ROWS ONLY"
         params.append(limite)
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
@@ -33,7 +33,7 @@ def creditos_energia(cliente_id=None):
     )
     params = []
     if cliente_id is not None:
-        sql += " WHERE CLIENTE_ID = :1"
+        sql += " WHERE CLIENTE_ID = %s"
         params.append(cliente_id)
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
