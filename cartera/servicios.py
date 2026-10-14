@@ -1,6 +1,6 @@
 from django.db import connection, transaction
 
-from config.bitacora import registrar_bitacora
+from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota
 
 
@@ -467,4 +467,5 @@ def eliminar_borrador(corte_id):
             cursor.execute(
                 "DELETE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
             )
-        registrar_bitacora("ELIMINACION_BORRADOR", "NV_CORTE", corte_id, detalle)
+        with tolerar_fallo_bitacora("ELIMINACION_BORRADOR"):
+            registrar_bitacora("ELIMINACION_BORRADOR", "NV_CORTE", corte_id, detalle)

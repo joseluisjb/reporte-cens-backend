@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from config.bitacora import registrar_bitacora
+from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import hoy_bogota
 
 from cartera.servicios import (
@@ -73,7 +73,10 @@ class Command(BaseCommand):
                         f"Saldo: {resultado['saldo_consolidado']}, "
                         f"Grupo: {grupo_nombre}"
                     )
-                    registrar_bitacora("ACTUALIZACION_MENSUAL", "NV_CORTE", resultado["id"], detalle)
+                    with tolerar_fallo_bitacora("ACTUALIZACION_MENSUAL"):
+                        registrar_bitacora(
+                            "ACTUALIZACION_MENSUAL", "NV_CORTE", resultado["id"], detalle
+                        )
 
                 if simular:
                     transaction.set_rollback(True)

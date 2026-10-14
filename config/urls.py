@@ -20,3 +20,5 @@ from django.urls import path, include
 urlpatterns = [
     path("api/", include("config.api_urls")),
 ]
+
+handler404 = "config.errores.no_encontrado"

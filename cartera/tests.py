@@ -371,7 +371,11 @@ def test_post_409_borrador_otra_fecha():
                side_effect=servicios.BorradorOtraFecha(date(2026, 8, 31), corte_id=3)):
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 409
-    assert "BORRADOR" in response.data["detail"]
+    assert response.data["detail"] == (
+        "Ya existe un corte en BORRADOR con fecha 2026-08-31. "
+        "Elimínelo o complételo antes de generar otro."
+    )
+    assert "/api/" not in response.data["detail"]
 
 
 def test_post_409_estado_fijo():
@@ -769,6 +773,19 @@ def test_eliminar_borrador_ejecuta_deletes():
         "ELIMINACION_BORRADOR", "NV_CORTE", 7,
         "Fecha: 2026-09-30, Grupo: Grupo A",
     )
+
+
+def test_eliminar_borrador_termina_aunque_falle_la_bitacora():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR", date(2026, 9, 30), None)
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora",
+               side_effect=RuntimeError("falta NV_BITACORA")), \
+         patch("config.bitacora.logger") as mock_log:
+        servicios.eliminar_borrador(7)
+    mock_log.exception.assert_called_once()
+    assert mock_log.exception.call_args.args[1] == "ELIMINACION_BORRADOR"
 
 
 def test_eliminar_borrador_no_encontrado():

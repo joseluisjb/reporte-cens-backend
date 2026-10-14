@@ -383,6 +383,23 @@ def test_cierre_de_sesion_queda_registrado_con_el_usuario(analista, bitacora):
     )
 
 
+@pytest.mark.parametrize(
+    "cuerpo, detalle",
+    [
+        ({"motivo": "inactividad"}, "Cierre por inactividad"),
+        ({"motivo": "manual"}, "Cierre manual"),
+        ({"motivo": "otro"}, "Cierre manual"),
+        (["inactividad"], "Cierre manual"),
+    ],
+)
+def test_cierre_de_sesion_registra_el_motivo(analista, bitacora, cuerpo, detalle):
+    respuesta = cliente_de(analista).post("/api/auth/logout/", cuerpo, format="json")
+    assert respuesta.status_code == 204
+    bitacora.assert_called_once_with(
+        "CIERRE_SESION", "USUARIO", analista.pk, detalle, usuario=analista
+    )
+
+
 def test_cambio_de_contrasena_queda_registrado_sin_la_contrasena(analista, bitacora):
     respuesta = cliente_de(analista).post(
         "/api/auth/change-password/",
@@ -555,3 +572,16 @@ def test_cambios_de_usuario_se_registran_con_su_accion(administrador, analista, 
     assert respuesta.status_code == 200
     assert registrar.call_args.args[:3] == (accion, "USUARIO", analista.pk)
     assert registrar.call_args.args[4] == administrador.pk
+
+
+def test_editar_usuario_responde_aunque_falle_la_bitacora(administrador, analista):
+    with patch(
+        "usuarios.auditoria.registrar_bitacora", side_effect=RuntimeError("falta NV_BITACORA")
+    ), patch("config.bitacora.logger") as log:
+        respuesta = cliente_de(administrador).patch(
+            f"/api/users/{analista.pk}/", {"nombre": "Juan Pablo Pérez"}, format="json"
+        )
+    assert respuesta.status_code == 200
+    analista.refresh_from_db()
+    assert analista.nombre == "Juan Pablo Pérez"
+    log.exception.assert_called_once()

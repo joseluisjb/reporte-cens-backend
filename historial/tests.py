@@ -363,6 +363,17 @@ def test_comando_simular():
     mock_reg.assert_not_called()
 
 
+def test_comando_termina_aunque_falle_la_bitacora():
+    with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK), \
+         patch(f"{_CMD}.registrar_bitacora", side_effect=RuntimeError("falta NV_BITACORA")), \
+         patch(f"{_CMD}.transaction.atomic", _noop_atomic), \
+         patch("config.bitacora.logger") as mock_log:
+        out = StringIO()
+        call_command("actualizar_estados_mensual", stdout=out)
+    assert "Corte 7 generado correctamente." in out.getvalue()
+    mock_log.exception.assert_called_once()
+
+
 def test_comando_fecha_invalida_formato():
     with patch(f"{_CMD}.generar_corte") as mock_gc:
         with pytest.raises(CommandError):
