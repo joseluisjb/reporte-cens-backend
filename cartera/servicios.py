@@ -464,13 +464,13 @@ def registrar_envio(corte_id, fecha_envio=None):
             "WHERE CORTE_ID = %s",
             [fecha_envio, corte_id],
         )
-        # RF13: marcar cierre definitivo para lo reportado en 02 (Saldada)
+        # RF13/RF16: marcar cierre definitivo para Saldada (02) y Cartera Recuperada (07)
         cursor.execute(
             "UPDATE NEXOVOLT.NV_OBLIGACION "
             "SET CIERRE_DEFINITIVO = 'S', FECHA_CIERRE = %s "
             "WHERE OBLIGACION_ID IN ("
             "  SELECT rd.OBLIGACION_ID FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
-            "  WHERE rd.CORTE_ID = %s AND rd.ESTADO_TU = '02'"
+            "  WHERE rd.CORTE_ID = %s AND rd.ESTADO_TU IN ('02', '07')"
             ")",
             [fecha_corte_corte, corte_id],
         )

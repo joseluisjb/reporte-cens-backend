@@ -1048,3 +1048,43 @@ def test_rf13_numero_duplicado_devuelve_409():
     assert response.status_code == 409
     assert "número de obligación" in response.data["detail"].lower() or \
            "reutilizarse" in response.data["detail"]
+
+
+# ── RF16 · Cartera Recuperada como cierre definitivo ─────────────────────────
+
+def test_rf16_registrar_envio_marca_cierre_definitivo_en_07():
+    """Al registrar el envío, marca CIERRE_DEFINITIVO='S' para las obligaciones en 07 (RF16)."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("VALIDADO", date(2026, 9, 30)),
+        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
+    ]
+    sqls = []
+    mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
+
+    with patch("cartera.servicios.connection", mock_conn):
+        servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
+
+    cierre_def_sql, _ = next(
+        (s, p) for s, p in sqls
+        if s and "CIERRE_DEFINITIVO" in s and "FECHA_CIERRE" in s
+    )
+    assert "'07'" in cierre_def_sql, "RF16: debe incluir estado 07 en el UPDATE de CIERRE_DEFINITIVO"
+    assert "'02'" in cierre_def_sql, "RF16: debe seguir cubriendo estado 02 (RF13)"
+
+
+def test_rf16_registrar_envio_cubre_02_y_07_en_una_sola_sentencia():
+    """Un único UPDATE cubre ambos estados de cierre definitivo (02 y 07) sin duplicar código."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("VALIDADO", date(2026, 9, 30)),
+        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
+    ]
+    sqls = []
+    mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
+
+    with patch("cartera.servicios.connection", mock_conn):
+        servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
+
+    cierre_sqls = [s for s, _ in sqls if s and "CIERRE_DEFINITIVO" in s]
+    assert len(cierre_sqls) == 1, "RF16: un único UPDATE debe cubrir 02 y 07 (no duplicar lógica)"
