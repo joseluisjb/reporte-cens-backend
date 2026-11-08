@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.paginacion import parsear_paginacion
 from usuarios.permisos import EsAnalista
 from ciclo import servicios
 from ciclo.serializers import (
@@ -9,6 +10,8 @@ from ciclo.serializers import (
     CicloResumenSerializer,
     CicloDetalleSerializer,
     MatrizEstadosSerializer,
+    ObligacionResumenSerializer,
+    ObligacionDetalleSerializer,
 )
 
 
@@ -59,3 +62,65 @@ class CicloViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(CicloDetalleSerializer(ciclo).data)
+
+
+class ObligacionesViewSet(viewsets.ViewSet):
+    permission_classes = [EsAnalista]
+    lookup_value_regex = r"\d+"
+
+    def list(self, request):
+        limite, desplazamiento, error = parsear_paginacion(request)
+        if error:
+            return error
+
+        estado_tu = request.query_params.get("estado_tu")
+        eliminada = request.query_params.get("eliminada", "false").lower() == "true"
+        q = request.query_params.get("q")
+
+        if q is not None and len(q) > 60:
+            return Response(
+                {"q": ["La búsqueda no puede exceder 60 caracteres."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cuotas_mora_min = None
+        raw_min = request.query_params.get("cuotas_mora_min")
+        if raw_min is not None:
+            try:
+                cuotas_mora_min = int(raw_min)
+                if cuotas_mora_min < 0:
+                    raise ValueError()
+            except ValueError:
+                return Response(
+                    {"cuotas_mora_min": ["Debe ser un entero no negativo."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            resultado = servicios.listar_obligaciones(
+                limite, desplazamiento,
+                estado_tu=estado_tu, eliminada=eliminada,
+                cuotas_mora_min=cuotas_mora_min, q=q,
+            )
+        except ValueError:
+            return Response(
+                {"estado_tu": ["Estado no válido. Usa un código de la Tabla 4b."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({
+            "total": resultado["total"],
+            "resultados": ObligacionResumenSerializer(
+                resultado["resultados"], many=True
+            ).data,
+        })
+
+    def retrieve(self, request, pk=None):
+        try:
+            obl = servicios.obtener_obligacion(int(pk))
+        except servicios.ObligacionNoEncontrada:
+            return Response(
+                {"detail": "Obligación no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(ObligacionDetalleSerializer(obl).data)
