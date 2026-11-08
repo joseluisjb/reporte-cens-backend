@@ -1,0 +1,89 @@
+import calendar
+from datetime import date
+
+from rest_framework import serializers
+
+from config.formatos import fecha_str, timestamp_str
+
+
+class CicloCreateSerializer(serializers.Serializer):
+    fecha_corte = serializers.DateField()
+
+    def validate_fecha_corte(self, value):
+        _, ultimo_dia = calendar.monthrange(value.year, value.month)
+        if value.day != ultimo_dia:
+            ultimo = date(value.year, value.month, ultimo_dia)
+            raise serializers.ValidationError(
+                f"El corte es el último día del mes. "
+                f"Para ese mes sería el {ultimo.strftime('%d/%m/%Y')}."
+            )
+        return value
+
+
+class ReglaAplicadaSerializer(serializers.Serializer):
+    rf = serializers.CharField()
+    texto = serializers.CharField()
+    por_confirmar = serializers.BooleanField()
+
+
+class TransicionSerializer(serializers.Serializer):
+    obligacion_id = serializers.IntegerField()
+    numero_obligacion = serializers.CharField()
+    nombre_titular = serializers.CharField()
+    estado_anterior = serializers.CharField(allow_null=True)
+    estado_nuevo = serializers.CharField()
+    edad_anterior = serializers.CharField(allow_null=True)
+    edad_nueva = serializers.CharField()
+    primer_reporte = serializers.BooleanField()
+    requiere_revision = serializers.BooleanField()
+    reglas = ReglaAplicadaSerializer(many=True)
+
+
+class RechazoCicloSerializer(serializers.Serializer):
+    obligacion_id = serializers.IntegerField()
+    numero_obligacion = serializers.CharField()
+    nombre_titular = serializers.CharField()
+    estado_anterior = serializers.CharField(allow_null=True)
+    estado_calculado = serializers.CharField()
+    codigo = serializers.CharField()
+    motivo = serializers.CharField()
+
+
+class CicloResumenSerializer(serializers.Serializer):
+    corte_id = serializers.IntegerField()
+    fecha_corte = serializers.SerializerMethodField()
+    fecha_ejecucion = serializers.SerializerMethodField()
+    ejecutada_por = serializers.CharField(allow_null=True)
+    primer_reporte = serializers.IntegerField()
+    cambios_estado = serializers.IntegerField()
+    cierres = serializers.IntegerField()
+    rechazados = serializers.IntegerField()
+
+    def get_fecha_corte(self, obj):
+        return fecha_str(obj["fecha_corte"])
+
+    def get_fecha_ejecucion(self, obj):
+        return timestamp_str(obj["fecha_ejecucion"])
+
+
+class CicloDetalleSerializer(CicloResumenSerializer):
+    con_pagos = serializers.IntegerField()
+    a_dudoso = serializers.IntegerField()
+    a_castigada = serializers.IntegerField()
+    normalizadas = serializers.IntegerField()
+    transiciones = TransicionSerializer(many=True)
+    rechazos = RechazoCicloSerializer(many=True)
+
+
+class TransicionMatrizSerializer(serializers.Serializer):
+    desde = serializers.CharField()
+    desde_con_mora = serializers.BooleanField()
+    hacia = serializers.CharField()
+    hacia_con_mora = serializers.BooleanField()
+    permitida = serializers.BooleanField()
+
+
+class MatrizEstadosSerializer(serializers.Serializer):
+    tipo_cartera = serializers.IntegerField()
+    estados = serializers.ListField(child=serializers.CharField())
+    transiciones = TransicionMatrizSerializer(many=True)

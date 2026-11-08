@@ -5,6 +5,7 @@ from config.auditoria import AuditoriaView
 from config.views import SaludView
 from parametros.views import ConceptoViewSet, GrupoConceptoViewSet
 from cartera.views import ExtraccionViewSet
+from ciclo.views import CicloViewSet, MatrizEstadosView
 from historial.views import ReporteViewSet, DeudorViewSet
 from usuarios.views import (
     CambioContrasenaView,
@@ -22,6 +23,7 @@ router = DefaultRouter()
 router.register("conceptos", ConceptoViewSet, basename="concepto")
 router.register("grupos-conceptos", GrupoConceptoViewSet, basename="grupo-concepto")
 router.register("extracciones", ExtraccionViewSet, basename="extraccion")
+router.register("ciclos", CicloViewSet, basename="ciclo")
 router.register("historial/reportes", ReporteViewSet, basename="historial-reporte")
 router.register("historial/deudores", DeudorViewSet, basename="historial-deudor")
 
@@ -37,4 +39,5 @@ urlpatterns = [
     path("users/", GestionUsuariosView.as_view(), name="users-list"),
     path("users/<int:pk>/", GestionUsuarioDetalleView.as_view(), name="users-detail"),
     path("auditoria/", AuditoriaView.as_view(), name="auditoria"),
+    path("matriz-estados/", MatrizEstadosView.as_view(), name="matriz-estados"),
 ] + router.urls
