@@ -1,4 +1,4 @@
-from django.db import connection, transaction
+from django.db import connection, transaction, IntegrityError
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota
@@ -49,6 +49,10 @@ class CorteConErroresCorrectivos(Exception):
 
 
 class FechaAnteriorAlUltimoEnviado(Exception):
+    pass
+
+
+class NumeroDuplicado(Exception):
     pass
 
 
@@ -169,8 +173,11 @@ def _insertar_obligaciones_nuevas():
         "(OBLIGACION_ID, CLIENTE_ID, NUMERO_PROCESO, NUMERO_OBLIGACION_TU, FECHA_INICIO) "
         "VALUES (NEXOVOLT.SEQ_NV_OBLIGACION.NEXTVAL, %s, %s, %s, %s)"
     )
-    with connection.cursor() as cursor:
-        cursor.executemany(sql_insert, [(r[0], r[1], r[2], r[3]) for r in filas])
+    try:
+        with connection.cursor() as cursor:
+            cursor.executemany(sql_insert, [(r[0], r[1], r[2], r[3]) for r in filas])
+    except IntegrityError:
+        raise NumeroDuplicado()
 
 
 def _insertar_reporte_detalle():
@@ -456,6 +463,16 @@ def registrar_envio(corte_id, fecha_envio=None):
             "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'ENVIADO', FECHA_ENVIO = %s "
             "WHERE CORTE_ID = %s",
             [fecha_envio, corte_id],
+        )
+        # RF13: marcar cierre definitivo para lo reportado en 02 (Saldada)
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_OBLIGACION "
+            "SET CIERRE_DEFINITIVO = 'S', FECHA_CIERRE = %s "
+            "WHERE OBLIGACION_ID IN ("
+            "  SELECT rd.OBLIGACION_ID FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "  WHERE rd.CORTE_ID = %s AND rd.ESTADO_TU = '02'"
+            ")",
+            [fecha_corte_corte, corte_id],
         )
 
     return obtener_corte(corte_id)

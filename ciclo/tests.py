@@ -152,20 +152,15 @@ def _setup_ciclo(
     ultimo_enviado=None,
     es_primer_reporte=True,
     edad_anterior="00",
-    estado_anterior="01",
-    mora_anterior=0,
-    matriz=None,
+    estado_anterior_tu=None,
 ):
     """
     Monta el mock_cursor con respuestas para ejecutar_ciclo.
 
-    Obligaciones: tuplas de 9 a 12 columnas:
+    Obligaciones: tuplas de 11 columnas:
       (obligacion_id, estado_tu, valor_mora, edad_mora,
-       nombre_titular, numero_obl, dias_mora, fecha_limite_pago, valor_real_pagado
-       [, caducado='N', atrasos_permitidos=0, cuotas_mora=0])  -- RF14
-
-    matriz: lista de tuplas (estado_desde, con_mora_desde, estado_hacia, con_mora_hacia)
-      que se consideran PERMITIDA='S'. Si es None, se usa una lista vacía.
+       nombre_titular, numero_obl, dias_mora, fecha_limite_pago, valor_real_pagado,
+       valor_saldo, fecha_ultimo_pago)
     """
     fecha_corte_bd = date(2026, 10, 31)
 
@@ -190,16 +185,15 @@ def _setup_ciclo(
             obl[0],
             "S" if es_primer_reporte else "N",
             None if es_primer_reporte else edad_anterior,
-            None if es_primer_reporte else estado_anterior,
-            0 if es_primer_reporte else mora_anterior,
+            None if es_primer_reporte else estado_anterior_tu,
         )
         for obl in (obligaciones or [])
     ]
 
     mock_cursor.fetchall.side_effect = [
-        extendidas,                # _cargar_obligaciones_corte
-        datos_previos,             # _cargar_datos_previos
-        matriz or [],              # _cargar_transiciones_permitidas
+        obligaciones or [],   # _cargar_obligaciones_corte
+        datos_previos,        # _cargar_datos_previos
+        [],                   # RF13 MOVIMIENTO_POSTERIOR query
     ]
 
 
@@ -209,7 +203,7 @@ def test_ciclo_obligacion_nueva_al_dia():
     """Nueva al día (01, sin mora) → Entra en 01, edad 00, primer_reporte=True."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0),
+        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -233,7 +227,7 @@ def test_ciclo_nueva_con_cuota_vencida_23_dias():
     """Nueva con una cuota vencida de 23 días → Entra en 01, edad 00, mora > 0."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (11, "01", 85000, "00", "Cliente B", "2263-0001", 23, None, 0),
+        (11, "01", 85000, "00", "Cliente B", "2263-0001", 23, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -254,7 +248,7 @@ def test_ciclo_nueva_caducada_con_mora():
     """Nueva con crédito caducado y mora → Entra en 03 (válido)."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (12, "03", 200000, "02", "Cliente C", "2263-0002", 65, None, 0),
+        (12, "03", 200000, "02", "Cliente C", "2263-0002", 65, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -275,7 +269,7 @@ def test_ciclo_nueva_caducada_sin_mora_requiere_revision():
     """Nueva caducada sin mora → 01, primer_reporte=True, requiere_revision=True (RF14)."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (13, "01", 0, "00", "Cliente D", "2263-0003", 0, None, 0),
+        (13, "01", 0, "00", "Cliente D", "2263-0003", 0, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -299,7 +293,7 @@ def test_ciclo_nueva_estado_07_rechazada():
     """Nueva en estado 07 → Rechazada con error 881."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (14, "07", 0, "00", "Cliente E", "2267-3361", 0, None, 0),
+        (14, "07", 0, "00", "Cliente E", "2267-3361", 0, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -322,7 +316,7 @@ def test_ciclo_no_duplica_en_segunda_ejecucion():
     """Segunda ejecución llama a limpiar_ciclo_anterior (delete NV_CICLO_TRANSICION)."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0),
+        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -369,7 +363,7 @@ def test_rf11_ciclo_47_dias_edad_01():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (20, "01", 100000, "01", "Hotel Mirador", "2258-7731",
-         47, date(2026, 9, 14), 0),
+         47, date(2026, 9, 14), 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
                  es_primer_reporte=False, edad_anterior="00")
@@ -394,7 +388,7 @@ def test_rf11_ciclo_salto_mayor_tramo_requiere_revision():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (21, "01", 300000, "03", "Comercial Los Pinos", "2250-0987",
-         90, date(2026, 7, 14), 0),
+         90, date(2026, 7, 14), 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
                  es_primer_reporte=False, edad_anterior="00")
@@ -417,7 +411,7 @@ def test_rf11_ciclo_baja_sin_abono_requiere_revision():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (22, "01", 0, "00", "Panadería La Espiga", "2265-2208",
-         0, None, 0),
+         0, None, 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
                  es_primer_reporte=False, edad_anterior="02")
@@ -436,7 +430,7 @@ def test_rf11_ciclo_baja_con_abono_sin_revision():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (23, "01", 0, "00", "Colegio San Rafael", "2266-7745",
-         0, None, 150000),  # valor_real_pagado > 0
+         0, None, 150000, 0, None),  # valor_real_pagado > 0
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
                  es_primer_reporte=False, edad_anterior="02")
@@ -455,7 +449,7 @@ def test_rf11_ciclo_edad_14_en_transicion():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (24, "03", 500000, "14", "Ferretería La Esquina", "2263-9004",
-         730, date(2024, 10, 31), 0),
+         730, date(2024, 10, 31), 0, 0, None),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
                  es_primer_reporte=False, edad_anterior="13")
@@ -473,13 +467,13 @@ def test_rf11_obtener_obligacion_edad_14_anios_mora():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # obtener_obligacion row (20 columns: +CADUCADO, +ATRASOS_PERMITIDOS)
+        (       # obtener_obligacion row (23 columns)
             24, "2263-9004", "Ferretería La Esquina", "1234567890",
             "03", "14", 730, 0,
             500000, 2000000,
             "N", "N", "N", None,
             date(2026, 1, 31), 3000000, 100000, None,
-            "N", 0,
+            None, None, None, "N", date(2026, 10, 31),
         ),
     ]
 

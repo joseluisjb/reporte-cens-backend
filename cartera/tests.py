@@ -986,3 +986,65 @@ def test_registrar_envio_fecha_anterior_a_corte_400():
         with pytest.raises(servicios.FechaInvalida) as exc_info:
             servicios.registrar_envio(1, fecha_envio=date(2026, 9, 1))
     assert "anterior a la fecha de corte" in str(exc_info.value)
+
+
+# ── RF13 · Saldada como cierre definitivo ────────────────────────────────────
+
+def test_rf13_registrar_envio_marca_cierre_definitivo_en_02():
+    """Al registrar el envío, marca CIERRE_DEFINITIVO='S' para las obligaciones en 02."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("VALIDADO", date(2026, 9, 30)),
+        (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
+    ]
+    sqls = []
+    orig_execute = mock_cursor.execute.side_effect
+    mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
+
+    with patch("cartera.servicios.connection", mock_conn):
+        servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
+
+    cierre_def_update = any(
+        "CIERRE_DEFINITIVO" in (s or "") and "FECHA_CIERRE" in (s or "")
+        for s, _ in sqls
+    )
+    assert cierre_def_update, "RF13: debe marcar CIERRE_DEFINITIVO='S' en NV_OBLIGACION al enviar"
+    # Verifica que filtra por ESTADO_TU = '02'
+    cierre_def_sql, cierre_def_params = next(
+        (s, p) for s, p in sqls
+        if s and "CIERRE_DEFINITIVO" in s and "FECHA_CIERRE" in s
+    )
+    assert "'02'" in cierre_def_sql or "02" in str(cierre_def_params)
+
+
+def test_rf13_numero_duplicado_lanza_excepcion():
+    """Un número ya registrado en UK_NV_OBLIGACION_TU lanza NumeroDuplicado (RF13)."""
+    from django.db import IntegrityError as DjangoIntegrityError
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (None,),
+        None, None,
+        (1,),
+    ]
+    mock_cursor.fetchall.side_effect = [
+        [(30,)],
+        [("CLI01", "PROC01", "2259-1092", date(2026, 1, 15))],
+    ]
+    mock_cursor.executemany.side_effect = DjangoIntegrityError("ORA-00001")
+
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.NumeroDuplicado):
+            servicios.generar_corte(fecha_corte=_FECHA_PASADA)
+
+
+def test_rf13_numero_duplicado_devuelve_409():
+    """NumeroDuplicado en la vista → 409 con mensaje en español."""
+    request = factory.post("/api/extracciones/", {"fecha_corte": "2026-09-30"}, format="json")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.generar_corte",
+               side_effect=servicios.NumeroDuplicado):
+        response = ExtraccionViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 409
+    assert "número de obligación" in response.data["detail"].lower() or \
+           "reutilizarse" in response.data["detail"]
