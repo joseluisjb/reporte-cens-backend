@@ -9,7 +9,7 @@ from tests.ayudas import usuario_con_rol
 
 from ciclo import servicios
 from ciclo.serializers import CicloCreateSerializer
-from ciclo.views import CicloViewSet, MatrizEstadosView
+from ciclo.views import CicloViewSet, MatrizEstadosView, ObligacionesViewSet
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -100,13 +100,49 @@ def test_881_recuperada_siempre_rechazada():
     assert servicios._valida_881("07", 100000, "01") is False
 
 
-# ── Casos RF10 ────────────────────────────────────────────────────────────────
-# Se prueban via ejecutar_ciclo con mocks de BD.
+# ── Tabla 9 · RF11 · _calcular_edad_mora ─────────────────────────────────────
 
-def _mock_sequence(mock_cursor, side_effects):
-    """Configura side_effect para múltiples llamadas a fetchone/fetchall."""
-    mock_cursor.fetchone.side_effect = side_effects
+def test_edad_mora_0_dias():
+    assert servicios._calcular_edad_mora(0) == "00"
 
+
+def test_edad_mora_29_dias():
+    assert servicios._calcular_edad_mora(29) == "00"
+
+
+def test_edad_mora_30_dias():
+    assert servicios._calcular_edad_mora(30) == "01"
+
+
+def test_edad_mora_47_dias():
+    assert servicios._calcular_edad_mora(47) == "01"
+
+
+def test_edad_mora_360_dias():
+    assert servicios._calcular_edad_mora(360) == "12"
+
+
+def test_edad_mora_539_dias():
+    assert servicios._calcular_edad_mora(539) == "12"
+
+
+def test_edad_mora_540_dias():
+    assert servicios._calcular_edad_mora(540) == "13"
+
+
+def test_edad_mora_729_dias():
+    assert servicios._calcular_edad_mora(729) == "13"
+
+
+def test_edad_mora_730_dias():
+    assert servicios._calcular_edad_mora(730) == "14"
+
+
+def test_edad_mora_1000_dias():
+    assert servicios._calcular_edad_mora(1000) == "14"
+
+
+# ── Helpers de prueba para ejecutar_ciclo ─────────────────────────────────────
 
 def _setup_ciclo(
     mock_conn,
@@ -115,34 +151,46 @@ def _setup_ciclo(
     obligaciones=None,
     ultimo_enviado=None,
     es_primer_reporte=True,
+    edad_anterior="00",
 ):
-    """Monta el mock_cursor con respuestas apropiadas para ejecutar_ciclo."""
+    """
+    Monta el mock_cursor con respuestas para ejecutar_ciclo.
+
+    Obligaciones: tuplas de 9 columnas:
+      (obligacion_id, estado_tu, valor_mora, edad_mora,
+       nombre_titular, numero_obl, dias_mora, fecha_limite_pago, valor_real_pagado)
+    """
     fecha_corte_bd = date(2026, 10, 31)
 
-    fetchone_calls = [
-        # _verificar_fecha_posterior: MAX(FECHA_CORTE) de ENVIADO
-        (ultimo_enviado,),
-        # _obtener_corte_borrador: CORTE_ID del BORRADOR
-        (corte_id,),
+    mock_cursor.fetchone.side_effect = [
+        (ultimo_enviado,),    # _verificar_fecha_posterior
+        (corte_id,),          # _obtener_corte_borrador
+        (0,),                 # _guardar_ciclo COUNT(*)
+        (fecha_corte_bd,),    # fecha_corte final
     ]
-    # Para cada obligación: _es_primer_reporte → COUNT(*)
-    if obligaciones:
-        for _ in obligaciones:
-            fetchone_calls.append((0 if es_primer_reporte else 1,))
-    # _guardar_ciclo: COUNT(*) de NV_CICLO
-    fetchone_calls.append((0,))
-    # fecha_corte_bd para el retorno
-    fetchone_calls.append((fecha_corte_bd,))
 
-    mock_cursor.fetchone.side_effect = fetchone_calls
-    mock_cursor.fetchall.return_value = obligaciones or []
+    datos_previos = [
+        (
+            obl[0],
+            "S" if es_primer_reporte else "N",
+            None if es_primer_reporte else edad_anterior,
+        )
+        for obl in (obligaciones or [])
+    ]
 
+    mock_cursor.fetchall.side_effect = [
+        obligaciones or [],   # _cargar_obligaciones_corte
+        datos_previos,        # _cargar_datos_previos
+    ]
+
+
+# ── Casos RF10 ────────────────────────────────────────────────────────────────
 
 def test_ciclo_obligacion_nueva_al_dia():
     """Nueva al día (01, sin mora) → Entra en 01, edad 00, primer_reporte=True."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (10, "01", 0, "00", "Cliente A", "2263-9004"),
+        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -166,7 +214,7 @@ def test_ciclo_nueva_con_cuota_vencida_23_dias():
     """Nueva con una cuota vencida de 23 días → Entra en 01, edad 00, mora > 0."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (11, "01", 85000, "00", "Cliente B", "2263-0001"),
+        (11, "01", 85000, "00", "Cliente B", "2263-0001", 23, None, 0),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -187,7 +235,7 @@ def test_ciclo_nueva_caducada_con_mora():
     """Nueva con crédito caducado y mora → Entra en 03 (válido)."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (12, "03", 200000, "02", "Cliente C", "2263-0002"),
+        (12, "03", 200000, "02", "Cliente C", "2263-0002", 65, None, 0),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -208,7 +256,7 @@ def test_ciclo_nueva_caducada_sin_mora_requiere_revision():
     """Nueva caducada sin mora → 01, primer_reporte=True, requiere_revision=True (RF14)."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (13, "01", 0, "00", "Cliente D", "2263-0003"),
+        (13, "01", 0, "00", "Cliente D", "2263-0003", 0, None, 0),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -223,12 +271,16 @@ def test_ciclo_nueva_caducada_sin_mora_requiere_revision():
     assert t["estado_nuevo"] == "01"
     assert t["requiere_revision"] is True
 
+    sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
+    rev_update = any("REQUIERE_REVISION" in s and "MOTIVO_REVISION" in s for s in sqls_em)
+    assert rev_update, "RF10: debe persistir REQUIERE_REVISION en NV_REPORTE_DETALLE"
+
 
 def test_ciclo_nueva_estado_07_rechazada():
     """Nueva en estado 07 → Rechazada con error 881."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (14, "07", 0, "00", "Cliente E", "2267-3361"),
+        (14, "07", 0, "00", "Cliente E", "2267-3361", 0, None, 0),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -251,7 +303,7 @@ def test_ciclo_no_duplica_en_segunda_ejecucion():
     """Segunda ejecución llama a limpiar_ciclo_anterior (delete NV_CICLO_TRANSICION)."""
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
-        (10, "01", 0, "00", "Cliente A", "2263-9004"),
+        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0),
     ]
     _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
 
@@ -263,11 +315,170 @@ def test_ciclo_no_duplica_en_segunda_ejecucion():
 
     sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
     delete_trans = any("DELETE FROM NEXOVOLT.NV_CICLO_TRANSICION" in s for s in sqls)
-    delete_incons = any("DELETE FROM NEXOVOLT.NV_INCONSISTENCIA" in s and "PRIMER_REPORTE_INVALIDO" in s for s in sqls)
-    update_reset = any("UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "PRIMER_REPORTE = 'N'" in s for s in sqls)
+    delete_incons = any(
+        "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA" in s and "PRIMER_REPORTE_INVALIDO" in s
+        for s in sqls
+    )
+    update_reset = any(
+        "UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "PRIMER_REPORTE = 'N'" in s
+        for s in sqls
+    )
+    update_rev_reset = any(
+        "UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "REQUIERE_REVISION = 'N'" in s
+        for s in sqls
+    )
     assert delete_trans, "Debe limpiar NV_CICLO_TRANSICION en cada ejecución"
     assert delete_incons, "Debe limpiar inconsistencias 881 anteriores"
     assert update_reset, "Debe resetear PRIMER_REPORTE a N antes de recalcular"
+    assert update_rev_reset, "Debe resetear REQUIERE_REVISION a N antes de recalcular (RF11)"
+
+
+# ── Casos RF11 ────────────────────────────────────────────────────────────────
+
+@contextmanager
+def _patch_ciclo(mock_conn):
+    with patch("ciclo.servicios.connection", mock_conn), \
+         patch("ciclo.servicios.transaction.atomic", _noop_atomic), \
+         patch("ciclo.servicios.registrar_bitacora"), \
+         patch("ciclo.servicios.tolerar_fallo_bitacora",
+               lambda a: __import__("contextlib").nullcontext()):
+        yield
+
+
+def test_rf11_ciclo_47_dias_edad_01():
+    """47 días de mora → Edad 01, RF11, primer_reporte=False."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (20, "01", 100000, "01", "Hotel Mirador", "2258-7731",
+         47, date(2026, 9, 14), 0),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="00")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["edad_nueva"] == "01"
+    assert t["edad_anterior"] == "00"
+    assert t["primer_reporte"] is False
+    assert t["requiere_revision"] is False
+    assert t["reglas"][0]["rf"] == "RF11"
+    assert "47" in t["reglas"][0]["texto"]
+    assert "00" in t["reglas"][0]["texto"]
+    assert "01" in t["reglas"][0]["texto"]
+
+
+def test_rf11_ciclo_salto_mayor_tramo_requiere_revision():
+    """Edad pasa de 00 a 03 en un corte → requiere_revision=True, edad calculada no cambia."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (21, "01", 300000, "03", "Comercial Los Pinos", "2250-0987",
+         90, date(2026, 7, 14), 0),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="00")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    t = resultado["transiciones"][0]
+    assert t["edad_nueva"] == "03"
+    assert t["edad_anterior"] == "00"
+    assert t["requiere_revision"] is True
+
+    sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
+    rev_update = any("REQUIERE_REVISION" in s and "MOTIVO_REVISION" in s for s in sqls_em)
+    assert rev_update, "Debe actualizar REQUIERE_REVISION y MOTIVO_REVISION en BD"
+
+
+def test_rf11_ciclo_baja_sin_abono_requiere_revision():
+    """Edad baja de 02 a 00 sin abono → requiere_revision=True."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (22, "01", 0, "00", "Panadería La Espiga", "2265-2208",
+         0, None, 0),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="02")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    t = resultado["transiciones"][0]
+    assert t["edad_nueva"] == "00"
+    assert t["edad_anterior"] == "02"
+    assert t["requiere_revision"] is True
+
+
+def test_rf11_ciclo_baja_con_abono_sin_revision():
+    """Edad baja con abono que cubre las cuotas más antiguas → sin marca de revisión."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (23, "01", 0, "00", "Colegio San Rafael", "2266-7745",
+         0, None, 150000),  # valor_real_pagado > 0
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="02")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    t = resultado["transiciones"][0]
+    assert t["edad_nueva"] == "00"
+    assert t["edad_anterior"] == "02"
+    assert t["requiere_revision"] is False
+
+
+def test_rf11_ciclo_edad_14_en_transicion():
+    """730 días o más → edad_nueva='14' en la transición del ciclo."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (24, "03", 500000, "14", "Ferretería La Esquina", "2263-9004",
+         730, date(2024, 10, 31), 0),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="13")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    t = resultado["transiciones"][0]
+    assert t["edad_nueva"] == "14"
+    assert t["primer_reporte"] is False
+
+
+def test_rf11_obtener_obligacion_edad_14_anios_mora():
+    """730 días de mora y edad '14' → anios_mora = 2 (730 // 365)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),   # _obtener_ultimo_corte_ciclo
+        (       # obtener_obligacion row (18 columns)
+            24, "2263-9004", "Ferretería La Esquina", "1234567890",
+            "03", "14", 730, 0,
+            500000, 2000000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 3000000, 100000, None,
+        ),
+    ]
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(24)
+
+    assert result["edad_mora"] == "14"
+    assert result["dias_mora"] == 730
+    assert result["anios_mora"] == 2
+
+
+def test_rf11_obtener_obligacion_no_encontrada():
+    """Sin ciclo ejecutado → ObligacionNoEncontrada."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.return_value = None  # _obtener_ultimo_corte_ciclo returns None
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        with pytest.raises(servicios.ObligacionNoEncontrada):
+            servicios.obtener_obligacion(99)
 
 
 # ── Permisos ──────────────────────────────────────────────────────────────────
@@ -320,3 +531,46 @@ def test_matriz_administrador_no_puede_get():
     force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = view(request)
     assert response.status_code == 403
+
+
+def test_obligaciones_analista_puede_get():
+    factory = APIRequestFactory()
+    view = ObligacionesViewSet.as_view({"get": "list"})
+    request = factory.get("/obligaciones/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    with patch("ciclo.views.servicios.listar_obligaciones") as mock_lst:
+        mock_lst.return_value = {"total": 0, "resultados": []}
+        response = view(request)
+
+    assert response.status_code == 200
+
+
+def test_obligaciones_administrador_no_puede_get():
+    factory = APIRequestFactory()
+    view = ObligacionesViewSet.as_view({"get": "list"})
+    request = factory.get("/obligaciones/")
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
+    response = view(request)
+    assert response.status_code == 403
+
+
+def test_obligaciones_estado_invalido_devuelve_400():
+    factory = APIRequestFactory()
+    view = ObligacionesViewSet.as_view({"get": "list"})
+    request = factory.get("/obligaciones/", {"estado_tu": "99"})
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = view(request)
+    assert response.status_code == 400
+    assert "estado_tu" in response.data
+
+
+def test_obligaciones_q_max_60_caracteres_devuelve_400():
+    factory = APIRequestFactory()
+    view = ObligacionesViewSet.as_view({"get": "list"})
+    q_larga = "A" * 61
+    request = factory.get("/obligaciones/", {"q": q_larga})
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = view(request)
+    assert response.status_code == 400
+    assert "q" in response.data
