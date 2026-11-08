@@ -56,6 +56,11 @@ class ExtraccionViewSet(viewsets.ViewSet):
                 {"detail": "La fecha de corte debe ser posterior a la del último corte enviado."},
                 status=status.HTTP_409_CONFLICT,
             )
+        except servicios.NumeroDuplicado:
+            return Response(
+                {"detail": "El número de obligación ya fue reportado y no puede reutilizarse."},
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(CorteResumenSerializer(resumen).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):
