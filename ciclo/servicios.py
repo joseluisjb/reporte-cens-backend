@@ -397,6 +397,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         n_cambios_estado = 0
         n_cierres = 0
         n_a_dudoso = 0
+        n_con_pagos = 0
 
         for fila in filas:
             # cols 0-8 base; 9-10 RF12/RF15 (saldo, fecha_pago); 11-13 RF14 (caducado, atrasos, cuotas)
@@ -680,6 +681,26 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     "reglas": [{"rf": regla_rf, "texto": regla_texto, "por_confirmar": regla_por_confirmar}],
                 })
 
+                # RF17: abono parcial registrado en el SAC para esta obligación
+                if valor_pagado_int > 0:
+                    n_con_pagos += 1
+                    fecha_fl = fecha_str(fecha_limite_pago) if fecha_limite_pago else "sin fecha"
+                    rf17_texto = (
+                        f"RF17 · Pago de ${valor_pagado_int:,} aplicado a: "
+                        f"cuota {fecha_fl} [regla de imputación por confirmar, C-29]"
+                    )
+                    filas_insert_trans.append((
+                        corte_id, obligacion_id, estado_anterior, nuevo_estado,
+                        old_edad, new_edad,
+                        "N", "N",
+                        "RF17", rf17_texto, "S",
+                    ))
+                    transiciones_data[-1]["reglas"].append({
+                        "rf": "RF17",
+                        "texto": rf17_texto,
+                        "por_confirmar": True,
+                    })
+
         _insertar_transiciones(filas_insert_trans)
         _actualizar_revisiones(updates_revision)
 
@@ -716,7 +737,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
             "cambios_estado": n_cambios_estado,
             "cierres": n_cierres,
             "rechazados": len(rechazos),
-            "con_pagos": 0,
+            "con_pagos": n_con_pagos,
             "a_dudoso": n_a_dudoso,
             "a_castigada": 0,
             "normalizadas": 0,
@@ -795,22 +816,31 @@ def obtener_ciclo(corte_id):
         )
         trans_rows = cursor.fetchall()
 
-    transiciones = [
-        {
-            "obligacion_id": r[0],
-            "numero_obligacion": r[1],
-            "nombre_titular": r[2],
-            "estado_anterior": r[3],
-            "estado_nuevo": r[4],
-            "edad_anterior": r[5],
-            "edad_nueva": r[6],
-            "primer_reporte": r[7] == "S",
-            "requiere_revision": r[8] == "S",
-            "reglas": [{"rf": r[9], "texto": r[10], "por_confirmar": r[11] == "S"}]
-            if r[9] else [],
-        }
-        for r in trans_rows
-    ]
+    # Group by OBLIGACION_ID so an obligation with multiple rules (e.g. RF11+RF17)
+    # appears as a single transición with a reglas list (RF17 adds a second row).
+    grouped: dict = {}
+    for r in trans_rows:
+        obl_id = r[0]
+        if obl_id not in grouped:
+            grouped[obl_id] = {
+                "obligacion_id": r[0],
+                "numero_obligacion": r[1],
+                "nombre_titular": r[2],
+                "estado_anterior": r[3],
+                "estado_nuevo": r[4],
+                "edad_anterior": r[5],
+                "edad_nueva": r[6],
+                "primer_reporte": r[7] == "S",
+                "requiere_revision": r[8] == "S",
+                "reglas": [],
+            }
+        if r[9]:
+            grouped[obl_id]["reglas"].append({
+                "rf": r[9],
+                "texto": r[10],
+                "por_confirmar": r[11] == "S",
+            })
+    transiciones = list(grouped.values())
 
     with connection.cursor() as cursor:
         cursor.execute(
@@ -974,7 +1004,8 @@ def obtener_obligacion(obligacion_id):
             "rd.FECHA_INICIO, rd.VALOR_INICIAL, rd.VALOR_CUOTA, rd.FECHA_LIMITE_PAGO, "
             "rd.FECHA_PAGO, rd.MODO_EXTINCION, rd.TIPO_PAGO, "
             "NVL(rd.MOVIMIENTO_POSTERIOR, 'N'), c.FECHA_CORTE, "
-            "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0) "
+            "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), "
+            "NVL(rd.VALOR_REAL_PAGADO, 0) "
             "FROM NEXOVOLT.NV_OBLIGACION o "
             "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
             "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID "
@@ -985,6 +1016,19 @@ def obtener_obligacion(obligacion_id):
 
     if row is None:
         raise ObligacionNoEncontrada()
+
+    # RF17: cuotas vencidas sin pagar (per-cuota detail from V_MORA_OBLIGACION)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT vmo.FECHA_VENCIMIENTO, vmo.PENDIENTE, vmo.DIAS "
+            "FROM NEXOVOLT.V_MORA_OBLIGACION vmo "
+            "JOIN NEXOVOLT.NV_OBLIGACION o "
+            "  ON vmo.CLIENTE_ID = o.CLIENTE_ID AND vmo.NUMERO_PROCESO = o.NUMERO_PROCESO "
+            "WHERE o.OBLIGACION_ID = %s AND vmo.PENDIENTE > 0 "
+            "ORDER BY vmo.FECHA_VENCIMIENTO",
+            [obligacion_id],
+        )
+        cuotas_rows = cursor.fetchall()
 
     dias_mora = int(row[6]) if row[6] is not None else 0
     edad_mora = row[5] or "00"
@@ -997,6 +1041,30 @@ def obtener_obligacion(obligacion_id):
     fecha_corte_bd = row[22]
     caducado = row[23] == "S"
     atrasos_permitidos = int(row[24]) if row[24] is not None else 0
+
+    cuotas_vencidas = [
+        {
+            "fecha_vencimiento": fecha_str(cv[0]),
+            "valor_pendiente": int(cv[1]) if cv[1] is not None else 0,
+            "dias": int(cv[2]) if cv[2] is not None else 0,
+        }
+        for cv in cuotas_rows
+    ]
+
+    valor_real_pagado = int(row[25]) if row[25] is not None else 0
+    pagos = []
+    if valor_real_pagado > 0 and fecha_corte_bd is not None:
+        oldest_venc = cuotas_rows[0][0] if cuotas_rows else None
+        if oldest_venc:
+            aplicado_a = f"Cuota del {fecha_str(oldest_venc)} [por confirmar, C-29]"
+        else:
+            aplicado_a = "por confirmar (C-29)"
+        pagos = [{
+            "fecha_corte": fecha_str(fecha_corte_bd),
+            "valor": valor_real_pagado,
+            "aplicado_a": aplicado_a,
+            "nota": None,
+        }]
 
     if estado_tu in ("02", "07") and fecha_corte_bd is not None:
         cierre = {
@@ -1046,8 +1114,8 @@ def obtener_obligacion(obligacion_id):
         "reestructuracion": None,
         "refinanciada_en": None,
         "movimiento_posterior_cierre": movimiento_posterior == "S",
-        "cuotas_vencidas": [],
-        "pagos": [],
+        "cuotas_vencidas": cuotas_vencidas,
+        "pagos": pagos,
         "posibles_transiciones": [],
         "advertencias": [],
     }
