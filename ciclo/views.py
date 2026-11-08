@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,6 +13,7 @@ from ciclo.serializers import (
     MatrizEstadosSerializer,
     ObligacionResumenSerializer,
     ObligacionDetalleSerializer,
+    ResumenObligacionesSerializer,
 )
 
 
@@ -114,6 +116,11 @@ class ObligacionesViewSet(viewsets.ViewSet):
                 resultado["resultados"], many=True
             ).data,
         })
+
+    @action(detail=False, methods=["get"])
+    def resumen(self, request):
+        resultado = servicios.obtener_resumen_obligaciones()
+        return Response(ResumenObligacionesSerializer(resultado).data)
 
     def retrieve(self, request, pk=None):
         try:

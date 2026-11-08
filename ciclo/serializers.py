@@ -89,6 +89,33 @@ class MatrizEstadosSerializer(serializers.Serializer):
     transiciones = TransicionMatrizSerializer(many=True)
 
 
+class ConteoEstadoSerializer(serializers.Serializer):
+    estado_tu = serializers.CharField()
+    cantidad = serializers.IntegerField()
+
+
+class PorCuotasMoraSerializer(serializers.Serializer):
+    al_dia = serializers.IntegerField()
+    una = serializers.IntegerField()
+    dos_a_tres = serializers.IntegerField()
+    cuatro_o_mas = serializers.IntegerField()
+
+
+class FinanciacionNuevaSerializer(serializers.Serializer):
+    numero_obligacion = serializers.CharField()
+    nombre_titular = serializers.CharField()
+
+
+class ResumenObligacionesSerializer(serializers.Serializer):
+    fecha_ultimo_ciclo = serializers.CharField(allow_null=True)
+    total = serializers.IntegerField()
+    abiertas = serializers.IntegerField()
+    por_estado = ConteoEstadoSerializer(many=True)
+    eliminadas = serializers.IntegerField()
+    por_cuotas_mora = PorCuotasMoraSerializer()
+    financiaciones_nuevas = FinanciacionNuevaSerializer(many=True)
+
+
 class ObligacionResumenSerializer(serializers.Serializer):
     obligacion_id = serializers.IntegerField()
     numero_obligacion = serializers.CharField()

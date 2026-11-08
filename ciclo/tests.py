@@ -988,3 +988,104 @@ def test_rf17_obtener_obligacion_sin_pagos_sin_cuotas():
 
     assert result["cuotas_vencidas"] == []
     assert result["pagos"] == []
+
+
+# ── Casos RF19 ────────────────────────────────────────────────────────────────
+
+def test_rf19_resumen_cuota_no_facturada_no_cuenta():
+    """Cuota aún no facturada no incrementa cuotas_mora (RF19).
+
+    V_MORA_OBLIGACION / NV_REPORTE_DETALLE.CUOTAS_MORA ya excluye cuotas no facturadas (DBA).
+    El backend lee el valor sin modificarlo: CUOTAS_MORA=0 → la obligación cae en al_dia.
+    """
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (5,),                   # _obtener_ultimo_corte_ciclo
+        (date(2026, 10, 31),),  # FECHA_CORTE del corte
+        (1, 0, 0, 0),           # cuotas_mora aggregate: al_dia=1 (cuota no facturada excluida)
+    ]
+    # 1 obligación abierta (01); CUOTAS_MORA=0 porque la cuota aún no está facturada
+    mock_cursor.fetchall.side_effect = [
+        [("01", 1)],    # GROUP BY ESTADO_TU
+        [],             # financiaciones_nuevas
+    ]
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_resumen_obligaciones()
+
+    assert result["abiertas"] == 1
+    assert result["por_cuotas_mora"]["al_dia"] == 1, "Cuota no facturada no cuenta → al_dia"
+    assert result["por_cuotas_mora"]["una"] == 0
+
+
+def test_rf19_resumen_12_obligaciones_grupos_suman_abiertas():
+    """Resumen con 12 obligaciones: los 4 grupos de cuotas_mora suman las abiertas (RF19)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (3,),                           # _obtener_ultimo_corte_ciclo
+        (date(2026, 10, 31),),          # FECHA_CORTE del corte
+        (2, 2, 2, 3),                   # al_dia=2, una=2, dos_a_tres=2, cuatro_o_mas=3
+    ]
+    # por_estado: 9 abiertas (01) + 3 cerradas (02); total 12
+    mock_cursor.fetchall.side_effect = [
+        [("01", 9), ("02", 3)],
+        [],     # financiaciones_nuevas
+    ]
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_resumen_obligaciones()
+
+    assert result["total"] == 12
+    assert result["abiertas"] == 9
+    pcm = result["por_cuotas_mora"]
+    grupos = pcm["al_dia"] + pcm["una"] + pcm["dos_a_tres"] + pcm["cuatro_o_mas"]
+    assert grupos == result["abiertas"], "Los 4 grupos deben sumar las obligaciones abiertas"
+
+
+def test_rf19_resumen_sin_ciclo_devuelve_vacios():
+    """Sin ningún ciclo ejecutado, el resumen devuelve totales en cero."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.return_value = None   # _obtener_ultimo_corte_ciclo → sin ciclos
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_resumen_obligaciones()
+
+    assert result["fecha_ultimo_ciclo"] is None
+    assert result["total"] == 0
+    assert result["abiertas"] == 0
+    assert result["por_estado"] == []
+    assert result["financiaciones_nuevas"] == []
+
+
+def test_rf19_resumen_view_200():
+    """GET /api/obligaciones/resumen/ devuelve 200 con la estructura del contrato."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (3,),
+        (date(2026, 10, 31),),
+        (2, 2, 2, 3),
+    ]
+    mock_cursor.fetchall.side_effect = [
+        [("01", 9), ("02", 3)],
+        [],
+    ]
+
+    factory = APIRequestFactory()
+    view = ObligacionesViewSet.as_view({"get": "resumen"})
+    request = factory.get("/obligaciones/resumen/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        response = view(request)
+
+    assert response.status_code == 200
+    data = response.data
+    assert "fecha_ultimo_ciclo" in data
+    assert "total" in data
+    assert "abiertas" in data
+    assert "por_estado" in data
+    assert "eliminadas" in data
+    assert "por_cuotas_mora" in data
+    assert "financiaciones_nuevas" in data
+    pcm = data["por_cuotas_mora"]
+    assert all(k in pcm for k in ("al_dia", "una", "dos_a_tres", "cuatro_o_mas"))

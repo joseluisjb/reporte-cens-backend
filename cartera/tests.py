@@ -1088,3 +1088,41 @@ def test_rf16_registrar_envio_cubre_02_y_07_en_una_sola_sentencia():
 
     cierre_sqls = [s for s, _ in sqls if s and "CIERRE_DEFINITIVO" in s]
     assert len(cierre_sqls) == 1, "RF16: un único UPDATE debe cubrir 02 y 07 (no duplicar lógica)"
+
+
+# ── Casos RF19 ────────────────────────────────────────────────────────────────
+
+def test_rf19_validar_corte_707_bloquea_edad_sin_valor_mora():
+    """Edad 01 con valor de mora cero → V_VALIDACION_CORTE devuelve CORRECTIVA 707;
+    validar_corte lanza CorteConErroresCorrectivos y bloquea el corte (RF19, RF53).
+    """
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchall.return_value = [
+        ("EDAD_SIN_VALOR_MORA", "CORRECTIVA",
+         "Obligación 2258-7731 tiene edad 01 con valor de mora 0 (regla 707)"),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
+            servicios.validar_corte(1)
+    assert len(exc_info.value.errores) == 1
+    assert exc_info.value.errores[0]["regla"] == "EDAD_SIN_VALOR_MORA"
+
+
+def test_rf19_validar_corte_cuotas_mora_incoherente_es_informativa():
+    """Valor de mora cero con 2 cuotas en mora → V_VALIDACION_CORTE devuelve
+    INFORMATIVA CUOTAS_MORA_INCOHERENTE; validar_corte no bloquea y devuelve la alerta.
+    """
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("BORRADOR",),
+        (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
+    ]
+    mock_cursor.fetchall.return_value = [
+        ("CUOTAS_MORA_INCOHERENTE", "INFORMATIVA",
+         "Obligación 2263-9004 tiene cuotas_mora=2 con valor de mora 0"),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        resultado = servicios.validar_corte(1)
+    assert len(resultado["advertencias"]) == 1
+    assert resultado["advertencias"][0]["regla"] == "CUOTAS_MORA_INCOHERENTE"

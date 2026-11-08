@@ -1119,3 +1119,92 @@ def obtener_obligacion(obligacion_id):
         "posibles_transiciones": [],
         "advertencias": [],
     }
+
+
+_ESTADOS_CERRADOS = {"02", "07"}
+
+
+def obtener_resumen_obligaciones():
+    """Resumen de la cartera por estado y por cuotas en mora (RF19)."""
+    ultimo_corte = _obtener_ultimo_corte_ciclo()
+    if ultimo_corte is None:
+        return {
+            "fecha_ultimo_ciclo": None,
+            "total": 0,
+            "abiertas": 0,
+            "por_estado": [],
+            "eliminadas": 0,
+            "por_cuotas_mora": {"al_dia": 0, "una": 0, "dos_a_tres": 0, "cuatro_o_mas": 0},
+            "financiaciones_nuevas": [],
+        }
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s",
+            [ultimo_corte],
+        )
+        row = cursor.fetchone()
+    fecha_ultimo_ciclo = fecha_str(row[0]) if row else None
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT rd.ESTADO_TU, COUNT(*) "
+            "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "WHERE rd.CORTE_ID = %s "
+            "GROUP BY rd.ESTADO_TU "
+            "ORDER BY rd.ESTADO_TU",
+            [ultimo_corte],
+        )
+        estado_rows = cursor.fetchall()
+
+    total = sum(r[1] for r in estado_rows)
+    abiertas = sum(r[1] for r in estado_rows if r[0] not in _ESTADOS_CERRADOS)
+    por_estado = [{"estado_tu": r[0], "cantidad": r[1]} for r in estado_rows]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT "
+            "SUM(CASE WHEN NVL(rd.CUOTAS_MORA, 0) = 0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN NVL(rd.CUOTAS_MORA, 0) = 1 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN NVL(rd.CUOTAS_MORA, 0) BETWEEN 2 AND 3 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN NVL(rd.CUOTAS_MORA, 0) >= 4 THEN 1 ELSE 0 END) "
+            "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "WHERE rd.CORTE_ID = %s "
+            "AND rd.ESTADO_TU NOT IN ('02', '07')",
+            [ultimo_corte],
+        )
+        mora_row = cursor.fetchone()
+
+    por_cuotas_mora = {
+        "al_dia": int(mora_row[0]) if mora_row[0] is not None else 0,
+        "una": int(mora_row[1]) if mora_row[1] is not None else 0,
+        "dos_a_tres": int(mora_row[2]) if mora_row[2] is not None else 0,
+        "cuatro_o_mas": int(mora_row[3]) if mora_row[3] is not None else 0,
+    }
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT o.NUMERO_OBLIGACION_TU, rd.NOMBRE_TITULAR "
+            "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
+            "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID "
+            "LEFT JOIN NEXOVOLT.V_ULTIMO_REPORTE vu ON vu.OBLIGACION_ID = rd.OBLIGACION_ID "
+            "WHERE c.ESTADO = 'BORRADOR' AND vu.OBLIGACION_ID IS NULL "
+            "ORDER BY o.NUMERO_OBLIGACION_TU",
+        )
+        fin_rows = cursor.fetchall()
+
+    financiaciones_nuevas = [
+        {"numero_obligacion": r[0], "nombre_titular": r[1]}
+        for r in fin_rows
+    ]
+
+    return {
+        "fecha_ultimo_ciclo": fecha_ultimo_ciclo,
+        "total": total,
+        "abiertas": abiertas,
+        "por_estado": por_estado,
+        "eliminadas": 0,
+        "por_cuotas_mora": por_cuotas_mora,
+        "financiaciones_nuevas": financiaciones_nuevas,
+    }
