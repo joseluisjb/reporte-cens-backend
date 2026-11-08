@@ -103,7 +103,7 @@ def _limpiar_ciclo_anterior(corte_id):
         )
         cursor.execute(
             "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA "
-            "WHERE CORTE_ID = %s AND REGLA = 'PRIMER_REPORTE_INVALIDO'",
+            "WHERE CORTE_ID = %s AND REGLA IN ('PRIMER_REPORTE_INVALIDO', 'CAMBIO_ESTADO_INVALIDO')",
             [corte_id],
         )
         cursor.execute(
@@ -119,7 +119,8 @@ def _cargar_obligaciones_corte(corte_id):
         cursor.execute(
             "SELECT rd.OBLIGACION_ID, rd.ESTADO_TU, rd.VALOR_MORA, rd.EDAD_MORA, "
             "rd.NOMBRE_TITULAR, o.NUMERO_OBLIGACION_TU, "
-            "rd.DIAS_MORA, rd.FECHA_LIMITE_PAGO, rd.VALOR_REAL_PAGADO "
+            "rd.DIAS_MORA, rd.FECHA_LIMITE_PAGO, rd.VALOR_REAL_PAGADO, "
+            "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), rd.CUOTAS_MORA "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
             "WHERE rd.CORTE_ID = %s "
@@ -132,16 +133,16 @@ def _cargar_obligaciones_corte(corte_id):
 def _cargar_datos_previos(corte_id):
     """
     Batch query that returns a dict:
-      {obligacion_id: (es_primer_reporte: bool, edad_anterior: str|None)}
+      {obligacion_id: (es_primer_reporte, edad_anterior, estado_anterior, mora_anterior)}
 
-    Replaces N+1 _es_primer_reporte calls. Uses V_ULTIMO_REPORTE (DBA view) to
-    detect obligations that have an ENVIADO corte and get their last reported edad.
+    Uses V_ULTIMO_REPORTE to detect primer reporte and get the last reported
+    estado, edad and valor_mora (needed for RF14 matrix validation).
     """
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT rd.OBLIGACION_ID, "
             "CASE WHEN vu.OBLIGACION_ID IS NULL THEN 'S' ELSE 'N' END, "
-            "vu.EDAD_MORA "
+            "vu.EDAD_MORA, vu.ESTADO_TU, vu.VALOR_MORA "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "LEFT JOIN NEXOVOLT.V_ULTIMO_REPORTE vu ON vu.OBLIGACION_ID = rd.OBLIGACION_ID "
             "WHERE rd.CORTE_ID = %s "
@@ -149,7 +150,10 @@ def _cargar_datos_previos(corte_id):
             [corte_id],
         )
         rows = cursor.fetchall()
-    return {r[0]: (r[1] == "S", r[2]) for r in rows}
+    return {
+        r[0]: (r[1] == "S", r[2], r[3], int(r[4]) if r[4] is not None else 0)
+        for r in rows
+    }
 
 
 def _marcar_primer_reporte(corte_id, obligacion_id):
@@ -159,6 +163,49 @@ def _marcar_primer_reporte(corte_id, obligacion_id):
             "SET PRIMER_REPORTE = 'S' "
             "WHERE CORTE_ID = %s AND OBLIGACION_ID = %s",
             [corte_id, obligacion_id],
+        )
+
+
+def _cargar_transiciones_permitidas():
+    """Devuelve el conjunto de transiciones S de NV_TRANSICION_ESTADO para validar la Matriz."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ESTADO_DESDE, CON_MORA_DESDE, ESTADO_HACIA, CON_MORA_HACIA "
+            "FROM NEXOVOLT.NV_TRANSICION_ESTADO "
+            "WHERE PERMITIDA = 'S'"
+        )
+        rows = cursor.fetchall()
+    return {(r[0], r[1], r[2], r[3]) for r in rows}
+
+
+def _transicion_permitida(matriz, estado_desde, con_mora_desde, estado_hacia, con_mora_hacia):
+    """True si la Matriz permite el cambio de estado (RF14)."""
+    return (
+        estado_desde,
+        'S' if con_mora_desde else 'N',
+        estado_hacia,
+        'S' if con_mora_hacia else 'N',
+    ) in matriz
+
+
+def _insertar_inconsistencia_713(corte_id, obligacion_id, mensaje):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
+            "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE) "
+            "VALUES (%s, %s, 'CAMBIO_ESTADO_INVALIDO', 'CORRECTIVA', %s)",
+            [corte_id, obligacion_id, mensaje],
+        )
+
+
+def _actualizar_estado_obligacion(corte_id, obligacion_id, nuevo_estado):
+    """Revierte ESTADO_TU en NV_REPORTE_DETALLE cuando la Matriz rechaza la transición (713)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_REPORTE_DETALLE "
+            "SET ESTADO_TU = %s "
+            "WHERE CORTE_ID = %s AND OBLIGACION_ID = %s",
+            [nuevo_estado, corte_id, obligacion_id],
         )
 
 
@@ -300,6 +347,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
 
         filas = _cargar_obligaciones_corte(corte_id)
         datos_previos = _cargar_datos_previos(corte_id)
+        matriz = _cargar_transiciones_permitidas()
 
         transiciones_data = []
         rechazos = []
@@ -307,17 +355,26 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         updates_revision = []
         n_primer_reporte = 0
         n_cambios_estado = 0
+        n_a_dudoso = 0
 
         for fila in filas:
-            (obligacion_id, estado_tu, valor_mora, edad_mora,
-             nombre_titular, numero_obl,
-             dias_mora, fecha_limite_pago, valor_real_pagado) = fila
+            # Los primeros 9 campos son fijos; los 3 siguientes vienen de RF14
+            obligacion_id, estado_tu, valor_mora, edad_mora, nombre_titular, numero_obl, \
+                dias_mora, fecha_limite_pago, valor_real_pagado, *extra = fila
+
+            caducado_flag = extra[0] if len(extra) > 0 else 'N'
+            atrasos_permitidos_int = int(extra[1]) if len(extra) > 1 and extra[1] is not None else 0
+            cuotas_mora_obl = int(extra[2]) if len(extra) > 2 and extra[2] is not None else 0
 
             valor_mora_int = int(valor_mora) if valor_mora is not None else None
             dias_mora_int = int(dias_mora) if dias_mora is not None else 0
             valor_pagado_int = int(valor_real_pagado) if valor_real_pagado is not None else 0
 
-            es_primer, edad_anterior = datos_previos.get(obligacion_id, (True, None))
+            datos = datos_previos.get(obligacion_id, (True, None, None, 0))
+            es_primer = datos[0]
+            edad_anterior = datos[1]
+            estado_anterior = datos[2] if len(datos) > 2 else None
+            mora_anterior = datos[3] if len(datos) > 3 else 0
 
             if es_primer:
                 # RF10: primer reporte
@@ -373,7 +430,88 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                 })
 
             else:
-                # RF11: evolución mensual de la edad de mora
+                # ── RF14: Transición a Dudoso Recaudo ────────────────────────
+                nuevo_estado = estado_tu
+                regla_rf = "RF11"
+                regla_texto = None
+                regla_por_confirmar = False
+
+                if caducado_flag == 'S':
+                    if valor_mora_int is not None and valor_mora_int > 0:
+                        # Crédito caducado con mora: intentar transición a 03
+                        con_mora_ant = mora_anterior > 0
+                        if not _transicion_permitida(
+                            matriz, estado_anterior or estado_tu, con_mora_ant, '03', True
+                        ):
+                            # 713: Matriz no permite el cambio
+                            _insertar_inconsistencia_713(
+                                corte_id, obligacion_id,
+                                f"RF14 · Cambio de estado inválido: la Matriz no permite "
+                                f"pasar de {estado_anterior} a 03 (Dudoso Recaudo)",
+                            )
+                            rechazos.append({
+                                "obligacion_id": obligacion_id,
+                                "numero_obligacion": numero_obl,
+                                "nombre_titular": nombre_titular,
+                                "estado_anterior": estado_anterior,
+                                "estado_calculado": "03",
+                                "codigo": "713",
+                                "motivo": (
+                                    f"RF14 · Error 713: la Matriz no permite pasar de "
+                                    f"{estado_anterior} a 03 (Dudoso Recaudo)"
+                                ),
+                            })
+                            # Revertir el estado calculado por la extracción
+                            if estado_tu == '03':
+                                _actualizar_estado_obligacion(corte_id, obligacion_id, estado_anterior)
+                            continue
+                        else:
+                            # Transición permitida → pasar a 03
+                            if nuevo_estado != '03':
+                                _actualizar_estado_obligacion(corte_id, obligacion_id, '03')
+                                nuevo_estado = '03'
+                            n_a_dudoso += 1
+                            n_cambios_estado += 1
+                            regla_rf = "RF14"
+                            regla_texto = (
+                                f"RF14 · Crédito caducado en el SAC "
+                                f"({cuotas_mora_obl} cuotas en mora)"
+                            )
+                            regla_por_confirmar = True
+                    else:
+                        # Caducado sin mora: marcar para revisión (no pasa a 03)
+                        updates_revision.append((
+                            "S",
+                            "Crédito caducado en el SAC sin mora; verificar si debe pasar a 03 (RF14).",
+                            corte_id, obligacion_id,
+                        ))
+                        filas_insert_trans.append((
+                            corte_id, obligacion_id, estado_anterior, nuevo_estado,
+                            edad_anterior or "00", edad_mora or "00",
+                            "N", "S",
+                            "RF14",
+                            "RF14 · Crédito caducado en el SAC sin mora; requiere revisión",
+                            "S",
+                        ))
+                        transiciones_data.append({
+                            "obligacion_id": obligacion_id,
+                            "numero_obligacion": numero_obl,
+                            "nombre_titular": nombre_titular,
+                            "estado_anterior": estado_anterior,
+                            "estado_nuevo": nuevo_estado,
+                            "edad_anterior": edad_anterior or "00",
+                            "edad_nueva": edad_mora or "00",
+                            "primer_reporte": False,
+                            "requiere_revision": True,
+                            "reglas": [{
+                                "rf": "RF14",
+                                "texto": "RF14 · Crédito caducado en el SAC sin mora; requiere revisión",
+                                "por_confirmar": True,
+                            }],
+                        })
+                        continue
+
+                # ── RF11: evolución mensual de la edad de mora ───────────────
                 old_edad = edad_anterior or "00"
                 new_edad = edad_mora or "00"
                 old_idx = int(old_edad)
@@ -395,34 +533,33 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         f"sin un abono en el periodo (RF11)."
                     )
 
-                fecha_fl = fecha_str(fecha_limite_pago) if fecha_limite_pago else "sin fecha"
-                regla_texto = (
-                    f"RF11 · {dias_mora_int} días desde la cuota más antigua "
-                    f"sin pagar ({fecha_fl}): edad {old_edad} → {new_edad}"
-                )
+                if regla_rf == "RF11":
+                    fecha_fl = fecha_str(fecha_limite_pago) if fecha_limite_pago else "sin fecha"
+                    regla_texto = (
+                        f"RF11 · {dias_mora_int} días desde la cuota más antigua "
+                        f"sin pagar ({fecha_fl}): edad {old_edad} → {new_edad}"
+                    )
 
                 updates_revision.append(
                     ("S" if requiere_revision else "N", motivo_revision, corte_id, obligacion_id)
                 )
                 filas_insert_trans.append((
-                    corte_id, obligacion_id, estado_tu, estado_tu,
+                    corte_id, obligacion_id, estado_anterior, nuevo_estado,
                     old_edad, new_edad,
                     "N", "S" if requiere_revision else "N",
-                    "RF11", regla_texto, "N",
+                    regla_rf, regla_texto, "S" if regla_por_confirmar else "N",
                 ))
                 transiciones_data.append({
                     "obligacion_id": obligacion_id,
                     "numero_obligacion": numero_obl,
                     "nombre_titular": nombre_titular,
-                    "estado_anterior": estado_tu,
-                    "estado_nuevo": estado_tu,
+                    "estado_anterior": estado_anterior,
+                    "estado_nuevo": nuevo_estado,
                     "edad_anterior": old_edad,
                     "edad_nueva": new_edad,
                     "primer_reporte": False,
                     "requiere_revision": requiere_revision,
-                    "reglas": [
-                        {"rf": "RF11", "texto": regla_texto, "por_confirmar": False}
-                    ],
+                    "reglas": [{"rf": regla_rf, "texto": regla_texto, "por_confirmar": regla_por_confirmar}],
                 })
 
         _insertar_transiciones(filas_insert_trans)
@@ -434,7 +571,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
             "cierres": 0,
             "rechazados": len(rechazos),
             "con_pagos": 0,
-            "a_dudoso": 0,
+            "a_dudoso": n_a_dudoso,
             "a_castigada": 0,
             "normalizadas": 0,
         }
@@ -641,7 +778,8 @@ def listar_obligaciones(
             "rd.ESTADO_TU, rd.EDAD_MORA, rd.DIAS_MORA, rd.CUOTAS_MORA, "
             "rd.VALOR_MORA, rd.VALOR_SALDO, "
             "CASE WHEN rd.ESTADO_TU IN ('02', '07') THEN 'S' ELSE 'N' END, "
-            "rd.PRIMER_REPORTE, NVL(rd.REQUIERE_REVISION, 'N') "
+            "rd.PRIMER_REPORTE, NVL(rd.REQUIERE_REVISION, 'N'), "
+            "NVL(rd.CADUCADO, 'N') "
             + base +
             " ORDER BY o.NUMERO_OBLIGACION_TU "
             "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
@@ -663,7 +801,7 @@ def listar_obligaciones(
             "valor_saldo": int(r[9]) if r[9] is not None else 0,
             "cerrada": r[10] == "S",
             "primer_reporte": r[11] == "S",
-            "caducado": False,
+            "caducado": r[13] == "S",
             "en_reclamo": False,
             "eliminada": False,
             "requiere_revision": r[12] == "S",
@@ -687,7 +825,8 @@ def obtener_obligacion(obligacion_id):
             "CASE WHEN rd.ESTADO_TU IN ('02', '07') THEN 'S' ELSE 'N' END, "
             "rd.PRIMER_REPORTE, NVL(rd.REQUIERE_REVISION, 'N'), "
             "rd.MOTIVO_REVISION, "
-            "rd.FECHA_INICIO, rd.VALOR_INICIAL, rd.VALOR_CUOTA, rd.FECHA_LIMITE_PAGO "
+            "rd.FECHA_INICIO, rd.VALOR_INICIAL, rd.VALOR_CUOTA, rd.FECHA_LIMITE_PAGO, "
+            "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0) "
             "FROM NEXOVOLT.NV_OBLIGACION o "
             "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
             "WHERE rd.OBLIGACION_ID = %s AND rd.CORTE_ID = %s",
@@ -701,6 +840,8 @@ def obtener_obligacion(obligacion_id):
     dias_mora = int(row[6]) if row[6] is not None else 0
     edad_mora = row[5] or "00"
     anios_mora = dias_mora // 365 if edad_mora == "14" else None
+    caducado = row[18] == "S"
+    atrasos_permitidos = int(row[19]) if row[19] is not None else 0
 
     return {
         "obligacion_id": row[0],
@@ -715,7 +856,7 @@ def obtener_obligacion(obligacion_id):
         "valor_saldo": int(row[9]) if row[9] is not None else 0,
         "cerrada": row[10] == "S",
         "primer_reporte": row[11] == "S",
-        "caducado": False,
+        "caducado": caducado,
         "en_reclamo": False,
         "eliminada": False,
         "requiere_revision": row[12] == "S",
@@ -727,8 +868,8 @@ def obtener_obligacion(obligacion_id):
         "valor_cuota": int(row[16]) if row[16] is not None else 0,
         "valor_cuota_antes_cierre": None,
         "fecha_exigibilidad": fecha_str(row[17]),
-        "atrasos_permitidos": 0,
-        "cuotas_atrasadas": 0,
+        "atrasos_permitidos": atrasos_permitidos,
+        "cuotas_atrasadas": int(row[7]) if row[7] is not None else 0,
         "cierre": None,
         "pago_mora": None,
         "reestructuracion": None,

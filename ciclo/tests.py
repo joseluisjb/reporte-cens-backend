@@ -152,13 +152,20 @@ def _setup_ciclo(
     ultimo_enviado=None,
     es_primer_reporte=True,
     edad_anterior="00",
+    estado_anterior="01",
+    mora_anterior=0,
+    matriz=None,
 ):
     """
     Monta el mock_cursor con respuestas para ejecutar_ciclo.
 
-    Obligaciones: tuplas de 9 columnas:
+    Obligaciones: tuplas de 9 a 12 columnas:
       (obligacion_id, estado_tu, valor_mora, edad_mora,
-       nombre_titular, numero_obl, dias_mora, fecha_limite_pago, valor_real_pagado)
+       nombre_titular, numero_obl, dias_mora, fecha_limite_pago, valor_real_pagado
+       [, caducado='N', atrasos_permitidos=0, cuotas_mora=0])  -- RF14
+
+    matriz: lista de tuplas (estado_desde, con_mora_desde, estado_hacia, con_mora_hacia)
+      que se consideran PERMITIDA='S'. Si es None, se usa una lista vacía.
     """
     fecha_corte_bd = date(2026, 10, 31)
 
@@ -169,18 +176,30 @@ def _setup_ciclo(
         (fecha_corte_bd,),    # fecha_corte final
     ]
 
+    # Extender las obligaciones a 12 columnas con valores por defecto para RF14
+    extendidas = []
+    defaults_rf14 = ('N', 0, 0)  # caducado, atrasos_permitidos, cuotas_mora
+    for obl in (obligaciones or []):
+        lst = list(obl)
+        for i in range(len(lst), 12):
+            lst.append(defaults_rf14[i - 9])
+        extendidas.append(tuple(lst))
+
     datos_previos = [
         (
             obl[0],
             "S" if es_primer_reporte else "N",
             None if es_primer_reporte else edad_anterior,
+            None if es_primer_reporte else estado_anterior,
+            0 if es_primer_reporte else mora_anterior,
         )
         for obl in (obligaciones or [])
     ]
 
     mock_cursor.fetchall.side_effect = [
-        obligaciones or [],   # _cargar_obligaciones_corte
-        datos_previos,        # _cargar_datos_previos
+        extendidas,                # _cargar_obligaciones_corte
+        datos_previos,             # _cargar_datos_previos
+        matriz or [],              # _cargar_transiciones_permitidas
     ]
 
 
@@ -454,12 +473,13 @@ def test_rf11_obtener_obligacion_edad_14_anios_mora():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # obtener_obligacion row (18 columns)
+        (       # obtener_obligacion row (20 columns: +CADUCADO, +ATRASOS_PERMITIDOS)
             24, "2263-9004", "Ferretería La Esquina", "1234567890",
             "03", "14", 730, 0,
             500000, 2000000,
             "N", "N", "N", None,
             date(2026, 1, 31), 3000000, 100000, None,
+            "N", 0,
         ),
     ]
 
@@ -574,3 +594,210 @@ def test_obligaciones_q_max_60_caracteres_devuelve_400():
     response = view(request)
     assert response.status_code == 400
     assert "q" in response.data
+
+
+# ── Casos RF14 ────────────────────────────────────────────────────────────────
+
+# Matriz mínima para RF14: transiciones válidas hacia 03 con mora
+_MATRIZ_RF14 = [
+    # (desde, con_mora_desde, hacia, con_mora_hacia) donde PERMITIDA='S'
+    ('01', 'N', '03', 'S'),
+    ('01', 'S', '03', 'S'),
+    ('03', 'S', '03', 'S'),
+    ('08', 'S', '03', 'S'),
+    ('04', 'S', '03', 'S'),
+    ('10', 'N', '03', 'S'),
+    ('10', 'S', '03', 'S'),
+    ('11', 'N', '03', 'S'),
+    ('11', 'S', '03', 'S'),
+    ('12', 'N', '03', 'S'),
+    ('12', 'S', '03', 'S'),
+]
+
+
+def test_rf14_caducado_con_mora_pasa_a_03():
+    """2250-0987: 6 cuotas atrasadas (tope 4) con mora → estado 03, a_dudoso=1.
+
+    La extracción (DBA) ya pone ESTADO_TU='03'; el ciclo valida la Matriz y
+    registra la transición RF14 sin necesidad de un UPDATE adicional.
+    """
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    # Tupla: 9 base + caducado='S', atrasos_permitidos=4, cuotas_mora=6
+    # ESTADO_TU='03' porque el DBA lo calculó durante la extracción
+    obligaciones = [
+        (30, "03", 1620000, "05", "Empresa Caducada", "2250-0987",
+         156, None, 0, 'S', 4, 6),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="04",
+        estado_anterior="01",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF14,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_dudoso"] == 1
+    assert resultado["cambios_estado"] == 1
+    assert resultado["rechazados"] == 0
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "03"
+    assert t["estado_anterior"] == "01"
+    assert t["primer_reporte"] is False
+    assert t["reglas"][0]["rf"] == "RF14"
+    assert "6" in t["reglas"][0]["texto"]
+    assert t["reglas"][0]["por_confirmar"] is True
+
+    # Verificar que se insertó la transición en NV_CICLO_TRANSICION
+    sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
+    inserta_trans = any("INSERT INTO NEXOVOLT.NV_CICLO_TRANSICION" in s for s in sqls_em)
+    assert inserta_trans, "RF14: debe insertar la transición en NV_CICLO_TRANSICION"
+
+
+def test_rf14_caducado_sin_mora_no_pasa_a_03_requiere_revision():
+    """Crédito caducado pero con mora cero → no reporta 03; marcado para revisión."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (31, "01", 0, "00", "Cliente Sin Mora", "2250-1111",
+         0, None, 0, 'S', 4, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior="01",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF14,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_dudoso"] == 0
+    assert resultado["rechazados"] == 0
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "01"
+    assert t["requiere_revision"] is True
+    assert t["reglas"][0]["rf"] == "RF14"
+    assert "sin mora" in t["reglas"][0]["texto"].lower()
+
+    sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
+    rev_update = any("REQUIERE_REVISION" in s and "MOTIVO_REVISION" in s for s in sqls_em)
+    assert rev_update, "RF14: debe persistir REQUIERE_REVISION en NV_REPORTE_DETALLE"
+
+
+def test_rf14_no_caducado_sigue_en_01():
+    """3 de 4 atrasos permitidos (no caducado) → sigue en 01; RF11 rige el cambio de edad."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (32, "01", 90000, "02", "Cliente Vigente", "2250-2222",
+         75, None, 0, 'N', 4, 3),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="01",
+        estado_anterior="01",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF14,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_dudoso"] == 0
+    assert resultado["rechazados"] == 0
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "01"
+    assert t["reglas"][0]["rf"] == "RF11"
+
+
+def test_rf14_estado_anterior_02_caducado_713():
+    """Estado anterior Saldada (02) + crédito caducado → Matriz rechaza; inconsistencia 713."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    # El DBA ya calculó ESTADO_TU='03' por ser caducado con mora
+    obligaciones = [
+        (33, "03", 500000, "04", "Obligación Saldada Caduca", "2250-3333",
+         120, None, 0, 'S', 3, 4),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior="02",  # Saldada: ninguna transición permitida
+        mora_anterior=0,
+        matriz=_MATRIZ_RF14,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_dudoso"] == 0
+    assert resultado["rechazados"] == 1
+    assert len(resultado["transiciones"]) == 0
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "713"
+    assert r["estado_anterior"] == "02"
+    assert r["estado_calculado"] == "03"
+
+    sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
+    incons_713 = any(
+        "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in s and "CAMBIO_ESTADO_INVALIDO" in s
+        for s in sqls
+    )
+    assert incons_713, "RF14: debe insertar inconsistencia CAMBIO_ESTADO_INVALIDO"
+
+    revert = any("UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "ESTADO_TU" in s for s in sqls)
+    assert revert, "RF14: debe revertir ESTADO_TU al estado anterior cuando hay 713"
+
+
+def test_rf14_obtener_obligacion_caducado():
+    """obtener_obligacion devuelve caducado=True y atrasos_permitidos reales."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),   # _obtener_ultimo_corte_ciclo
+        (       # 20 columnas: 18 base + CADUCADO='S', ATRASOS_PERMITIDOS=4
+            30, "2250-0987", "Empresa Caducada", "9876543210",
+            "03", "05", 156, 6,
+            1620000, 5420000,
+            "N", "N", "N", None,
+            date(2025, 6, 30), 8000000, 270000, None,
+            "S", 4,
+        ),
+    ]
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(30)
+
+    assert result["caducado"] is True
+    assert result["atrasos_permitidos"] == 4
+    assert result["cuotas_atrasadas"] == 6  # usa cuotas_mora (col 7)
+
+
+def test_rf14_limpiar_ciclo_borra_713():
+    """Segunda ejecución limpia también las inconsistencias CAMBIO_ESTADO_INVALIDO."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (10, "01", 0, "00", "Cliente A", "2263-9004", 0, None, 0),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones)
+
+    with _patch_ciclo(mock_conn):
+        servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
+    limpia_713 = any(
+        "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA" in s and "CAMBIO_ESTADO_INVALIDO" in s
+        for s in sqls
+    )
+    assert limpia_713, "Debe limpiar inconsistencias 713 en cada ejecución"
