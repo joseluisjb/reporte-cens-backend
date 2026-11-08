@@ -1,8 +1,12 @@
+import logging
+
 from django.db import connection, transaction
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str
 from usuarios.models import Usuario
+
+logger = logging.getLogger(__name__)
 
 
 # ── Excepciones ───────────────────────────────────────────────────────────────
@@ -749,6 +753,16 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
             "SELECT FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
         )
         fecha_corte_bd = cursor.fetchone()[0]
+
+    # RF24: novedades automáticas para pagos posteriores al corte (MOVIMIENTO_POSTERIOR='S')
+    for r in mp_rows:
+        try:
+            from novedades.servicios import crear_novedad_automatica
+            crear_novedad_automatica(r[0], r[1], usuario_id)
+        except Exception:
+            logger.warning(
+                "RF24: no se pudo crear la novedad automática para la obligación %s", r[0]
+            )
 
     with tolerar_fallo_bitacora("ACTUALIZACION_MENSUAL"):
         registrar_bitacora(
