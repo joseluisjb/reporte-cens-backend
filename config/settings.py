@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "parametros",
     "cartera",
     "historial",
+    "ciclo",
 ]
 
 MIDDLEWARE = [
