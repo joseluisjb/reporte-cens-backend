@@ -152,7 +152,9 @@ def _setup_ciclo(
     ultimo_enviado=None,
     es_primer_reporte=True,
     edad_anterior="00",
-    estado_anterior_tu=None,
+    estado_anterior=None,
+    mora_anterior=0,
+    matriz=None,
 ):
     """
     Monta el mock_cursor con respuestas para ejecutar_ciclo.
@@ -171,13 +173,14 @@ def _setup_ciclo(
         (fecha_corte_bd,),    # fecha_corte final
     ]
 
-    # Extender las obligaciones a 12 columnas con valores por defecto para RF14
+    # Extender las obligaciones a 14 columnas:
+    # 0-8 base, 9=valor_saldo, 10=fecha_ultimo_pago (RF12/RF15), 11-13=caducado/atrasos/cuotas (RF14)
     extendidas = []
-    defaults_rf14 = ('N', 0, 0)  # caducado, atrasos_permitidos, cuotas_mora
+    defaults_all = (0, None, 'N', 0, 0)
     for obl in (obligaciones or []):
         lst = list(obl)
-        for i in range(len(lst), 12):
-            lst.append(defaults_rf14[i - 9])
+        for i in range(len(lst), 14):
+            lst.append(defaults_all[i - 9])
         extendidas.append(tuple(lst))
 
     datos_previos = [
@@ -185,14 +188,16 @@ def _setup_ciclo(
             obl[0],
             "S" if es_primer_reporte else "N",
             None if es_primer_reporte else edad_anterior,
-            None if es_primer_reporte else estado_anterior_tu,
+            None if es_primer_reporte else estado_anterior,
+            0 if es_primer_reporte else mora_anterior,
         )
         for obl in (obligaciones or [])
     ]
 
     mock_cursor.fetchall.side_effect = [
-        obligaciones or [],   # _cargar_obligaciones_corte
+        extendidas,           # _cargar_obligaciones_corte
         datos_previos,        # _cargar_datos_previos
+        matriz or [],         # _cargar_transiciones_permitidas
         [],                   # RF13 MOVIMIENTO_POSTERIOR query
     ]
 
@@ -467,13 +472,14 @@ def test_rf11_obtener_obligacion_edad_14_anios_mora():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # obtener_obligacion row (23 columns)
+        (       # obtener_obligacion row (25 columns)
             24, "2263-9004", "Ferretería La Esquina", "1234567890",
             "03", "14", 730, 0,
             500000, 2000000,
             "N", "N", "N", None,
             date(2026, 1, 31), 3000000, 100000, None,
             None, None, None, "N", date(2026, 10, 31),
+            "N", 0,
         ),
     ]
 
@@ -620,7 +626,7 @@ def test_rf14_caducado_con_mora_pasa_a_03():
     # ESTADO_TU='03' porque el DBA lo calculó durante la extracción
     obligaciones = [
         (30, "03", 1620000, "05", "Empresa Caducada", "2250-0987",
-         156, None, 0, 'S', 4, 6),
+         156, None, 0, 0, None, 'S', 4, 6),
     ]
     _setup_ciclo(
         mock_conn, mock_cursor,
@@ -658,7 +664,7 @@ def test_rf14_caducado_sin_mora_no_pasa_a_03_requiere_revision():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (31, "01", 0, "00", "Cliente Sin Mora", "2250-1111",
-         0, None, 0, 'S', 4, 0),
+         0, None, 0, 0, None, 'S', 4, 0),
     ]
     _setup_ciclo(
         mock_conn, mock_cursor,
@@ -692,7 +698,7 @@ def test_rf14_no_caducado_sigue_en_01():
     mock_conn, mock_cursor = _mock_conn_multiple()
     obligaciones = [
         (32, "01", 90000, "02", "Cliente Vigente", "2250-2222",
-         75, None, 0, 'N', 4, 3),
+         75, None, 0, 0, None, 'N', 4, 3),
     ]
     _setup_ciclo(
         mock_conn, mock_cursor,
@@ -721,7 +727,7 @@ def test_rf14_estado_anterior_02_caducado_713():
     # El DBA ya calculó ESTADO_TU='03' por ser caducado con mora
     obligaciones = [
         (33, "03", 500000, "04", "Obligación Saldada Caduca", "2250-3333",
-         120, None, 0, 'S', 3, 4),
+         120, None, 0, 0, None, 'S', 3, 4),
     ]
     _setup_ciclo(
         mock_conn, mock_cursor,
@@ -760,12 +766,13 @@ def test_rf14_obtener_obligacion_caducado():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # 20 columnas: 18 base + CADUCADO='S', ATRASOS_PERMITIDOS=4
+        (       # 25 columnas: 18 base + 5 RF12/RF15 + CADUCADO='S', ATRASOS_PERMITIDOS=4
             30, "2250-0987", "Empresa Caducada", "9876543210",
             "03", "05", 156, 6,
             1620000, 5420000,
             "N", "N", "N", None,
             date(2025, 6, 30), 8000000, 270000, None,
+            None, None, None, "N", None,
             "S", 4,
         ),
     ]

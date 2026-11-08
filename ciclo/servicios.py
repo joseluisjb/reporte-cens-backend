@@ -145,6 +145,7 @@ def _cargar_obligaciones_corte(corte_id):
             "SELECT rd.OBLIGACION_ID, rd.ESTADO_TU, rd.VALOR_MORA, rd.EDAD_MORA, "
             "rd.NOMBRE_TITULAR, o.NUMERO_OBLIGACION_TU, "
             "rd.DIAS_MORA, rd.FECHA_LIMITE_PAGO, rd.VALOR_REAL_PAGADO, "
+            "rd.VALOR_SALDO, rd.FECHA_PAGO, "
             "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), rd.CUOTAS_MORA "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
@@ -243,18 +244,6 @@ def _insertar_inconsistencia_881(corte_id, obligacion_id, mensaje):
             [corte_id, obligacion_id, mensaje],
         )
 
-
-def _insertar_inconsistencia_713(corte_id, obligacion_id, estado_calculado, estado_anterior):
-    """Inconsistencia 713: cambio de estado inválido (la Matriz no permite el cierre)."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
-            "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE) "
-            "VALUES (%s, %s, 'CAMBIO_ESTADO_INVALIDO', 'CORRECTIVA', %s)",
-            [corte_id, obligacion_id,
-             f"Cambio de estado inválido: {estado_anterior} → {estado_calculado} "
-             f"con saldo en cero (713)."],
-        )
 
 
 def _cerrar_obligacion(corte_id, obligacion_id, estado_cierre, fecha_pago, modo_ext, tipo_pago):
@@ -406,12 +395,14 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         updates_revision = []
         n_primer_reporte = 0
         n_cambios_estado = 0
+        n_cierres = 0
         n_a_dudoso = 0
 
         for fila in filas:
-            # Los primeros 9 campos son fijos; los 3 siguientes vienen de RF14
+            # cols 0-8 base; 9-10 RF12/RF15 (saldo, fecha_pago); 11-13 RF14 (caducado, atrasos, cuotas)
             obligacion_id, estado_tu, valor_mora, edad_mora, nombre_titular, numero_obl, \
-                dias_mora, fecha_limite_pago, valor_real_pagado, *extra = fila
+                dias_mora, fecha_limite_pago, valor_real_pagado, \
+                valor_saldo, fecha_ultimo_pago, *extra = fila
 
             caducado_flag = extra[0] if len(extra) > 0 else 'N'
             atrasos_permitidos_int = int(extra[1]) if len(extra) > 1 and extra[1] is not None else 0
@@ -538,7 +529,9 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                 elif estado_anterior in _ESTADOS_CIERRE_INVALIDO:
                     # 713: la Matriz no permite el cierre
                     _insertar_inconsistencia_713(
-                        corte_id, obligacion_id, "02", estado_anterior
+                        corte_id, obligacion_id,
+                        f"Cambio de estado inválido: {estado_anterior} → 02 "
+                        f"con saldo en cero (713).",
                     )
                     rechazos.append({
                         "obligacion_id": obligacion_id,
@@ -979,6 +972,8 @@ def obtener_obligacion(obligacion_id):
             "rd.PRIMER_REPORTE, NVL(rd.REQUIERE_REVISION, 'N'), "
             "rd.MOTIVO_REVISION, "
             "rd.FECHA_INICIO, rd.VALOR_INICIAL, rd.VALOR_CUOTA, rd.FECHA_LIMITE_PAGO, "
+            "rd.FECHA_PAGO, rd.MODO_EXTINCION, rd.TIPO_PAGO, "
+            "NVL(rd.MOVIMIENTO_POSTERIOR, 'N'), c.FECHA_CORTE, "
             "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0) "
             "FROM NEXOVOLT.NV_OBLIGACION o "
             "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
@@ -994,15 +989,14 @@ def obtener_obligacion(obligacion_id):
     dias_mora = int(row[6]) if row[6] is not None else 0
     edad_mora = row[5] or "00"
     anios_mora = dias_mora // 365 if edad_mora == "14" else None
-    caducado = row[18] == "S"
-    atrasos_permitidos = int(row[19]) if row[19] is not None else 0
-
     estado_tu = row[4]
     fecha_pago_bd = row[18]
     modo_ext_code = row[19]
     tipo_pago_code = row[20]
     movimiento_posterior = row[21]
     fecha_corte_bd = row[22]
+    caducado = row[23] == "S"
+    atrasos_permitidos = int(row[24]) if row[24] is not None else 0
 
     if estado_tu in ("02", "07") and fecha_corte_bd is not None:
         cierre = {
@@ -1047,7 +1041,7 @@ def obtener_obligacion(obligacion_id):
         "fecha_exigibilidad": fecha_str(row[17]),
         "atrasos_permitidos": atrasos_permitidos,
         "cuotas_atrasadas": int(row[7]) if row[7] is not None else 0,
-        "cierre": None,
+        "cierre": cierre,
         "pago_mora": None,
         "reestructuracion": None,
         "refinanciada_en": None,
