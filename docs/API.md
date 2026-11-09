@@ -977,3 +977,76 @@ En modo `--simular` la línea de modo dice `SIMULACIÓN` y no se registra en `NV
 Command : python manage.py actualizar_estados_mensual
 Schedule: 0 2 1 * *
 ```
+
+---
+
+### Rectificaciones (RF55)
+
+Las rectificaciones solo permiten corregir `valor_mora`, el único campo acordado
+para esta entrega. El valor anterior se toma del detalle del corte enviado, se
+conserva en `NV_RECTIFICACION` y el detalle se actualiza al valor corregido. El
+insumo para TransUnion queda pendiente hasta que se confirme su formato.
+
+#### GET /api/rectificaciones/
+
+Lista las rectificaciones, de la más reciente a la más antigua.
+
+**Rol requerido**: `ANALISTA_CARTERA`
+
+**Respuesta 200**: lista de rectificaciones con los campos `id`, `novedad_id`,
+`obligacion_id`, `numero_obligacion`, `corte_id`, `fecha_corte`, `campo`,
+`valor_anterior`, `valor_corregido`, `justificacion`, `medio`, `estado`,
+`confirmacion_tu`, `registrada_por` y `fecha_registro`.
+
+#### POST /api/rectificaciones/
+
+Registra la corrección del valor de mora para una obligación incluida en un
+corte con estado `ENVIADO` o `ENVIADO_CON_INCONSISTENCIAS`. Registra una novedad
+asociada y actualiza el detalle del corte en una misma transacción.
+
+**Rol requerido**: `ANALISTA_CARTERA`
+
+**Cuerpo**
+
+```json
+{
+  "obligacion_id": 1,
+  "corte_id": 1,
+  "campo": "valor_mora",
+  "valor_corregido": "25000",
+  "justificacion": "Corrección validada con el área de cartera.",
+  "medio": "ACTUALIZACION_LINEA"
+}
+```
+
+`medio` también puede ser `PROCESO_ESPECIAL`. El endpoint no genera ni entrega
+un archivo de TransUnion mientras su formato no esté confirmado.
+
+**Respuesta 201**: rectificación creada.
+
+**Errores**
+
+- `400 Bad Request` — campo no permitido, justificación vacía, o valor corregido
+  igual al reportado
+- `404 Not Found` — la obligación no aparece en el corte
+- `409 Conflict` — el corte no está enviado
+
+#### POST /api/rectificaciones/{id}/confirmar/
+
+Registra la confirmación de TransUnion y marca como gestionada la novedad
+asociada.
+
+**Rol requerido**: `ANALISTA_CARTERA`
+
+**Cuerpo**
+
+```json
+{"confirmacion_tu": "TU-AL-001532"}
+```
+
+**Respuesta 200**: rectificación con `estado: "CONFIRMADA"`.
+
+**Errores**
+
+- `404 Not Found` — rectificación no encontrada
+- `409 Conflict` — rectificación ya confirmada

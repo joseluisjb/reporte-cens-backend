@@ -6,7 +6,11 @@ from config.views import SaludView
 from parametros.views import ConceptoViewSet, EntidadView, GrupoConceptoViewSet
 from cartera.views import ArchivoViewSet, ExtraccionViewSet
 from ciclo.views import CicloViewSet, MatrizEstadosView, ObligacionesViewSet
-from novedades.views import EliminacionesViewSet, NovedadesViewSet
+from novedades.views import (
+    EliminacionesViewSet,
+    NovedadesViewSet,
+    RectificacionesViewSet,
+)
 from historial.views import ReporteViewSet, DeudorViewSet
 from usuarios.views import (
     CambioContrasenaView,
@@ -31,6 +35,7 @@ router.register("historial/reportes", ReporteViewSet, basename="historial-report
 router.register("historial/deudores", DeudorViewSet, basename="historial-deudor")
 router.register("novedades", NovedadesViewSet, basename="novedad")
 router.register("eliminaciones", EliminacionesViewSet, basename="eliminacion")
+router.register("rectificaciones", RectificacionesViewSet, basename="rectificacion")
 
 urlpatterns = [
     path("salud/", SaludView.as_view(), name="salud"),

@@ -95,3 +95,54 @@ class EliminacionReactivarSerializer(serializers.Serializer):
                 "Ingresa el número de la activación en TransUnion."
             )
         return value
+
+
+# ── RF55: Rectificaciones ────────────────────────────────────────────────────
+
+class RectificacionSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    novedad_id = serializers.IntegerField(allow_null=True)
+    obligacion_id = serializers.IntegerField()
+    numero_obligacion = serializers.CharField()
+    corte_id = serializers.IntegerField()
+    fecha_corte = serializers.CharField()
+    campo = serializers.CharField()
+    valor_anterior = serializers.CharField(allow_null=True)
+    valor_corregido = serializers.CharField()
+    justificacion = serializers.CharField()
+    medio = serializers.ChoiceField(choices=["ACTUALIZACION_LINEA", "PROCESO_ESPECIAL"])
+    estado = serializers.ChoiceField(choices=["REGISTRADA", "CONFIRMADA"])
+    confirmacion_tu = serializers.CharField(allow_null=True)
+    registrada_por = serializers.CharField(allow_null=True)
+    fecha_registro = serializers.CharField()
+
+
+class RectificacionCreateSerializer(serializers.Serializer):
+    obligacion_id = serializers.IntegerField(min_value=1)
+    corte_id = serializers.IntegerField(min_value=1)
+    campo = serializers.ChoiceField(choices=["valor_mora"])
+    valor_corregido = serializers.DecimalField(
+        max_digits=14, decimal_places=0, min_value=0
+    )
+    justificacion = serializers.CharField(max_length=500)
+    medio = serializers.ChoiceField(
+        choices=["ACTUALIZACION_LINEA", "PROCESO_ESPECIAL"]
+    )
+
+    def validate_justificacion(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Escribe la justificación de la corrección."
+            )
+        return value
+
+
+class RectificacionConfirmarSerializer(serializers.Serializer):
+    confirmacion_tu = serializers.CharField(max_length=30)
+
+    def validate_confirmacion_tu(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Ingresa el número de confirmación de TransUnion."
+            )
+        return value.strip()

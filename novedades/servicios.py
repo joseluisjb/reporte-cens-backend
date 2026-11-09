@@ -1,9 +1,11 @@
 import logging
+from decimal import Decimal
 
 from django.db import connection, transaction
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
-from config.formatos import fecha_str, hoy_bogota
+from config.formatos import fecha_str, hoy_bogota, timestamp_str
+from usuarios.models import Usuario
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,18 @@ class EliminacionYaReactivada(Exception):
     pass
 
 
+class RectificacionNoEncontrada(Exception):
+    pass
+
+
+class CorteNoEnviado(Exception):
+    pass
+
+
+class RectificacionYaConfirmada(Exception):
+    pass
+
+
 _TIPOS_VALIDOS = {"INCLUSION", "ACTUALIZACION", "CORRECCION", "ELIMINACION"}
 _ESTADOS_VALIDOS = {"PENDIENTE", "GESTIONADA", "RECHAZADA"}
 
@@ -46,6 +60,201 @@ _FROM = (
     "LEFT JOIN NEXOVOLT.NV_MOTIVO_ELIMINACION me "
     "  ON me.MOTIVO_ID = n.MOTIVO_ELIMINACION_ID "
 )
+
+_SEL_RECTIFICACION = (
+    "r.RECTIFICACION_ID, r.NOVEDAD_ID, r.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, "
+    "r.CORTE_ID, c.FECHA_CORTE, r.CAMPO, r.VALOR_ANTERIOR, r.VALOR_CORREGIDO, "
+    "r.JUSTIFICACION, r.MEDIO, r.ESTADO, r.CONFIRMACION_TU, "
+    "r.USUARIO_ID, r.FECHA_REGISTRO"
+)
+_FROM_RECTIFICACION = (
+    "FROM NEXOVOLT.NV_RECTIFICACION r "
+    "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = r.OBLIGACION_ID "
+    "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = r.CORTE_ID "
+)
+_CAMPOS_RECTIFICABLES = {"valor_mora": "VALOR_MORA"}
+
+
+def _nombres_usuarios(usuario_ids):
+    ids = {usuario_id for usuario_id in usuario_ids if usuario_id is not None}
+    if not ids:
+        return {}
+    return dict(Usuario.objects.filter(pk__in=ids).values_list("pk", "nombre"))
+
+
+def _fila_a_rectificacion(row, nombres):
+    fecha_corte = row[5].date() if hasattr(row[5], "date") else row[5]
+    return {
+        "id": row[0],
+        "novedad_id": row[1],
+        "obligacion_id": row[2],
+        "numero_obligacion": row[3],
+        "corte_id": row[4],
+        "fecha_corte": fecha_str(fecha_corte),
+        "campo": row[6],
+        "valor_anterior": None if row[7] is None else str(row[7]),
+        "valor_corregido": str(row[8]),
+        "justificacion": row[9],
+        "medio": row[10],
+        "estado": row[11],
+        "confirmacion_tu": row[12],
+        "registrada_por": nombres.get(row[13]),
+        "fecha_registro": timestamp_str(row[14]),
+    }
+
+
+def _fetch_rectificacion(rectificacion_id):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {_SEL_RECTIFICACION} {_FROM_RECTIFICACION}"
+            "WHERE r.RECTIFICACION_ID = %s",
+            [rectificacion_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise RectificacionNoEncontrada()
+    nombres = _nombres_usuarios([row[13]])
+    return _fila_a_rectificacion(row, nombres)
+
+
+def listar_rectificaciones():
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {_SEL_RECTIFICACION} {_FROM_RECTIFICACION}"
+            "ORDER BY r.FECHA_REGISTRO DESC, r.RECTIFICACION_ID DESC"
+        )
+        filas = cursor.fetchall()
+    nombres = _nombres_usuarios([fila[13] for fila in filas])
+    return [_fila_a_rectificacion(fila, nombres) for fila in filas]
+
+
+def crear_rectificacion(data, usuario=None):
+    columna = _CAMPOS_RECTIFICABLES.get(data["campo"])
+    if columna is None:
+        raise ValueError(f"Campo no corregible: {data['campo']}")
+
+    usuario_id = getattr(usuario, "pk", None)
+    usuario_nombre = getattr(usuario, "nombre", None)
+    valor_corregido = data["valor_corregido"]
+    if not isinstance(valor_corregido, Decimal):
+        valor_corregido = Decimal(str(valor_corregido))
+
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT c.ESTADO, c.FECHA_CORTE, o.NUMERO_OBLIGACION_TU, "
+                f"rd.{columna} "
+                "FROM NEXOVOLT.NV_CORTE c "
+                "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.CORTE_ID = c.CORTE_ID "
+                "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
+                "WHERE c.CORTE_ID = %s AND rd.OBLIGACION_ID = %s "
+                f"FOR UPDATE OF rd.{columna}",
+                [data["corte_id"], data["obligacion_id"]],
+            )
+            fila = cursor.fetchone()
+            if fila is None:
+                raise RectificacionNoEncontrada()
+            if fila[0] not in {"ENVIADO", "ENVIADO_CON_INCONSISTENCIAS"}:
+                raise CorteNoEnviado()
+
+            valor_anterior = fila[3]
+            if valor_anterior is None:
+                raise ValueError("El campo del corte no tiene un valor anterior.")
+            if Decimal(str(valor_anterior)) == valor_corregido:
+                raise ValueError("El valor corregido debe ser distinto al valor reportado.")
+
+            cursor.execute("SELECT NEXOVOLT.SEQ_NV_NOVEDAD.NEXTVAL FROM DUAL")
+            novedad_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO NEXOVOLT.NV_NOVEDAD "
+                "(NOVEDAD_ID, TIPO, SUJETO, OBLIGACION_ID, REFERENCIA, MOTIVO, "
+                "VALORES_ENVIADOS, FECHA_DETECCION, ORIGEN, ESTADO, USUARIO_ID, "
+                "USUARIO_NOMBRE) "
+                "VALUES (%s, 'CORRECCION', 'OBLIGACION', %s, %s, %s, %s, %s, "
+                "'MANUAL', 'PENDIENTE', %s, %s)",
+                [
+                    novedad_id,
+                    data["obligacion_id"],
+                    fila[2],
+                    data["justificacion"],
+                    f"{data['campo']}={format(valor_corregido, 'f')}",
+                    hoy_bogota(),
+                    usuario_id,
+                    usuario_nombre,
+                ],
+            )
+            cursor.execute("SELECT NEXOVOLT.SEQ_NV_RECTIFICACION.NEXTVAL FROM DUAL")
+            rectificacion_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO NEXOVOLT.NV_RECTIFICACION "
+                "(RECTIFICACION_ID, NOVEDAD_ID, OBLIGACION_ID, CORTE_ID, CAMPO, "
+                "VALOR_ANTERIOR, VALOR_CORREGIDO, JUSTIFICACION, MEDIO, ESTADO, USUARIO_ID) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'REGISTRADA', %s)",
+                [
+                    rectificacion_id,
+                    novedad_id,
+                    data["obligacion_id"],
+                    data["corte_id"],
+                    data["campo"],
+                    str(valor_anterior),
+                    format(valor_corregido, "f"),
+                    data["justificacion"],
+                    data["medio"],
+                    usuario_id,
+                ],
+            )
+            cursor.execute(
+                f"UPDATE NEXOVOLT.NV_REPORTE_DETALLE SET {columna} = %s "
+                "WHERE CORTE_ID = %s AND OBLIGACION_ID = %s",
+                [valor_corregido, data["corte_id"], data["obligacion_id"]],
+            )
+
+    with tolerar_fallo_bitacora("RECTIFICACION_REGISTRADA"):
+        registrar_bitacora(
+            "RECTIFICACION_REGISTRADA",
+            "NV_RECTIFICACION",
+            str(rectificacion_id),
+            f"Obligación {fila[2]}, campo {data['campo']}, corte {data['corte_id']}",
+            usuario=usuario,
+        )
+    return _fetch_rectificacion(rectificacion_id)
+
+
+def confirmar_rectificacion(rectificacion_id, confirmacion_tu, usuario=None):
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ESTADO, NOVEDAD_ID FROM NEXOVOLT.NV_RECTIFICACION "
+                "WHERE RECTIFICACION_ID = %s FOR UPDATE",
+                [rectificacion_id],
+            )
+            fila = cursor.fetchone()
+            if fila is None:
+                raise RectificacionNoEncontrada()
+            if fila[0] == "CONFIRMADA":
+                raise RectificacionYaConfirmada()
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_RECTIFICACION "
+                "SET ESTADO = 'CONFIRMADA', CONFIRMACION_TU = %s "
+                "WHERE RECTIFICACION_ID = %s",
+                [confirmacion_tu, rectificacion_id],
+            )
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_NOVEDAD "
+                "SET ESTADO = 'GESTIONADA', NUMERO_TRANSACCION_TU = %s, "
+                "FECHA_GESTION = %s WHERE NOVEDAD_ID = %s",
+                [confirmacion_tu, hoy_bogota(), fila[1]],
+            )
+
+    with tolerar_fallo_bitacora("RECTIFICACION_CONFIRMADA"):
+        registrar_bitacora(
+            "RECTIFICACION_CONFIRMADA",
+            "NV_RECTIFICACION",
+            str(rectificacion_id),
+            f"Confirmación TransUnion: {confirmacion_tu}",
+            usuario=usuario,
+        )
+    return _fetch_rectificacion(rectificacion_id)
 
 
 def _fila_a_novedad(row):

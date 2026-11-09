@@ -12,6 +12,9 @@ from novedades.serializers import (
     NovedadCreateSerializer,
     NovedadGestionarSerializer,
     NovedadRechazarSerializer,
+    RectificacionConfirmarSerializer,
+    RectificacionCreateSerializer,
+    RectificacionSerializer,
 )
 
 
@@ -142,3 +145,63 @@ class EliminacionesViewSet(viewsets.ViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(EliminacionSerializer(eliminacion).data)
+
+
+# ── RF55: Rectificaciones ────────────────────────────────────────────────────
+
+class RectificacionesViewSet(viewsets.ViewSet):
+    permission_classes = [EsAnalista]
+    lookup_value_regex = r"\d+"
+
+    def list(self, request):
+        rectificaciones = servicios.listar_rectificaciones()
+        return Response(RectificacionSerializer(rectificaciones, many=True).data)
+
+    def create(self, request):
+        serializer = RectificacionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            rectificacion = servicios.crear_rectificacion(
+                serializer.validated_data, usuario=request.user
+            )
+        except servicios.CorteNoEnviado:
+            return Response(
+                {"detail": "Solo se rectifican cortes ya enviados a TransUnion."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except servicios.RectificacionNoEncontrada:
+            return Response(
+                {"detail": "La obligación no tiene un reporte en ese corte."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ValueError as exc:
+            return Response(
+                {"valor_corregido": [str(exc)]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            RectificacionSerializer(rectificacion).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def confirmar(self, request, pk=None):
+        serializer = RectificacionConfirmarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            rectificacion = servicios.confirmar_rectificacion(
+                int(pk),
+                serializer.validated_data["confirmacion_tu"],
+                usuario=request.user,
+            )
+        except servicios.RectificacionNoEncontrada:
+            return Response(
+                {"detail": "Rectificación no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except servicios.RectificacionYaConfirmada:
+            return Response(
+                {"detail": "La rectificación ya está confirmada."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(RectificacionSerializer(rectificacion).data)

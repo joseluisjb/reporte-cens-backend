@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import date
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,7 +8,11 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from tests.ayudas import usuario_con_rol
 from novedades import servicios
-from novedades.views import EliminacionesViewSet, NovedadesViewSet
+from novedades.views import (
+    EliminacionesViewSet,
+    NovedadesViewSet,
+    RectificacionesViewSet,
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -453,3 +458,138 @@ def test_rf50_reactivar_ya_reactivada_409():
 
     assert response.status_code == 409
     assert "reactivada" in response.data["detail"]
+
+
+# ── RF55: Rectificaciones ────────────────────────────────────────────────────
+
+_FILA_RECTIFICACION = (
+    201, 101, 42, "2249-1180", 5, date(2026, 9, 30),
+    "valor_mora", "12000", "15000", "Corrección validada",
+    "ACTUALIZACION_LINEA", "REGISTRADA", None, 2, None,
+)
+
+
+def test_rf55_crear_rectificacion_conserva_anterior_y_actualiza_corte():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("ENVIADO", date(2026, 9, 30), "2249-1180", 12000),
+        (101,),  # SEQ_NV_NOVEDAD
+        (201,),  # SEQ_NV_RECTIFICACION
+        _FILA_RECTIFICACION,
+    ]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic), \
+         patch("novedades.servicios.registrar_bitacora"), \
+         patch("novedades.servicios.tolerar_fallo_bitacora", _noop_tolerar), \
+         patch("novedades.servicios._nombres_usuarios", return_value={}):
+        result = servicios.crear_rectificacion({
+            "obligacion_id": 42,
+            "corte_id": 5,
+            "campo": "valor_mora",
+            "valor_corregido": "15000",
+            "justificacion": "Corrección validada",
+            "medio": "ACTUALIZACION_LINEA",
+        })
+
+    assert result["valor_anterior"] == "12000"
+    assert result["valor_corregido"] == "15000"
+    calls = [
+        (call.args[0], call.args[1] if len(call.args) > 1 else [])
+        for call in mock_cursor.execute.call_args_list
+    ]
+    insert = next(params for sql, params in calls if "INSERT INTO NEXOVOLT.NV_RECTIFICACION" in sql)
+    update = next(params for sql, params in calls if "UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in sql)
+    assert insert[5:7] == ["12000", "15000"]
+    assert update == [Decimal("15000"), 5, 42]
+
+
+def test_rf55_no_rectifica_corte_no_enviado():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = (
+        "BORRADOR", date(2026, 9, 30), "2249-1180", 12000
+    )
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.CorteNoEnviado):
+            servicios.crear_rectificacion({
+                "obligacion_id": 42,
+                "corte_id": 5,
+                "campo": "valor_mora",
+                "valor_corregido": "15000",
+                "justificacion": "Corrección validada",
+                "medio": "ACTUALIZACION_LINEA",
+            })
+
+    assert mock_cursor.execute.call_count == 1
+
+
+def test_rf55_confirmar_actualiza_rectificacion_y_novedad():
+    fila_confirmada = (*_FILA_RECTIFICACION[:11], "CONFIRMADA", "TU-AL-001532", 2, None)
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [("REGISTRADA", 101), fila_confirmada]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic), \
+         patch("novedades.servicios.registrar_bitacora"), \
+         patch("novedades.servicios.tolerar_fallo_bitacora", _noop_tolerar), \
+         patch("novedades.servicios._nombres_usuarios", return_value={}):
+        result = servicios.confirmar_rectificacion(201, "TU-AL-001532")
+
+    assert result["estado"] == "CONFIRMADA"
+    assert result["confirmacion_tu"] == "TU-AL-001532"
+    sqls = [call.args[0] for call in mock_cursor.execute.call_args_list]
+    assert any("UPDATE NEXOVOLT.NV_NOVEDAD" in sql for sql in sqls)
+
+
+def test_rf55_rechaza_campo_no_acordado():
+    factory = APIRequestFactory()
+    view = RectificacionesViewSet.as_view({"post": "create"})
+    request = factory.post(
+        "/rectificaciones/",
+        {
+            "obligacion_id": 42,
+            "corte_id": 5,
+            "campo": "valor_saldo",
+            "valor_corregido": "15000",
+            "justificacion": "Corrección validada",
+            "medio": "ACTUALIZACION_LINEA",
+        },
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    response = view(request)
+
+    assert response.status_code == 400
+    assert "campo" in response.data
+
+
+def test_rf55_solo_analista_puede_listar_rectificaciones():
+    factory = APIRequestFactory()
+    view = RectificacionesViewSet.as_view({"get": "list"})
+    request = factory.get("/rectificaciones/")
+    force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
+
+    response = view(request)
+
+    assert response.status_code == 403
+
+
+def test_rf55_no_confirma_con_numero_transunion_vacio():
+    factory = APIRequestFactory()
+    view = RectificacionesViewSet.as_view({"post": "confirmar"})
+    request = factory.post(
+        "/rectificaciones/201/confirmar/",
+        {"confirmacion_tu": "   "},
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    with patch("novedades.servicios.confirmar_rectificacion") as confirmar:
+        response = view(request, pk="201")
+
+    assert response.status_code == 400
+    assert "confirmacion_tu" in response.data
+    confirmar.assert_not_called()

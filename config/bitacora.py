@@ -57,6 +57,8 @@ EVENTOS = {
     "NOVEDAD_REGISTRADA": ("Novedad registrada", "creacion", "Novedades en Línea"),
     "NOVEDAD_GESTIONADA": ("Novedad gestionada", "modificacion", "Novedades en Línea"),
     "NOVEDAD_RECHAZADA": ("Novedad rechazada", "modificacion", "Novedades en Línea"),
+    "RECTIFICACION_REGISTRADA": ("Rectificación registrada", "correccion", "Novedades en Línea"),
+    "RECTIFICACION_CONFIRMADA": ("Rectificación confirmada", "modificacion", "Novedades en Línea"),
 }
 
 _COLUMNAS = (
