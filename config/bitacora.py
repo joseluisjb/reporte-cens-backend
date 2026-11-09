@@ -26,7 +26,7 @@ TIPOS_ACCION = (
     "desactivacion",
 )
 
-MODULOS = ("Seguridad", "Usuarios", "Parametrización", "Extracción", "Novedades en Línea")
+MODULOS = ("Seguridad", "Usuarios", "Parametrización", "Extracción")
 
 EVENTOS = {
     "INICIO_SESION": ("Inicio de sesión", "inicio_sesion", "Seguridad"),
@@ -53,16 +53,6 @@ EVENTOS = {
     "CONSULTA_REPORTE": ("Consulta de reporte enviado", "consulta", "Extracción"),
     "CONSULTA_DEUDORES": ("Consulta de deudores", "consulta", "Extracción"),
     "CONSULTA_DEUDOR": ("Consulta de historial de deudor", "consulta", "Extracción"),
-    "NOVEDAD_REGISTRADA": ("Novedad registrada", "creacion", "Novedades en Línea"),
-    "NOVEDAD_GESTIONADA": ("Novedad gestionada", "modificacion", "Novedades en Línea"),
-    "NOVEDAD_RECHAZADA": ("Novedad rechazada", "modificacion", "Novedades en Línea"),
-    "RECLAMO_REGISTRADO": ("Reclamo registrado", "creacion", "Novedades en Línea"),
-    "RECLAMO_CERRADO": ("Reclamo cerrado", "modificacion", "Novedades en Línea"),
-    "INSUMO_RECLAMOS_GENERADO": (
-        "Insumo de reclamos generado",
-        "exportacion",
-        "Novedades en Línea",
-    ),
 }
 
 _COLUMNAS = (
