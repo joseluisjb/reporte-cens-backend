@@ -69,3 +69,29 @@ class NovedadRechazarSerializer(serializers.Serializer):
         if not value.strip():
             raise serializers.ValidationError("Escribe el motivo del rechazo.")
         return value
+
+
+# ── RF50: Eliminaciones ───────────────────────────────────────────────────────
+
+class EliminacionSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    obligacion_id = serializers.IntegerField(allow_null=True)
+    numero_obligacion = serializers.CharField()
+    fecha = serializers.CharField()
+    motivo = ItemCatalogoONuloSerializer(allow_null=True)
+    numero_transaccion_tu = serializers.CharField(allow_null=True)
+    bloqueada = serializers.BooleanField()
+    fecha_activacion = serializers.CharField(allow_null=True)
+    numero_activacion_tu = serializers.CharField(allow_null=True)
+
+
+class EliminacionReactivarSerializer(serializers.Serializer):
+    numero_activacion_tu = serializers.CharField(max_length=30)
+    fecha_activacion = serializers.DateField()
+
+    def validate_numero_activacion_tu(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Ingresa el número de la activación en TransUnion."
+            )
+        return value

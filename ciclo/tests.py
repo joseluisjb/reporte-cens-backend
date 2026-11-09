@@ -472,14 +472,14 @@ def test_rf11_obtener_obligacion_edad_14_anios_mora():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # obtener_obligacion row (26 columns: 0-24 existing + 25=VALOR_REAL_PAGADO)
+        (       # obtener_obligacion row (27 columns: 0-25 existing + 26=ELIMINADA)
             24, "2263-9004", "Ferretería La Esquina", "1234567890",
             "03", "14", 730, 0,
             500000, 2000000,
             "N", "N", "N", None,
             date(2026, 1, 31), 3000000, 100000, None,
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []  # cuotas_vencidas: none pending
@@ -767,14 +767,14 @@ def test_rf14_obtener_obligacion_caducado():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # 26 columnas: 25 existentes + col 25=VALOR_REAL_PAGADO
+        (       # 27 columnas: 0-25 existentes + col 26=ELIMINADA
             30, "2250-0987", "Empresa Caducada", "9876543210",
             "03", "05", 156, 6,
             1620000, 5420000,
             "N", "N", "N", None,
             date(2025, 6, 30), 8000000, 270000, None,
             None, None, None, "N", None,
-            "S", 4, 0,
+            "S", 4, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []  # cuotas_vencidas: none pending
@@ -936,14 +936,14 @@ def test_rf17_obtener_obligacion_cuotas_vencidas_y_pagos():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # 26 columnas; col 25=VALOR_REAL_PAGADO=70000
+        (       # 27 columnas; col 25=VALOR_REAL_PAGADO=70000, col 26=ELIMINADA
             20, "2258-7731", "Hotel Mirador", "2258773100",
             "01", "01", 47, 1,
             70000, 70000,
             "N", "N", "N", None,
             date(2026, 1, 31), 500000, 70000, date(2026, 9, 14),
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 70000,
+            "N", 0, 70000, "N",
         ),
     ]
     # cuotas_vencidas desde V_MORA_OBLIGACION: 1 cuota pendiente
@@ -979,7 +979,7 @@ def test_rf17_obtener_obligacion_sin_pagos_sin_cuotas():
             "N", "N", "N", None,
             date(2026, 1, 31), 200000, 50000, None,
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1004,6 +1004,7 @@ def test_rf19_resumen_cuota_no_facturada_no_cuenta():
         (5,),                   # _obtener_ultimo_corte_ciclo
         (date(2026, 10, 31),),  # FECHA_CORTE del corte
         (1, 0, 0, 0),           # cuotas_mora aggregate: al_dia=1 (cuota no facturada excluida)
+        (0,),                   # COUNT eliminadas
     ]
     # 1 obligación abierta (01); CUOTAS_MORA=0 porque la cuota aún no está facturada
     mock_cursor.fetchall.side_effect = [
@@ -1026,6 +1027,7 @@ def test_rf19_resumen_12_obligaciones_grupos_suman_abiertas():
         (3,),                           # _obtener_ultimo_corte_ciclo
         (date(2026, 10, 31),),          # FECHA_CORTE del corte
         (2, 2, 2, 3),                   # al_dia=2, una=2, dos_a_tres=2, cuatro_o_mas=3
+        (0,),                           # COUNT eliminadas
     ]
     # por_estado: 9 abiertas (01) + 3 cerradas (02); total 12
     mock_cursor.fetchall.side_effect = [
@@ -1065,6 +1067,7 @@ def test_rf19_resumen_view_200():
         (3,),
         (date(2026, 10, 31),),
         (2, 2, 2, 3),
+        (0,),                   # COUNT eliminadas
     ]
     mock_cursor.fetchall.side_effect = [
         [("01", 9), ("02", 3)],
@@ -1293,14 +1296,14 @@ def test_rf47_obtener_obligacion_expone_pago_mora():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # 26 columnas
+        (       # 27 columnas: col 26=ELIMINADA
             50, "2271-5001", "Almacén Sol", "1234567890",
             "01", "00", 0, 0,
             0, 200000,
             "N", "N", "N", None,
             date(2026, 1, 31), 500000, 70000, None,
             date(2026, 10, 12), "01", "01", "N", date(2026, 10, 31),
-            "N", 0, 300000,
+            "N", 0, 300000, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1329,7 +1332,7 @@ def test_rf47_obtener_obligacion_pago_mora_sin_fecha():
             "N", "N", "S", "RF47 · Quedó al día sin fecha de pago registrada; requiere revisión para completar el reporte",
             date(2026, 1, 31), 300000, 70000, None,
             None, "01", "01", "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1355,7 +1358,7 @@ def test_rf47_obtener_obligacion_sin_pago_mora_es_none():
             "N", "N", "N", None,
             date(2026, 1, 31), 200000, 50000, None,
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1380,7 +1383,7 @@ def test_rf49_fecha_exigibilidad_cuota_antigua():
             "N", "N", "N", None,
             date(2026, 1, 31), 800000, 70000, date(2026, 8, 14),
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     # Dos cuotas vencidas; la primera (más antigua) vence el 14/08
@@ -1408,7 +1411,7 @@ def test_rf49_anios_mora_edad_14_800_dias():
             "N", "N", "N", None,
             date(2024, 10, 31), 3000000, 100000, date(2024, 10, 31),
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1433,7 +1436,7 @@ def test_rf49_al_dia_exigibilidad_nula():
             "N", "N", "N", None,
             date(2026, 1, 31), 500000, 70000, date(2026, 9, 14),
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
