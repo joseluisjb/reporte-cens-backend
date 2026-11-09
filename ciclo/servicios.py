@@ -263,6 +263,17 @@ def _cerrar_obligacion(corte_id, obligacion_id, estado_cierre, fecha_pago, modo_
         )
 
 
+def _registrar_pago_mora(corte_id, obligacion_id, fecha_pago, modo_ext, tipo_pago):
+    """RF47: registra fecha_pago, modo_extincion y tipo_pago sin cambiar el estado."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_REPORTE_DETALLE "
+            "SET FECHA_PAGO = %s, MODO_EXTINCION = %s, TIPO_PAGO = %s "
+            "WHERE CORTE_ID = %s AND OBLIGACION_ID = %s",
+            [fecha_pago, modo_ext, tipo_pago, corte_id, obligacion_id],
+        )
+
+
 def _actualizar_revisiones(updates):
     """Batch UPDATE NV_REPORTE_DETALLE con REQUIERE_REVISION y MOTIVO_REVISION."""
     if not updates:
@@ -402,6 +413,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         n_cierres = 0
         n_a_dudoso = 0
         n_con_pagos = 0
+        n_normalizadas = 0
 
         for fila in filas:
             # cols 0-8 base; 9-10 RF12/RF15 (saldo, fecha_pago); 11-13 RF14 (caducado, atrasos, cuotas)
@@ -553,6 +565,74 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     pass
 
             else:
+                # ── RF46: Normalización sin pago total ───────────────────────
+                _ESTADOS_MORA = {"03", "06", "10", "11", "12"}
+                if (
+                    estado_anterior in _ESTADOS_MORA
+                    and mora_anterior > 0
+                    and (valor_mora_int is None or valor_mora_int == 0)
+                    and valor_saldo_int > 0
+                ):
+                    _actualizar_estado_obligacion(corte_id, obligacion_id, "01")
+                    n_normalizadas += 1
+                    n_cambios_estado += 1
+                    rf46_texto = (
+                        "RF46 · Pagó la mora sin cancelar el saldo: vuelve a Vigente "
+                        "[por confirmar con CENS/TransUnion]"
+                    )
+                    old_edad = edad_anterior or "00"
+                    new_edad = edad_mora or "00"
+                    requiere_revision_rf46 = False
+
+                    # RF47: mora liquidada → reportar modo/tipo siempre; sin fecha queda en revisión
+                    _registrar_pago_mora(corte_id, obligacion_id, fecha_ultimo_pago, "01", "01")
+                    if fecha_ultimo_pago is not None:
+                        requiere_revision_rf47 = False
+                        rf47_texto = (
+                            "RF47 · Quedó al día: se reportan fecha de pago, "
+                            "modo de extinción y tipo de pago"
+                        )
+                    else:
+                        requiere_revision_rf47 = True
+                        rf47_texto = (
+                            "RF47 · Quedó al día sin fecha de pago registrada; "
+                            "requiere revisión para completar el reporte"
+                        )
+                        updates_revision.append((
+                            "S",
+                            rf47_texto,
+                            corte_id, obligacion_id,
+                        ))
+
+                    filas_insert_trans.append((
+                        corte_id, obligacion_id, estado_anterior, "01",
+                        old_edad, new_edad,
+                        "N", "S" if requiere_revision_rf47 else "N",
+                        "RF46", rf46_texto, "S",
+                    ))
+                    filas_insert_trans.append((
+                        corte_id, obligacion_id, estado_anterior, "01",
+                        old_edad, new_edad,
+                        "N", "S" if requiere_revision_rf47 else "N",
+                        "RF47", rf47_texto, "S",
+                    ))
+                    transiciones_data.append({
+                        "obligacion_id": obligacion_id,
+                        "numero_obligacion": numero_obl,
+                        "nombre_titular": nombre_titular,
+                        "estado_anterior": estado_anterior,
+                        "estado_nuevo": "01",
+                        "edad_anterior": old_edad,
+                        "edad_nueva": new_edad,
+                        "primer_reporte": False,
+                        "requiere_revision": requiere_revision_rf47,
+                        "reglas": [
+                            {"rf": "RF46", "texto": rf46_texto, "por_confirmar": True},
+                            {"rf": "RF47", "texto": rf47_texto, "por_confirmar": True},
+                        ],
+                    })
+                    continue
+
                 # ── RF14: Transición a Dudoso Recaudo ────────────────────────
                 nuevo_estado = estado_tu
                 regla_rf = "RF11"
@@ -705,6 +785,44 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         "por_confirmar": True,
                     })
 
+                # RF47: mora previa liquidada sin cierre (estado distinto de 03/06/10-12)
+                if (
+                    mora_anterior > 0
+                    and (valor_mora_int is None or valor_mora_int == 0)
+                    and valor_saldo_int > 0
+                ):
+                    # Siempre almacena modo/tipo; sin fecha queda en revisión
+                    _registrar_pago_mora(corte_id, obligacion_id, fecha_ultimo_pago, "01", "01")
+                    if fecha_ultimo_pago is not None:
+                        requiere_revision_rf47 = False
+                        rf47_texto = (
+                            "RF47 · Quedó al día: se reportan fecha de pago, "
+                            "modo de extinción y tipo de pago"
+                        )
+                    else:
+                        requiere_revision_rf47 = True
+                        rf47_texto = (
+                            "RF47 · Quedó al día sin fecha de pago registrada; "
+                            "requiere revisión para completar el reporte"
+                        )
+                        updates_revision[-1] = (
+                            "S", rf47_texto, corte_id, obligacion_id
+                        )
+
+                    filas_insert_trans.append((
+                        corte_id, obligacion_id, estado_anterior, nuevo_estado,
+                        old_edad, new_edad,
+                        "N", "S" if requiere_revision_rf47 else "N",
+                        "RF47", rf47_texto, "S",
+                    ))
+                    transiciones_data[-1]["reglas"].append({
+                        "rf": "RF47",
+                        "texto": rf47_texto,
+                        "por_confirmar": True,
+                    })
+                    if requiere_revision_rf47:
+                        transiciones_data[-1]["requiere_revision"] = True
+
         _insertar_transiciones(filas_insert_trans)
         _actualizar_revisiones(updates_revision)
 
@@ -744,7 +862,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
             "con_pagos": n_con_pagos,
             "a_dudoso": n_a_dudoso,
             "a_castigada": 0,
-            "normalizadas": 0,
+            "normalizadas": n_normalizadas,
         }
         _guardar_ciclo(corte_id, fecha_ejecucion, usuario_id, conteos)
 
@@ -1124,7 +1242,18 @@ def obtener_obligacion(obligacion_id):
         "atrasos_permitidos": atrasos_permitidos,
         "cuotas_atrasadas": int(row[7]) if row[7] is not None else 0,
         "cierre": cierre,
-        "pago_mora": None,
+        "pago_mora": {
+            "fecha_pago": fecha_str(fecha_pago_bd) if fecha_pago_bd else None,
+            "modo_extincion": {
+                "codigo": modo_ext_code,
+                "descripcion": _MODOS_EXTINCION.get(modo_ext_code, modo_ext_code),
+            } if modo_ext_code else None,
+            "tipo_pago": {
+                "codigo": tipo_pago_code,
+                "descripcion": _TIPOS_PAGO.get(tipo_pago_code, tipo_pago_code),
+            } if tipo_pago_code else None,
+            "valor_real_pagado": int(row[25]) if row[25] is not None else 0,
+        } if estado_tu not in ("02", "07") and modo_ext_code is not None else None,
         "reestructuracion": None,
         "refinanciada_en": None,
         "movimiento_posterior_cierre": movimiento_posterior == "S",
