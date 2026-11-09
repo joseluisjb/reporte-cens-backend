@@ -1178,8 +1178,8 @@ def test_rf54_cargar_correctivas_pasa_a_enviado_con_inconsistencias():
     mock_cursor.fetchall.return_value = [("2258-7731", 2)]  # resolver obligacion_ids
 
     archivo = _make_archivo(
-        "correctivas_SSR00112320260831.txt",
-        "2258-7731|707|Edad de mora mayor a 00 sin valor de mora",
+        "Detalle_Inco_CSR_001_123_Correctivas_20260831.txt",
+        "2258-7731|707|VALOR DE MORA ES REQUERIDO",
     )
 
     with patch("cartera.servicios.connection", mock_conn), \
@@ -1212,7 +1212,7 @@ def test_rf54_cargar_sin_correctivas_queda_enviado():
     ]
 
     archivo = _make_archivo(
-        "estadisticos_SSR00112320260831.txt",
+        "Esta_Inco_CSR_001_123_Alertas_20260831.txt",
         "2258-7731|CARGADO\n2259-0001|CARGADO",
     )
 
@@ -1238,8 +1238,8 @@ def test_rf54_archivo_de_otro_corte_lanza_excepcion():
 
     # El nombre tiene 20260731 pero el corte es 2026-08-31
     archivo = _make_archivo(
-        "correctivas_SSR00112320260731.txt",
-        "2258-7731|707|Edad de mora mayor a 00 sin valor de mora",
+        "Detalle_Inco_CSR_001_123_Correctivas_20260731.txt",
+        "2258-7731|707|VALOR DE MORA ES REQUERIDO",
     )
 
     with patch("cartera.servicios.connection", mock_conn):
@@ -1256,7 +1256,7 @@ def test_rf54_estructura_invalida_lanza_excepcion():
 
     # Falta el campo DESCRIPCION (solo 2 campos separados por |)
     archivo = _make_archivo(
-        "correctivas_SSR00112320260831.txt",
+        "Detalle_Inco_CSR_001_123_Correctivas_20260831.txt",
         "2258-7731|707",
     )
 
@@ -1277,7 +1277,7 @@ def test_rf54_norep_aparece_como_no_reportada():
     ]
     mock_cursor.fetchall.return_value = [("2260-5543", 4)]  # resolver obligacion_ids
 
-    archivo = _make_archivo("norep_SSR00112320260831.txt", "2260-5543")
+    archivo = _make_archivo("norep.001.123.CODIGOPRODUCTO.20260831.0.txt", "2260-5543")
 
     with patch("cartera.servicios.connection", mock_conn), \
          patch("cartera.servicios.transaction.atomic", _noop_atomic), \
@@ -1305,7 +1305,7 @@ _RESULTADO_MOCK = {
     "cargado_por": "Carlos Sánchez",
     "estado_corte": "ENVIADO_CON_INCONSISTENCIAS",
     "archivos_cargados": [
-        {"nombre_archivo": "correctivas_SSR00112320260831.txt", "tipo_archivo": "CORRECTIVAS", "n_filas": 1},
+        {"nombre_archivo": "Detalle_Inco_CSR_001_123_Correctivas_20260831.txt", "tipo_archivo": "CORRECTIVAS", "n_filas": 1},
     ],
     "recibidos": 9,
     "cargados": 8,
@@ -1313,7 +1313,7 @@ _RESULTADO_MOCK = {
     "no_reportadas": 0,
     "inconsistencias": [
         {"obligacion_id": 2, "numero_obligacion": "2258-7731",
-         "tipo": "CORRECTIVA", "codigo": "707", "descripcion": "Edad de mora mayor a 00 sin valor de mora"},
+         "tipo": "CORRECTIVA", "codigo": "707", "descripcion": "VALOR DE MORA ES REQUERIDO"},
     ],
 }
 
@@ -1394,7 +1394,7 @@ def test_rf54_post_archivo_de_otro_corte_422():
     )
     force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     exc = servicios.ArchivoDeOtroCorte(
-        "correctivas_SSR00112320260731.txt",
+        "Detalle_Inco_CSR_001_123_Correctivas_20260731.txt",
         date(2026, 7, 31),
         date(2026, 8, 31),
     )

@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from django.db import connection, transaction, IntegrityError
 
@@ -544,40 +545,38 @@ class EstructuraInvalida(Exception):
 
 # ── RF54 — Helpers de parseo ──────────────────────────────────────────────────
 
-_TIPO_ARCHIVO_POR_PREFIJO = {
-    "estadisticos_": "ESTADISTICOS",
-    "correctivas_": "CORRECTIVAS",
-    "alertas_": "ALERTAS",
-    "especiales_": "ESPECIALES",
-    "detalle_953_": "DETALLE_953",
-    "norep_": "NOREP",
-    "radicacion_": "RADICACION",
-    "cierre_reclamo_": "CIERRE_RECLAMO",
-}
+# Patrones del Manual p. 43. Orden: más específico primero.
+_PATRONES_TIPO_ARCHIVO = [
+    (re.compile(r"^953_Detalle_Inco_", re.IGNORECASE), "DETALLE_953"),
+    (re.compile(r"^Detalle_Inco_.+_Correctivas_", re.IGNORECASE), "CORRECTIVAS"),
+    (re.compile(r"^Detalle_Inco_.+_Alertas_", re.IGNORECASE), "ALERTAS"),
+    (re.compile(r"^Detalle_Inco_.+_Especiales_", re.IGNORECASE), "ESPECIALES"),
+    (re.compile(r"^Esta_Inco_", re.IGNORECASE), "ESTADISTICOS"),
+    (re.compile(r"^est\.", re.IGNORECASE), "ESTADISTICOS"),
+    (re.compile(r"^norep\.", re.IGNORECASE), "NOREP"),
+    (re.compile(r"^radicacion_", re.IGNORECASE), "RADICACION"),
+    (re.compile(r"^cierre_reclamo_", re.IGNORECASE), "CIERRE_RECLAMO"),
+]
 
 
 def _detectar_tipo_archivo(nombre):
-    nombre_lower = nombre.lower()
-    for prefijo, tipo in _TIPO_ARCHIVO_POR_PREFIJO.items():
-        if nombre_lower.startswith(prefijo):
+    for patron, tipo in _PATRONES_TIPO_ARCHIVO:
+        if patron.match(nombre):
             return tipo
     raise EstructuraInvalida(
-        f"El archivo '{nombre}' no tiene un prefijo de tipo reconocido."
+        f"El archivo '{nombre}' no tiene un nombre reconocido (Manual, p. 43)."
     )
 
 
 def _extraer_fecha_archivo(nombre):
-    """Extrae YYYYMMDD de los últimos 8 caracteres del nombre base (antes de la extensión)."""
-    nombre_sin_ext = nombre.rsplit(".", 1)[0]
-    if len(nombre_sin_ext) < 8:
-        return None
-    fecha_s = nombre_sin_ext[-8:]
-    if not fecha_s.isdigit():
-        return None
-    try:
-        return date(int(fecha_s[:4]), int(fecha_s[4:6]), int(fecha_s[6:]))
-    except ValueError:
-        return None
+    """Extrae la fecha AAAAMMDD del nombre. Acepta los formatos del Manual p. 43."""
+    for m in re.finditer(r"(?<!\d)(\d{8})(?!\d)", nombre):
+        fecha_s = m.group(1)
+        try:
+            return date(int(fecha_s[:4]), int(fecha_s[4:6]), int(fecha_s[6:]))
+        except ValueError:
+            continue
+    return None
 
 
 def _validar_fecha_archivo(nombre, fecha_corte):
@@ -615,7 +614,7 @@ def _parsear_norep(lineas):
         {
             "numero_obligacion": l.strip(),
             "codigo": "R",
-            "descripcion": "Obligación activa no reportada en el corte",
+            "descripcion": "Obligación no reportada",
             "tipo": "NO_REPORTADA",
         }
         for l in lineas if l.strip()
