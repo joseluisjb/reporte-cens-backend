@@ -930,21 +930,3 @@ En modo `--simular` la línea de modo dice `SIMULACIÓN` y no se registra en `NV
 Command : python manage.py actualizar_estados_mensual
 Schedule: 0 2 1 * *
 ```
-
----
-
-### Reclamos de Habeas Data (RF23)
-
-Todos los endpoints requieren el rol Analista de Cartera. La obligación con un reclamo abierto
-continúa incluida en el reporte total.
-
-- `GET /api/reclamos/?estado=EN_RECLAMO|CERRADO` lista los reclamos e indica si venció el plazo.
-- `POST /api/reclamos/` recibe `obligacion_id`, `tipologia`, `fecha_radicacion` y `observacion` opcional.
-  La fecha límite se calcula a 15 días hábiles, excluyendo festivos nacionales de Colombia.
-- `POST /api/reclamos/{id}/cerrar/` recibe `resultado`, `fecha_cierre` y `observacion_cierre` opcional.
-- `GET /api/reclamos/insumo/?tipo=marcacion|desmarcacion` descarga un archivo de texto delimitado por `|`.
-  Cada fila contiene número de obligación, código de tipología y fecha AAAAMMDD. Las filas incluidas
-  se marcan como generadas para no duplicarlas en una descarga posterior.
-
-La tipología debe existir en `NV_TIPOLOGIA_RECLAMO` con `CONFIRMADO = 'S'`. Se rechaza registrar
-una segunda reclamación abierta para la misma obligación.
