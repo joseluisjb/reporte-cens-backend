@@ -153,7 +153,7 @@ def _cargar_obligaciones_corte(corte_id):
             "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), rd.CUOTAS_MORA "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
-            "WHERE rd.CORTE_ID = %s "
+            "WHERE rd.CORTE_ID = %s AND NVL(o.ELIMINADA, 'N') = 'N' "
             "ORDER BY rd.OBLIGACION_ID",
             [corte_id],
         )
@@ -1057,6 +1057,10 @@ def listar_obligaciones(
     where = "WHERE rd.CORTE_ID = %s"
     params = [ultimo_corte]
 
+    # RF50: filtrar por estado de eliminación
+    where += " AND NVL(o.ELIMINADA, 'N') = %s"
+    params.append("S" if eliminada else "N")
+
     if estado_tu is not None:
         params.append(estado_tu)
         where += " AND rd.ESTADO_TU = %s"
@@ -1087,7 +1091,7 @@ def listar_obligaciones(
             "rd.VALOR_MORA, rd.VALOR_SALDO, "
             "CASE WHEN rd.ESTADO_TU IN ('02', '07') THEN 'S' ELSE 'N' END, "
             "rd.PRIMER_REPORTE, NVL(rd.REQUIERE_REVISION, 'N'), "
-            "NVL(rd.CADUCADO, 'N') "
+            "NVL(rd.CADUCADO, 'N'), NVL(o.ELIMINADA, 'N') "
             + base +
             " ORDER BY o.NUMERO_OBLIGACION_TU "
             "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
@@ -1111,7 +1115,7 @@ def listar_obligaciones(
             "primer_reporte": r[11] == "S",
             "caducado": r[13] == "S",
             "en_reclamo": False,
-            "eliminada": False,
+            "eliminada": r[14] == "S",
             "requiere_revision": r[12] == "S",
         }
         for r in filas
@@ -1137,7 +1141,7 @@ def obtener_obligacion(obligacion_id):
             "rd.FECHA_PAGO, rd.MODO_EXTINCION, rd.TIPO_PAGO, "
             "NVL(rd.MOVIMIENTO_POSTERIOR, 'N'), c.FECHA_CORTE, "
             "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), "
-            "NVL(rd.VALOR_REAL_PAGADO, 0) "
+            "NVL(rd.VALOR_REAL_PAGADO, 0), NVL(o.ELIMINADA, 'N') "
             "FROM NEXOVOLT.NV_OBLIGACION o "
             "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
             "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID "
@@ -1229,7 +1233,7 @@ def obtener_obligacion(obligacion_id):
         "primer_reporte": row[11] == "S",
         "caducado": caducado,
         "en_reclamo": False,
-        "eliminada": False,
+        "eliminada": row[26] == "S",
         "requiere_revision": row[12] == "S",
         "motivo_revision": row[13],
         "anios_mora": anios_mora,
@@ -1327,6 +1331,12 @@ def obtener_resumen_obligaciones():
 
     with connection.cursor() as cursor:
         cursor.execute(
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_OBLIGACION WHERE NVL(ELIMINADA, 'N') = 'S'"
+        )
+        n_eliminadas = cursor.fetchone()[0]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
             "SELECT o.NUMERO_OBLIGACION_TU, rd.NOMBRE_TITULAR "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
@@ -1347,7 +1357,7 @@ def obtener_resumen_obligaciones():
         "total": total,
         "abiertas": abiertas,
         "por_estado": por_estado,
-        "eliminadas": 0,
+        "eliminadas": n_eliminadas,
         "por_cuotas_mora": por_cuotas_mora,
         "financiaciones_nuevas": financiaciones_nuevas,
     }
