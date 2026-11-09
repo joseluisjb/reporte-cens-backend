@@ -504,6 +504,80 @@ def test_rf55_crear_rectificacion_conserva_anterior_y_actualiza_corte():
     assert update == [Decimal("15000"), 5, 42]
 
 
+def test_rf55_crear_rectificacion_enlaza_novedad_correccion_existente():
+    novedad_id = 321
+    fila_rectificacion = (
+        201, novedad_id, 42, "2249-1180", 5, date(2026, 9, 30),
+        "valor_mora", "12000", "15000", "Corrección validada",
+        "ACTUALIZACION_LINEA", "REGISTRADA", None, 2, None,
+    )
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("ENVIADO", date(2026, 9, 30), "2249-1180", 12000),
+        (1,),  # Existe una novedad CORRECCION
+        (201,),  # SEQ_NV_RECTIFICACION
+        fila_rectificacion,
+    ]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic), \
+         patch("novedades.servicios.registrar_bitacora"), \
+         patch("novedades.servicios.tolerar_fallo_bitacora", _noop_tolerar), \
+         patch("novedades.servicios._nombres_usuarios", return_value={}):
+        result = servicios.crear_rectificacion({
+            "novedad_id": novedad_id,
+            "obligacion_id": 42,
+            "corte_id": 5,
+            "campo": "valor_mora",
+            "valor_corregido": "15000",
+            "justificacion": "Corrección validada",
+            "medio": "ACTUALIZACION_LINEA",
+        })
+
+    sqls = [call.args[0] for call in mock_cursor.execute.call_args_list]
+    insert = next(
+        call.args[1] for call in mock_cursor.execute.call_args_list
+        if "INSERT INTO NEXOVOLT.NV_RECTIFICACION" in call.args[0]
+    )
+    assert result["novedad_id"] == novedad_id
+    assert insert[1] == novedad_id
+    assert not any("SEQ_NV_NOVEDAD.NEXTVAL" in sql for sql in sqls)
+    assert not any("INSERT INTO NEXOVOLT.NV_NOVEDAD" in sql for sql in sqls)
+
+
+def test_rf55_novedad_rectificacion_inexistente_devuelve_error_por_campo():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        ("ENVIADO", date(2026, 9, 30), "2249-1180", 12000),
+        (0,),
+    ]
+    factory = APIRequestFactory()
+    view = RectificacionesViewSet.as_view({"post": "create"})
+    request = factory.post(
+        "/rectificaciones/",
+        {
+            "novedad_id": 999,
+            "obligacion_id": 42,
+            "corte_id": 5,
+            "campo": "valor_mora",
+            "valor_corregido": "15000",
+            "justificacion": "Corrección validada",
+            "medio": "ACTUALIZACION_LINEA",
+        },
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic):
+        response = view(request)
+
+    assert response.status_code == 400
+    assert response.data == {
+        "novedad_id": ["La novedad no existe o no es de tipo CORRECCION."]
+    }
+
+
 def test_rf55_no_rectifica_corte_no_enviado():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.return_value = (

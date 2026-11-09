@@ -118,6 +118,7 @@ class RectificacionSerializer(serializers.Serializer):
 
 
 class RectificacionCreateSerializer(serializers.Serializer):
+    novedad_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     obligacion_id = serializers.IntegerField(min_value=1)
     corte_id = serializers.IntegerField(min_value=1)
     campo = serializers.ChoiceField(choices=["valor_mora"])

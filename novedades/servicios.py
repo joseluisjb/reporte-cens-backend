@@ -163,26 +163,36 @@ def crear_rectificacion(data, usuario=None):
             if Decimal(str(valor_anterior)) == valor_corregido:
                 raise ValueError("El valor corregido debe ser distinto al valor reportado.")
 
-            cursor.execute("SELECT NEXOVOLT.SEQ_NV_NOVEDAD.NEXTVAL FROM DUAL")
-            novedad_id = cursor.fetchone()[0]
-            cursor.execute(
-                "INSERT INTO NEXOVOLT.NV_NOVEDAD "
-                "(NOVEDAD_ID, TIPO, SUJETO, OBLIGACION_ID, REFERENCIA, MOTIVO, "
-                "VALORES_ENVIADOS, FECHA_DETECCION, ORIGEN, ESTADO, USUARIO_ID, "
-                "USUARIO_NOMBRE) "
-                "VALUES (%s, 'CORRECCION', 'OBLIGACION', %s, %s, %s, %s, %s, "
-                "'MANUAL', 'PENDIENTE', %s, %s)",
-                [
-                    novedad_id,
-                    data["obligacion_id"],
-                    fila[2],
-                    data["justificacion"],
-                    f"{data['campo']}={format(valor_corregido, 'f')}",
-                    hoy_bogota(),
-                    usuario_id,
-                    usuario_nombre,
-                ],
-            )
+            novedad_id = data.get("novedad_id")
+            if novedad_id is not None:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM NEXOVOLT.NV_NOVEDAD "
+                    "WHERE NOVEDAD_ID = %s AND TIPO = 'CORRECCION'",
+                    [novedad_id],
+                )
+                if cursor.fetchone()[0] == 0:
+                    raise NovedadNoEncontrada()
+            else:
+                cursor.execute("SELECT NEXOVOLT.SEQ_NV_NOVEDAD.NEXTVAL FROM DUAL")
+                novedad_id = cursor.fetchone()[0]
+                cursor.execute(
+                    "INSERT INTO NEXOVOLT.NV_NOVEDAD "
+                    "(NOVEDAD_ID, TIPO, SUJETO, OBLIGACION_ID, REFERENCIA, MOTIVO, "
+                    "VALORES_ENVIADOS, FECHA_DETECCION, ORIGEN, ESTADO, USUARIO_ID, "
+                    "USUARIO_NOMBRE) "
+                    "VALUES (%s, 'CORRECCION', 'OBLIGACION', %s, %s, %s, %s, %s, "
+                    "'MANUAL', 'PENDIENTE', %s, %s)",
+                    [
+                        novedad_id,
+                        data["obligacion_id"],
+                        fila[2],
+                        data["justificacion"],
+                        f"{data['campo']}={format(valor_corregido, 'f')}",
+                        hoy_bogota(),
+                        usuario_id,
+                        usuario_nombre,
+                    ],
+                )
             cursor.execute("SELECT NEXOVOLT.SEQ_NV_RECTIFICACION.NEXTVAL FROM DUAL")
             rectificacion_id = cursor.fetchone()[0]
             cursor.execute(

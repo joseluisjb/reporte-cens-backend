@@ -164,6 +164,11 @@ class RectificacionesViewSet(viewsets.ViewSet):
             rectificacion = servicios.crear_rectificacion(
                 serializer.validated_data, usuario=request.user
             )
+        except servicios.NovedadNoEncontrada:
+            return Response(
+                {"novedad_id": ["La novedad no existe o no es de tipo CORRECCION."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except servicios.CorteNoEnviado:
             return Response(
                 {"detail": "Solo se rectifican cortes ya enviados a TransUnion."},
