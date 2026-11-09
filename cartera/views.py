@@ -3,9 +3,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from config.paginacion import parsear_paginacion
-from usuarios.permisos import EsAnalistaOAdministrador
+from usuarios.permisos import EsAnalista, EsAnalistaOAdministrador
 from cartera import servicios
-from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer, RegistrarEnvioSerializer
+from cartera.serializers import (
+    GenerarCorteSerializer,
+    CorteResumenSerializer,
+    RegistrarEnvioSerializer,
+    ResultadosCargueSerializer,
+)
 
 
 class ExtraccionViewSet(viewsets.ViewSet):
@@ -153,3 +158,54 @@ class ExtraccionViewSet(viewsets.ViewSet):
         except servicios.CorteNoEncontrado:
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         return Response(resultado)
+
+
+class ArchivoViewSet(viewsets.ViewSet):
+    permission_classes = [EsAnalista]
+    lookup_value_regex = r"\d+"
+
+    @action(detail=True, methods=["get", "post"], url_path="resultados")
+    def resultados(self, request, pk=None):
+        if request.method == "GET":
+            return self._get_resultados(pk)
+        return self._post_resultados(request, pk)
+
+    def _get_resultados(self, pk):
+        try:
+            resultado = servicios.obtener_resultados(int(pk))
+        except (ValueError, servicios.ArchivoNoEncontrado, servicios.SinResultados):
+            return Response(
+                {"detail": "Este archivo todavía no tiene resultados cargados."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(ResultadosCargueSerializer(resultado).data)
+
+    def _post_resultados(self, request, pk):
+        archivos = request.FILES.getlist("archivos")
+        if not archivos:
+            return Response(
+                {"archivos": ["Se requiere al menos un archivo."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            resultado = servicios.cargar_resultados(int(pk), archivos, usuario=request.user)
+        except ValueError:
+            return Response({"detail": "Archivo no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except servicios.ArchivoNoEncontrado:
+            return Response({"detail": "Archivo no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except servicios.ArchivoNoEnviado:
+            return Response(
+                {"detail": "Registra el envío del archivo antes de cargar sus resultados."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except servicios.ArchivoDeOtroCorte as exc:
+            return Response(
+                {"detail": str(exc), "code": "archivo_de_otro_corte"},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        except servicios.EstructuraInvalida as exc:
+            return Response(
+                {"detail": str(exc), "code": "estructura_invalida"},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        return Response(ResultadosCargueSerializer(resultado).data, status=status.HTTP_201_CREATED)
