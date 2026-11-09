@@ -9,7 +9,7 @@ from tests.ayudas import usuario_con_rol
 
 from cartera import servicios
 from cartera.serializers import GenerarCorteSerializer, CorteResumenSerializer
-from cartera.views import ExtraccionViewSet
+from cartera.views import ArchivoViewSet, ExtraccionViewSet
 
 
 # ── Helpers de test ───────────────────────────────────────────────────────────
@@ -610,6 +610,24 @@ def test_validar_corte_devuelve_advertencias():
     assert resultado["advertencias"][0]["regla"] == "SIN_FECHA_LIMITE_PAGO"
 
 
+def test_rf49_validar_corte_bloquea_exigibilidad_futura():
+    """Fecha de exigibilidad mayor a la fecha del sistema → V_VALIDACION_CORTE devuelve
+    correctiva FECHA_EXIGIBILIDAD_FUTURA y validar_corte lanza CorteConErroresCorrectivos."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchall.return_value = [
+        (
+            "FECHA_EXIGIBILIDAD_FUTURA",
+            "CORRECTIVA",
+            "La fecha de exigibilidad es posterior a la fecha del sistema (RF49).",
+        ),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
+            servicios.validar_corte(1)
+    assert exc_info.value.errores[0]["regla"] == "FECHA_EXIGIBILIDAD_FUTURA"
+
+
 # ── Servicios — registrar_envio ───────────────────────────────────────────────
 
 def test_registrar_envio_no_encontrado():
@@ -1126,3 +1144,279 @@ def test_rf19_validar_corte_cuotas_mora_incoherente_es_informativa():
         resultado = servicios.validar_corte(1)
     assert len(resultado["advertencias"]) == 1
     assert resultado["advertencias"][0]["regla"] == "CUOTAS_MORA_INCOHERENTE"
+
+
+# ── RF54 · Resultados del cargue de TransUnion ───────────────────────────────
+
+@contextmanager
+def _noop_tolerar_rf54(accion):
+    yield
+
+
+def _make_archivo(nombre, contenido):
+    """Crea un archivo simulado para los tests de upload."""
+    mock = MagicMock()
+    mock.name = nombre
+    mock.read.return_value = contenido.encode("utf-8")
+    return mock
+
+
+_FECHA_CORTE_RF54 = date(2026, 8, 31)
+_FECHA_CARGA_RF54 = datetime(2026, 9, 5, 14, 0, 0)
+
+
+def test_rf54_cargar_correctivas_pasa_a_enviado_con_inconsistencias():
+    """Cargar archivo de correctivas → corte pasa a ENVIADO_CON_INCONSISTENCIAS."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (1, _FECHA_CORTE_RF54, "ENVIADO", "S"),  # SELECT archivo+corte
+        (101,),     # SEQ_NV_CARGUE_RESULTADO
+        (201,),     # SEQ_NV_CARGUE_INCONSISTENCIA
+        (1,),       # COUNT correctivas (hay 1)
+        (9,),       # COUNT NV_REPORTE_DETALLE
+    ]
+    mock_cursor.fetchall.return_value = [("2258-7731", 2)]  # resolver obligacion_ids
+
+    archivo = _make_archivo(
+        "correctivas_SSR00112320260831.txt",
+        "2258-7731|707|Edad de mora mayor a 00 sin valor de mora",
+    )
+
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora"), \
+         patch("cartera.servicios.tolerar_fallo_bitacora", _noop_tolerar_rf54), \
+         patch("cartera.servicios.Usuario") as mock_usuario:
+        mock_usuario.objects.filter.return_value.values_list.return_value = []
+        result = servicios.cargar_resultados(1, [archivo], usuario=None)
+
+    assert result["estado_corte"] == "ENVIADO_CON_INCONSISTENCIAS"
+    assert len(result["inconsistencias"]) == 1
+    assert result["inconsistencias"][0]["tipo"] == "CORRECTIVA"
+    assert result["inconsistencias"][0]["codigo"] == "707"
+    assert result["inconsistencias"][0]["obligacion_id"] == 2
+    assert result["con_inconsistencias"] == 1
+    assert result["no_reportadas"] == 0
+    assert result["recibidos"] == 9
+    assert result["cargados"] == 9
+
+
+def test_rf54_cargar_sin_correctivas_queda_enviado():
+    """Cargar archivo estadísticos sin inconsistencias → corte queda ENVIADO."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (1, _FECHA_CORTE_RF54, "ENVIADO", "S"),  # SELECT archivo+corte
+        (102,),     # SEQ_NV_CARGUE_RESULTADO
+        (0,),       # COUNT correctivas (no hay)
+        (9,),       # COUNT NV_REPORTE_DETALLE
+    ]
+
+    archivo = _make_archivo(
+        "estadisticos_SSR00112320260831.txt",
+        "2258-7731|CARGADO\n2259-0001|CARGADO",
+    )
+
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora"), \
+         patch("cartera.servicios.tolerar_fallo_bitacora", _noop_tolerar_rf54), \
+         patch("cartera.servicios.Usuario") as mock_usuario:
+        mock_usuario.objects.filter.return_value.values_list.return_value = []
+        result = servicios.cargar_resultados(1, [archivo], usuario=None)
+
+    assert result["estado_corte"] == "ENVIADO"
+    assert result["inconsistencias"] == []
+    assert result["con_inconsistencias"] == 0
+    assert result["recibidos"] == 9
+    assert result["cargados"] == 9
+
+
+def test_rf54_archivo_de_otro_corte_lanza_excepcion():
+    """Archivo con fecha distinta al corte → ArchivoDeOtroCorte (422)."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = (1, _FECHA_CORTE_RF54, "ENVIADO", "S")
+
+    # El nombre tiene 20260731 pero el corte es 2026-08-31
+    archivo = _make_archivo(
+        "correctivas_SSR00112320260731.txt",
+        "2258-7731|707|Edad de mora mayor a 00 sin valor de mora",
+    )
+
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.ArchivoDeOtroCorte) as exc_info:
+            servicios.cargar_resultados(1, [archivo], usuario=None)
+
+    assert "20260731" in str(exc_info.value) or "31/07/2026" in str(exc_info.value)
+
+
+def test_rf54_estructura_invalida_lanza_excepcion():
+    """Archivo de correctivas con formato incorrecto → EstructuraInvalida (422)."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = (1, _FECHA_CORTE_RF54, "ENVIADO", "S")
+
+    # Falta el campo DESCRIPCION (solo 2 campos separados por |)
+    archivo = _make_archivo(
+        "correctivas_SSR00112320260831.txt",
+        "2258-7731|707",
+    )
+
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.EstructuraInvalida):
+            servicios.cargar_resultados(1, [archivo], usuario=None)
+
+
+def test_rf54_norep_aparece_como_no_reportada():
+    """Cargar archivo norep con una obligación → aparece como NO_REPORTADA."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (1, _FECHA_CORTE_RF54, "ENVIADO", "S"),  # SELECT archivo+corte
+        (103,),     # SEQ_NV_CARGUE_RESULTADO
+        (202,),     # SEQ_NV_CARGUE_INCONSISTENCIA
+        (0,),       # COUNT correctivas (norep no es correctiva)
+        (9,),       # COUNT NV_REPORTE_DETALLE
+    ]
+    mock_cursor.fetchall.return_value = [("2260-5543", 4)]  # resolver obligacion_ids
+
+    archivo = _make_archivo("norep_SSR00112320260831.txt", "2260-5543")
+
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic), \
+         patch("cartera.servicios.registrar_bitacora"), \
+         patch("cartera.servicios.tolerar_fallo_bitacora", _noop_tolerar_rf54), \
+         patch("cartera.servicios.Usuario") as mock_usuario:
+        mock_usuario.objects.filter.return_value.values_list.return_value = []
+        result = servicios.cargar_resultados(1, [archivo], usuario=None)
+
+    assert result["estado_corte"] == "ENVIADO"
+    assert result["no_reportadas"] == 1
+    assert result["cargados"] == 9 - 1
+    assert result["inconsistencias"][0]["tipo"] == "NO_REPORTADA"
+    assert result["inconsistencias"][0]["numero_obligacion"] == "2260-5543"
+    assert result["inconsistencias"][0]["obligacion_id"] == 4
+
+
+# ── RF54 · Vistas ─────────────────────────────────────────────────────────────
+
+_RESULTADO_MOCK = {
+    "archivo_id": 1,
+    "corte_id": 1,
+    "fecha_corte": _FECHA_CORTE_RF54,
+    "fecha_carga": _FECHA_CARGA_RF54,
+    "cargado_por": "Carlos Sánchez",
+    "estado_corte": "ENVIADO_CON_INCONSISTENCIAS",
+    "archivos_cargados": [
+        {"nombre_archivo": "correctivas_SSR00112320260831.txt", "tipo_archivo": "CORRECTIVAS", "n_filas": 1},
+    ],
+    "recibidos": 9,
+    "cargados": 8,
+    "con_inconsistencias": 1,
+    "no_reportadas": 0,
+    "inconsistencias": [
+        {"obligacion_id": 2, "numero_obligacion": "2258-7731",
+         "tipo": "CORRECTIVA", "codigo": "707", "descripcion": "Edad de mora mayor a 00 sin valor de mora"},
+    ],
+}
+
+
+def test_rf54_get_con_resultados_200():
+    """GET /archivos/{id}/resultados/ con resultados → 200."""
+    request = factory.get("/archivos/1/resultados/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.obtener_resultados", return_value=_RESULTADO_MOCK):
+        response = ArchivoViewSet.as_view({"get": "resultados"})(request, pk="1")
+    assert response.status_code == 200
+    assert response.data["estado_corte"] == "ENVIADO_CON_INCONSISTENCIAS"
+    assert response.data["recibidos"] == 9
+    assert len(response.data["inconsistencias"]) == 1
+
+
+def test_rf54_get_sin_resultados_404():
+    """GET /archivos/{id}/resultados/ sin resultados → 404."""
+    request = factory.get("/archivos/1/resultados/")
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.obtener_resultados",
+               side_effect=servicios.SinResultados):
+        response = ArchivoViewSet.as_view({"get": "resultados"})(request, pk="1")
+    assert response.status_code == 404
+    assert "resultados cargados" in response.data["detail"]
+
+
+def test_rf54_post_correctivas_201():
+    """POST /archivos/{id}/resultados/ exitoso → 201."""
+    request = factory.post(
+        "/archivos/1/resultados/",
+        {"archivos": [MagicMock(name="correctivas_SSR00112320260831.txt")]},
+        format="multipart",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.cargar_resultados", return_value=_RESULTADO_MOCK):
+        response = ArchivoViewSet.as_view({"post": "resultados"})(request, pk="1")
+    assert response.status_code == 201
+    assert response.data["estado_corte"] == "ENVIADO_CON_INCONSISTENCIAS"
+
+
+def test_rf54_post_archivo_no_encontrado_404():
+    """POST /archivos/{id}/resultados/ con id inexistente → 404."""
+    request = factory.post(
+        "/archivos/99/resultados/",
+        {"archivos": [MagicMock()]},
+        format="multipart",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.cargar_resultados",
+               side_effect=servicios.ArchivoNoEncontrado):
+        response = ArchivoViewSet.as_view({"post": "resultados"})(request, pk="99")
+    assert response.status_code == 404
+    assert response.data["detail"] == "Archivo no encontrado."
+
+
+def test_rf54_post_archivo_no_enviado_409():
+    """POST /archivos/{id}/resultados/ con archivo no enviado → 409."""
+    request = factory.post(
+        "/archivos/1/resultados/",
+        {"archivos": [MagicMock()]},
+        format="multipart",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    with patch("cartera.views.servicios.cargar_resultados",
+               side_effect=servicios.ArchivoNoEnviado):
+        response = ArchivoViewSet.as_view({"post": "resultados"})(request, pk="1")
+    assert response.status_code == 409
+    assert "envío" in response.data["detail"]
+
+
+def test_rf54_post_archivo_de_otro_corte_422():
+    """POST /archivos/{id}/resultados/ con archivo de otro corte → 422."""
+    request = factory.post(
+        "/archivos/1/resultados/",
+        {"archivos": [MagicMock()]},
+        format="multipart",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    exc = servicios.ArchivoDeOtroCorte(
+        "correctivas_SSR00112320260731.txt",
+        date(2026, 7, 31),
+        date(2026, 8, 31),
+    )
+    with patch("cartera.views.servicios.cargar_resultados", side_effect=exc):
+        response = ArchivoViewSet.as_view({"post": "resultados"})(request, pk="1")
+    assert response.status_code == 422
+    assert response.data["code"] == "archivo_de_otro_corte"
+
+
+def test_rf54_post_estructura_invalida_422():
+    """POST /archivos/{id}/resultados/ con estructura inválida → 422."""
+    request = factory.post(
+        "/archivos/1/resultados/",
+        {"archivos": [MagicMock()]},
+        format="multipart",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    exc = servicios.EstructuraInvalida(
+        "El archivo correctivas.txt no tiene la estructura esperada (línea 1: "
+        "se esperaban al menos 3 campos separados por |)."
+    )
+    with patch("cartera.views.servicios.cargar_resultados", side_effect=exc):
+        response = ArchivoViewSet.as_view({"post": "resultados"})(request, pk="1")
+    assert response.status_code == 422
+    assert response.data["code"] == "estructura_invalida"

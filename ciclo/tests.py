@@ -472,14 +472,14 @@ def test_rf11_obtener_obligacion_edad_14_anios_mora():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # obtener_obligacion row (26 columns: 0-24 existing + 25=VALOR_REAL_PAGADO)
+        (       # obtener_obligacion row (27 columns: 0-25 existing + 26=ELIMINADA)
             24, "2263-9004", "Ferretería La Esquina", "1234567890",
             "03", "14", 730, 0,
             500000, 2000000,
             "N", "N", "N", None,
             date(2026, 1, 31), 3000000, 100000, None,
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []  # cuotas_vencidas: none pending
@@ -767,14 +767,14 @@ def test_rf14_obtener_obligacion_caducado():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # 26 columnas: 25 existentes + col 25=VALOR_REAL_PAGADO
+        (       # 27 columnas: 0-25 existentes + col 26=ELIMINADA
             30, "2250-0987", "Empresa Caducada", "9876543210",
             "03", "05", 156, 6,
             1620000, 5420000,
             "N", "N", "N", None,
             date(2025, 6, 30), 8000000, 270000, None,
             None, None, None, "N", None,
-            "S", 4, 0,
+            "S", 4, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []  # cuotas_vencidas: none pending
@@ -877,9 +877,10 @@ def test_rf17_ciclo_cubre_mora_queda_saldo():
     """
     mock_conn, mock_cursor = _mock_conn_multiple()
     # mora=0 ahora (pagó la mora), saldo>0, valor_real_pagado>0, edad='00'
+    # fecha_ultimo_pago presente → RF47 dispara sin revisión (mora_anterior > 0)
     obligaciones = [
         (22, "01", 0, "00", "Panadería La Espiga", "2265-2208",
-         0, None, 140000, 50000, None, 'N', 0, 0),
+         0, None, 140000, 50000, date(2026, 10, 10), 'N', 0, 0),
     ]
     _setup_ciclo(
         mock_conn, mock_cursor,
@@ -935,14 +936,14 @@ def test_rf17_obtener_obligacion_cuotas_vencidas_y_pagos():
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),   # _obtener_ultimo_corte_ciclo
-        (       # 26 columnas; col 25=VALOR_REAL_PAGADO=70000
+        (       # 27 columnas; col 25=VALOR_REAL_PAGADO=70000, col 26=ELIMINADA
             20, "2258-7731", "Hotel Mirador", "2258773100",
             "01", "01", 47, 1,
             70000, 70000,
             "N", "N", "N", None,
             date(2026, 1, 31), 500000, 70000, date(2026, 9, 14),
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 70000,
+            "N", 0, 70000, "N",
         ),
     ]
     # cuotas_vencidas desde V_MORA_OBLIGACION: 1 cuota pendiente
@@ -978,7 +979,7 @@ def test_rf17_obtener_obligacion_sin_pagos_sin_cuotas():
             "N", "N", "N", None,
             date(2026, 1, 31), 200000, 50000, None,
             None, None, None, "N", date(2026, 10, 31),
-            "N", 0, 0,
+            "N", 0, 0, "N",
         ),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1003,6 +1004,7 @@ def test_rf19_resumen_cuota_no_facturada_no_cuenta():
         (5,),                   # _obtener_ultimo_corte_ciclo
         (date(2026, 10, 31),),  # FECHA_CORTE del corte
         (1, 0, 0, 0),           # cuotas_mora aggregate: al_dia=1 (cuota no facturada excluida)
+        (0,),                   # COUNT eliminadas
     ]
     # 1 obligación abierta (01); CUOTAS_MORA=0 porque la cuota aún no está facturada
     mock_cursor.fetchall.side_effect = [
@@ -1025,6 +1027,7 @@ def test_rf19_resumen_12_obligaciones_grupos_suman_abiertas():
         (3,),                           # _obtener_ultimo_corte_ciclo
         (date(2026, 10, 31),),          # FECHA_CORTE del corte
         (2, 2, 2, 3),                   # al_dia=2, una=2, dos_a_tres=2, cuatro_o_mas=3
+        (0,),                           # COUNT eliminadas
     ]
     # por_estado: 9 abiertas (01) + 3 cerradas (02); total 12
     mock_cursor.fetchall.side_effect = [
@@ -1064,6 +1067,7 @@ def test_rf19_resumen_view_200():
         (3,),
         (date(2026, 10, 31),),
         (2, 2, 2, 3),
+        (0,),                   # COUNT eliminadas
     ]
     mock_cursor.fetchall.side_effect = [
         [("01", 9), ("02", 3)],
@@ -1089,3 +1093,356 @@ def test_rf19_resumen_view_200():
     assert "financiaciones_nuevas" in data
     pcm = data["por_cuotas_mora"]
     assert all(k in pcm for k in ("al_dia", "una", "dos_a_tres", "cuatro_o_mas"))
+
+
+# ── Casos RF46 ────────────────────────────────────────────────────────────────
+
+def test_rf46_en03_paga_mora_vuelve_01():
+    """Obligación en Dudoso (03) paga la mora pero conserva saldo → vuelve a 01 (RF46)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (40, "03", 0, "00", "Comercial Éxito", "2270-4001",
+         0, None, 500000, 300000, date(2026, 10, 15), 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="03",
+        estado_anterior="03",
+        mora_anterior=500000,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["normalizadas"] == 1
+    assert resultado["cambios_estado"] == 1
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "01"
+    assert t["requiere_revision"] is False
+    rfs = [r["rf"] for r in t["reglas"]]
+    assert "RF46" in rfs
+    assert "RF47" in rfs
+
+
+def test_rf46_en06_mora_pendiente_mantiene_06():
+    """Obligación en Castigada (06) con mora aún positiva → no normaliza, sigue en 06."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (41, "06", 200000, "02", "Ferretería Norte", "2270-4002",
+         75, date(2026, 9, 1), 100000, 400000, None, 'N', 0, 2),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="02",
+        estado_anterior="06",
+        mora_anterior=300000,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["normalizadas"] == 0
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "06"
+    rfs = [r["rf"] for r in t["reglas"]]
+    assert "RF46" not in rfs
+
+
+def test_rf46_estado_ley_vuelve_01():
+    """Obligación en estado de ley (10) paga la mora y conserva saldo → vuelve a 01."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (42, "10", 0, "00", "Cooperativa Ley", "2270-4003",
+         0, None, 400000, 600000, date(2026, 10, 20), 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="04",
+        estado_anterior="10",
+        mora_anterior=400000,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["normalizadas"] == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "01"
+    rfs = [r["rf"] for r in t["reglas"]]
+    assert "RF46" in rfs
+    assert "RF47" in rfs
+
+
+def test_rf46_sin_mora_previa_no_normaliza():
+    """Estado 03 pero sin mora previa (mora_anterior=0) → no es RF46."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (43, "03", 0, "00", "Sin mora previa", "2270-4004",
+         0, None, 0, 100000, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior="03",
+        mora_anterior=0,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["normalizadas"] == 0
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "03"
+
+
+# ── Casos RF47 ────────────────────────────────────────────────────────────────
+
+def test_rf47_ciclo_queda_al_dia_reporta_pago():
+    """Obligación en 01 con mora previa que queda al día con fecha_pago → RF47 sin revisión."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (50, "01", 0, "00", "Almacén Sol", "2271-5001",
+         0, None, 300000, 200000, date(2026, 10, 12), 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="02",
+        estado_anterior="01",
+        mora_anterior=300000,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["requiere_revision"] is False
+    rfs = [r["rf"] for r in t["reglas"]]
+    assert "RF47" in rfs
+    rf47 = next(r for r in t["reglas"] if r["rf"] == "RF47")
+    assert "fecha de pago" in rf47["texto"]
+
+    sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
+    pago_mora_sql = any(
+        "UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "FECHA_PAGO" in s and "MODO_EXTINCION" in s
+        for s in sqls
+    )
+    assert pago_mora_sql, "RF47: debe actualizar FECHA_PAGO, MODO_EXTINCION y TIPO_PAGO"
+
+
+def test_rf47_ciclo_sin_fecha_pago_requiere_revision():
+    """Mora liquidada sin fecha_pago registrada → RF47 marca para revisión."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (51, "01", 0, "00", "Panadería Tres", "2271-5002",
+         0, None, 0, 150000, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="01",
+        estado_anterior="01",
+        mora_anterior=200000,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    t = resultado["transiciones"][0]
+    assert t["requiere_revision"] is True
+    rfs = [r["rf"] for r in t["reglas"]]
+    assert "RF47" in rfs
+
+
+def test_rf47_ciclo_sin_mora_previa_no_aplica():
+    """Obligación sin mora previa (mora_anterior=0) → RF47 no dispara aunque mora actual sea 0."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (52, "01", 0, "00", "Librería Paz", "2271-5003",
+         0, None, 0, 80000, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior="01",
+        mora_anterior=0,
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    t = resultado["transiciones"][0]
+    rfs = [r["rf"] for r in t["reglas"]]
+    assert "RF47" not in rfs
+    assert t["requiere_revision"] is False
+
+
+def test_rf47_obtener_obligacion_expone_pago_mora():
+    """obtener_obligacion devuelve pago_mora cuando MODO_EXTINCION está registrado y estado != 02/07."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),   # _obtener_ultimo_corte_ciclo
+        (       # 27 columnas: col 26=ELIMINADA
+            50, "2271-5001", "Almacén Sol", "1234567890",
+            "01", "00", 0, 0,
+            0, 200000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 500000, 70000, None,
+            date(2026, 10, 12), "01", "01", "N", date(2026, 10, 31),
+            "N", 0, 300000, "N",
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(50)
+
+    assert result["cierre"] is None
+    pm = result["pago_mora"]
+    assert pm is not None
+    assert pm["fecha_pago"] == "2026-10-12"
+    assert pm["modo_extincion"]["codigo"] == "01"
+    assert pm["tipo_pago"]["codigo"] == "01"
+    assert pm["valor_real_pagado"] == 300000
+
+
+def test_rf47_obtener_obligacion_pago_mora_sin_fecha():
+    """pago_mora se expone aunque fecha_pago sea NULL (obligación marcada para revisión)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            51, "2271-5002", "Panadería Tres", "0987654321",
+            "01", "00", 0, 0,
+            0, 150000,
+            "N", "N", "S", "RF47 · Quedó al día sin fecha de pago registrada; requiere revisión para completar el reporte",
+            date(2026, 1, 31), 300000, 70000, None,
+            None, "01", "01", "N", date(2026, 10, 31),
+            "N", 0, 0, "N",
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(51)
+
+    pm = result["pago_mora"]
+    assert pm is not None
+    assert pm["fecha_pago"] is None
+    assert pm["modo_extincion"]["codigo"] == "01"
+
+
+def test_rf47_obtener_obligacion_sin_pago_mora_es_none():
+    """Obligación vigente sin pago de mora registrado → pago_mora es None."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            52, "2271-5003", "Librería Paz", "1122334455",
+            "01", "00", 0, 0,
+            0, 80000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 200000, 50000, None,
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0, "N",
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(52)
+
+    assert result["pago_mora"] is None
+
+
+# ── Casos RF49 ────────────────────────────────────────────────────────────────
+
+def test_rf49_fecha_exigibilidad_cuota_antigua():
+    """Dos cuotas sin pagar; la más antigua del 14/08 → fecha_exigibilidad = '2026-08-14'."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            60, "2272-6001", "Empresa Solar", "5566778899",
+            "03", "02", 75, 2,
+            140000, 500000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 800000, 70000, date(2026, 8, 14),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0, "N",
+        ),
+    ]
+    # Dos cuotas vencidas; la primera (más antigua) vence el 14/08
+    mock_cursor.fetchall.return_value = [
+        (date(2026, 8, 14), 70000, 47),
+        (date(2026, 9, 14), 70000, 17),
+    ]
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(60)
+
+    assert result["fecha_exigibilidad"] == "2026-08-14"
+    assert result["valor_mora"] == 140000
+
+
+def test_rf49_anios_mora_edad_14_800_dias():
+    """800 días de mora con edad '14' → anios_mora = 2 (800 // 365)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            61, "2272-6002", "Cooperativa Sur", "9988776655",
+            "03", "14", 800, 0,
+            500000, 2000000,
+            "N", "N", "N", None,
+            date(2024, 10, 31), 3000000, 100000, date(2024, 10, 31),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0, "N",
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(61)
+
+    assert result["edad_mora"] == "14"
+    assert result["dias_mora"] == 800
+    assert result["anios_mora"] == 2
+
+
+def test_rf49_al_dia_exigibilidad_nula():
+    """Obligación sin mora (valor_mora = 0) → fecha_exigibilidad es null."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            62, "2272-6003", "Hotel del Norte", "1122334466",
+            "01", "00", 0, 0,
+            0, 300000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 500000, 70000, date(2026, 9, 14),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0, "N",
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(62)
+
+    assert result["fecha_exigibilidad"] is None
+    assert result["anios_mora"] is None

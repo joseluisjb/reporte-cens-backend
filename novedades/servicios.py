@@ -24,6 +24,14 @@ class MotivoEliminacionNoEncontrado(Exception):
     pass
 
 
+class EliminacionNoEncontrada(Exception):
+    pass
+
+
+class EliminacionYaReactivada(Exception):
+    pass
+
+
 _TIPOS_VALIDOS = {"INCLUSION", "ACTUALIZACION", "CORRECCION", "ELIMINACION"}
 _ESTADOS_VALIDOS = {"PENDIENTE", "GESTIONADA", "RECHAZADA"}
 
@@ -184,6 +192,17 @@ def gestionar_novedad(novedad_id, numero_transaccion_tu, fecha_gestion, usuario=
                 [numero_transaccion_tu, fecha_gestion, novedad_id],
             )
 
+        # RF50: si es eliminación de obligación, registrar en NV_ELIMINACION
+        if nov["tipo"] == "ELIMINACION" and nov["obligacion_id"] is not None:
+            _registrar_eliminacion(
+                obligacion_id=nov["obligacion_id"],
+                novedad_id=novedad_id,
+                fecha=fecha_gestion,
+                motivo_eliminacion=nov.get("motivo_eliminacion"),
+                numero_transaccion_tu=numero_transaccion_tu,
+                usuario=usuario,
+            )
+
     with tolerar_fallo_bitacora("NOVEDAD_GESTIONADA"):
         registrar_bitacora(
             "NOVEDAD_GESTIONADA", "NV_NOVEDAD", str(novedad_id),
@@ -192,6 +211,47 @@ def gestionar_novedad(novedad_id, numero_transaccion_tu, fecha_gestion, usuario=
         )
 
     return _fetch_novedad(novedad_id)
+
+
+def _registrar_eliminacion(obligacion_id, novedad_id, fecha, motivo_eliminacion,
+                            numero_transaccion_tu, usuario=None):
+    """RF50: crea NV_ELIMINACION y marca NV_OBLIGACION.ELIMINADA='S'."""
+    usuario_id = getattr(usuario, "pk", None)
+    motivo_id = None
+    if motivo_eliminacion is not None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT MOTIVO_ID FROM NEXOVOLT.NV_MOTIVO_ELIMINACION WHERE CODIGO = %s",
+                [motivo_eliminacion["codigo"]],
+            )
+            row = cursor.fetchone()
+            if row:
+                motivo_id = row[0]
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT NEXOVOLT.SEQ_NV_ELIMINACION.NEXTVAL FROM DUAL")
+        eliminacion_id = cursor.fetchone()[0]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_ELIMINACION "
+            "(ELIMINACION_ID, OBLIGACION_ID, NOVEDAD_ID, FECHA, MOTIVO_ID, "
+            "NUMERO_TRANSACCION_TU, BLOQUEADA, USUARIO_ID) "
+            "VALUES (%s, %s, %s, %s, %s, %s, 'S', %s)",
+            [eliminacion_id, obligacion_id, novedad_id, fecha,
+             motivo_id, numero_transaccion_tu, usuario_id],
+        )
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_OBLIGACION SET ELIMINADA = 'S' WHERE OBLIGACION_ID = %s",
+            [obligacion_id],
+        )
+
+    with tolerar_fallo_bitacora("ELIMINACION_OBLIGACION"):
+        registrar_bitacora(
+            "ELIMINACION_OBLIGACION", "NV_ELIMINACION", str(eliminacion_id),
+            f"Obligación {obligacion_id}, TU: {numero_transaccion_tu}",
+            usuario=usuario,
+        )
 
 
 def rechazar_novedad(novedad_id, motivo_rechazo, usuario=None):
@@ -246,3 +306,99 @@ def crear_novedad_automatica(obligacion_id, referencia, usuario_id=None):
             f"Automática: Obligación {obligacion_id}, Referencia: {referencia}",
             usuario_id=usuario_id,
         )
+
+
+# ── RF50: Eliminaciones ───────────────────────────────────────────────────────
+
+_SEL_ELIM = (
+    "e.ELIMINACION_ID, e.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, e.FECHA, "
+    "me.CODIGO, me.DESCRIPCION, me.CONFIRMADO, "
+    "e.NUMERO_TRANSACCION_TU, e.BLOQUEADA, e.FECHA_ACTIVACION, e.NUMERO_ACTIVACION_TU"
+)
+_FROM_ELIM = (
+    "FROM NEXOVOLT.NV_ELIMINACION e "
+    "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = e.OBLIGACION_ID "
+    "LEFT JOIN NEXOVOLT.NV_MOTIVO_ELIMINACION me ON me.MOTIVO_ID = e.MOTIVO_ID "
+)
+
+
+def _fila_a_eliminacion(row):
+    motivo = None
+    if row[4] is not None:
+        motivo = {
+            "codigo": row[4],
+            "descripcion": row[5],
+            "confirmado": row[6] == "S",
+        }
+    return {
+        "id": row[0],
+        "obligacion_id": row[1],
+        "numero_obligacion": row[2],
+        "fecha": fecha_str(row[3]),
+        "motivo": motivo,
+        "numero_transaccion_tu": row[7],
+        "bloqueada": row[8] == "S",
+        "fecha_activacion": fecha_str(row[9]),
+        "numero_activacion_tu": row[10],
+    }
+
+
+def listar_eliminaciones(limite, desplazamiento):
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT COUNT(*) {_FROM_ELIM}")
+        total = cursor.fetchone()[0]
+
+        cursor.execute(
+            f"SELECT {_SEL_ELIM} {_FROM_ELIM}"
+            "ORDER BY e.FECHA DESC "
+            "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
+            [desplazamiento, limite],
+        )
+        rows = cursor.fetchall()
+
+    return {"total": total, "resultados": [_fila_a_eliminacion(r) for r in rows]}
+
+
+def reactivar_eliminacion(eliminacion_id, numero_activacion_tu, fecha_activacion,
+                           usuario=None):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {_SEL_ELIM} {_FROM_ELIM}WHERE e.ELIMINACION_ID = %s",
+            [eliminacion_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise EliminacionNoEncontrada()
+
+    if row[8] != "S":
+        raise EliminacionYaReactivada()
+
+    obligacion_id = row[1]
+
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_ELIMINACION "
+                "SET BLOQUEADA = 'N', FECHA_ACTIVACION = %s, NUMERO_ACTIVACION_TU = %s "
+                "WHERE ELIMINACION_ID = %s",
+                [fecha_activacion, numero_activacion_tu, eliminacion_id],
+            )
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_OBLIGACION SET ELIMINADA = 'N' "
+                "WHERE OBLIGACION_ID = %s",
+                [obligacion_id],
+            )
+
+    with tolerar_fallo_bitacora("REACTIVACION_OBLIGACION"):
+        registrar_bitacora(
+            "REACTIVACION_OBLIGACION", "NV_ELIMINACION", str(eliminacion_id),
+            f"Obligación {obligacion_id}, activación TU: {numero_activacion_tu}",
+            usuario=usuario,
+        )
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {_SEL_ELIM} {_FROM_ELIM}WHERE e.ELIMINACION_ID = %s",
+            [eliminacion_id],
+        )
+        return _fila_a_eliminacion(cursor.fetchone())
