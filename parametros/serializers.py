@@ -137,3 +137,24 @@ class EntidadSerializer(serializers.Serializer):
             "actualizado_por": instance["actualizado_por"],
             "fecha_actualizacion": timestamp_str(instance["fecha_actualizacion"]),
         }
+
+
+# ── Catálogo y homologación de estados (RF48) ─────────────────────────────────
+
+class HomologacionActualizarSerializer(serializers.Serializer):
+    """Solo forma: la regla (estado en uso, cierre sin estado, 02 y 07 con «Cierre») la aplica el servicio."""
+
+    accion = serializers.CharField(
+        allow_null=True, required=False,
+        error_messages={"invalid": "Elige cómo se reporta el estado: como estado de TransUnion o como cierre."},
+    )
+    estado_tu = serializers.CharField(allow_null=True, allow_blank=True, required=False, trim_whitespace=True)
+    confirmado = serializers.BooleanField(required=False, default=False)
+
+    def validate_estado_tu(self, valor):
+        return valor or None
+
+
+class HomologacionSerializer(serializers.Serializer):
+    def to_representation(self, instance):
+        return {**instance, "fecha_actualizacion": timestamp_str(instance["fecha_actualizacion"])}
