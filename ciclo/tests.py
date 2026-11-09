@@ -155,6 +155,7 @@ def _setup_ciclo(
     estado_anterior=None,
     mora_anterior=0,
     matriz=None,
+    marcas_castigo=None,
 ):
     """
     Monta el mock_cursor con respuestas para ejecutar_ciclo.
@@ -163,6 +164,8 @@ def _setup_ciclo(
       (obligacion_id, estado_tu, valor_mora, edad_mora,
        nombre_titular, numero_obl, dias_mora, fecha_limite_pago, valor_real_pagado,
        valor_saldo, fecha_ultimo_pago)
+
+    marcas_castigo: lista de obligacion_ids con marca de castigo (RF45).
     """
     fecha_corte_bd = date(2026, 10, 31)
 
@@ -194,10 +197,13 @@ def _setup_ciclo(
         for obl in (obligaciones or [])
     ]
 
+    castigo_rows = [(oid,) for oid in (marcas_castigo or [])]
+
     mock_cursor.fetchall.side_effect = [
         extendidas,           # _cargar_obligaciones_corte
         datos_previos,        # _cargar_datos_previos
         matriz or [],         # _cargar_transiciones_permitidas
+        castigo_rows,         # _cargar_marcas_castigo (RF45)
         [],                   # RF13 MOVIMIENTO_POSTERIOR query
     ]
 
@@ -804,6 +810,189 @@ def test_rf14_limpiar_ciclo_borra_713():
         for s in sqls
     )
     assert limpia_713, "Debe limpiar inconsistencias 713 en cada ejecución"
+
+
+# ── Casos RF45 ────────────────────────────────────────────────────────────────
+
+_MATRIZ_RF45 = [
+    # (desde, con_mora_desde, hacia, con_mora_hacia) donde PERMITIDA='S'
+    ('01', 'N', '06', 'S'),
+    ('01', 'S', '06', 'S'),
+    ('03', 'S', '06', 'S'),
+    ('04', 'S', '06', 'S'),
+    ('06', 'S', '06', 'S'),
+    ('08', 'S', '06', 'S'),
+    ('10', 'S', '06', 'S'),
+    ('11', 'S', '06', 'S'),
+    ('12', 'S', '06', 'S'),
+]
+
+
+def test_rf45_castigo_con_mora_pasa_a_06():
+    """2244-6410: con marca de castigo y mora → estado 06, a_castigada=1."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (40, "06", 850000, "04", "Empresa Castigada", "2244-6410",
+         130, None, 0, 0, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="03",
+        estado_anterior="01",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF45,
+        marcas_castigo=[40],
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_castigada"] == 1
+    assert resultado["cambios_estado"] == 1
+    assert resultado["rechazados"] == 0
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "06"
+    assert t["estado_anterior"] == "01"
+    assert t["primer_reporte"] is False
+    assert t["reglas"][0]["rf"] == "RF45"
+    assert "Castigada" in t["reglas"][0]["texto"]
+    assert t["reglas"][0]["por_confirmar"] is False
+
+    sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
+    inserta_trans = any("INSERT INTO NEXOVOLT.NV_CICLO_TRANSICION" in s for s in sqls_em)
+    assert inserta_trans, "RF45: debe insertar la transición en NV_CICLO_TRANSICION"
+
+
+def test_rf45_castigo_sin_mora_requiere_revision():
+    """Marca de castigo con mora cero → no reporta 06; marcado para revisión."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (41, "01", 0, "00", "Cliente Sin Mora", "2244-7001",
+         0, None, 0, 0, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior="01",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF45,
+        marcas_castigo=[41],
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_castigada"] == 0
+    assert resultado["rechazados"] == 0
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "01"
+    assert t["requiere_revision"] is True
+    assert t["reglas"][0]["rf"] == "RF45"
+    assert "sin mora" in t["reglas"][0]["texto"].lower()
+
+    sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
+    rev_update = any("REQUIERE_REVISION" in s and "MOTIVO_REVISION" in s for s in sqls_em)
+    assert rev_update, "RF45: debe persistir REQUIERE_REVISION en NV_REPORTE_DETALLE"
+
+
+def test_rf45_primer_reporte_castigo_edad_00_rechazado_881():
+    """Primer reporte en estado 06 con edad 00 → rechazado (881); _valida_881 lo descarta."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (42, "06", 500000, "00", "Nueva Castigada", "2244-7002",
+         0, None, 0, 0, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=True,
+        matriz=_MATRIZ_RF45,
+        marcas_castigo=[42],
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["rechazados"] == 1
+    assert resultado["a_castigada"] == 0
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "881"
+    assert r["estado_calculado"] == "06"
+
+
+def test_rf45_estado_anterior_02_castigo_713():
+    """Estado anterior Saldada (02) + castigo → Matriz rechaza; inconsistencia 713."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (43, "06", 400000, "03", "Obligación Saldada Castigada", "2244-7003",
+         95, None, 0, 0, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior="02",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF45,
+        marcas_castigo=[43],
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_castigada"] == 0
+    assert resultado["rechazados"] == 1
+    assert len(resultado["transiciones"]) == 0
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "713"
+    assert r["estado_anterior"] == "02"
+    assert r["estado_calculado"] == "06"
+
+    sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
+    incons_713 = any(
+        "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in s and "CAMBIO_ESTADO_INVALIDO" in s
+        for s in sqls
+    )
+    assert incons_713, "RF45: debe insertar inconsistencia CAMBIO_ESTADO_INVALIDO"
+
+    revert = any("UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "ESTADO_TU" in s for s in sqls)
+    assert revert, "RF45: debe revertir ESTADO_TU al estado anterior cuando hay 713"
+
+
+def test_rf45_sin_castigo_no_pasa_a_06():
+    """Sin marca de castigo: RF45 no actúa; la obligación sigue el flujo normal (RF11)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (44, "01", 90000, "02", "Cliente Normal", "2244-7004",
+         75, None, 0, 0, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="01",
+        estado_anterior="01",
+        mora_anterior=0,
+        matriz=_MATRIZ_RF45,
+        marcas_castigo=[],
+    )
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    assert resultado["a_castigada"] == 0
+    assert resultado["rechazados"] == 0
+    assert len(resultado["transiciones"]) == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "01"
+    assert t["reglas"][0]["rf"] == "RF11"
 
 
 # ── Casos RF17 ────────────────────────────────────────────────────────────────
