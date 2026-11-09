@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: NexoVolt — API REST (Iteraciones 1 y 2)
-  version: 0.9.0-borrador
+  version: 0.9.1-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
@@ -2185,7 +2185,9 @@ paths:
         (`NV_HOMOLOGA_ESTADO`). `accion` `ESTADO` asigna `estado_tu`; `CIERRE` significa que el
         crédito se cierra (RF12 o RF15) y `estado_tu` va `null`. Un estado con `accion` `null` está
         **sin homologar**: sus obligaciones se bloquean en la validación del corte (RF53). B y D están
-        pendientes de CENS (C-11, C-54). *Propuesta.*
+        pendientes de CENS (C-11, C-54). `prioridad` (`NV_HOMOLOGA_ESTADO.PRIORIDAD`) decide el estado de
+        una obligación cuyos créditos tienen estados distintos: gana el de menor número. Viene de la carga
+        inicial (script 12) y es de solo lectura. Ordenado por `prioridad`. *Propuesta (0.9.1).*
       operationId: homologacionEstadosList
       x-roles: [Administrador]
       responses:
@@ -2197,11 +2199,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/HomologacionEstado' }
               example:
-                - { estado_sac: A, descripcion: null, accion: ESTADO, estado_tu: '01', confirmado: false, actualizado_por: null, fecha_actualizacion: null }
-                - { estado_sac: B, descripcion: null, accion: null, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
-                - { estado_sac: C, descripcion: null, accion: ESTADO, estado_tu: '03', confirmado: false, actualizado_por: null, fecha_actualizacion: null }
-                - { estado_sac: D, descripcion: null, accion: null, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
-                - { estado_sac: F, descripcion: null, accion: CIERRE, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: A, prioridad: 1, descripcion: Activo (propuesto), accion: ESTADO, estado_tu: '01', confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: C, prioridad: 2, descripcion: Caducado (propuesto), accion: ESTADO, estado_tu: '03', confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: D, prioridad: 3, descripcion: 'Desconocido: preguntar a CENS', accion: null, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: B, prioridad: 4, descripcion: 'Desconocido: preguntar a CENS', accion: null, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: F, prioridad: 5, descripcion: Finalizado (propuesto), accion: CIERRE, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -2211,9 +2213,10 @@ paths:
       summary: Actualizar la homologación de un estado del SAC (RF48)
       description: |
         Reemplaza la homologación de un estado del SAC. Con `accion` `ESTADO`, `estado_tu` es
-        obligatorio y debe ser un estado **en uso** (`usado: true` en `GET /estados/`); con `CIERRE`,
-        `estado_tu` debe ir `null`. Queda registrado quién y cuándo lo cambió, y en la bitácora.
-        *Propuesta.*
+        obligatorio, debe ser un estado **en uso** (`usado: true` en `GET /estados/`) y no puede ser de
+        cierre (02 o 07): a esos se llega con `CIERRE`, que según el estado anterior da 02 o 07 (RF12,
+        RF15; `NV_ESTADO_TU.CIERRE_AL_PAGAR`). Con `CIERRE`, `estado_tu` debe ir `null`. `prioridad` no se
+        cambia aquí. Queda registrado quién y cuándo lo cambió, y en la bitácora. *Propuesta (0.9.1).*
       operationId: homologacionEstadosUpdate
       x-roles: [Administrador]
       parameters:
@@ -2234,7 +2237,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HomologacionEstado' }
-              example: { estado_sac: A, descripcion: null, accion: ESTADO, estado_tu: '01', confirmado: true, actualizado_por: Rosa Martínez, fecha_actualizacion: '2026-11-07T10:30:00-05:00' }
+              example: { estado_sac: A, prioridad: 1, descripcion: Activo (propuesto), accion: ESTADO, estado_tu: '01', confirmado: true, actualizado_por: Rosa Martínez, fecha_actualizacion: '2026-11-07T10:30:00-05:00' }
         '400':
           description: Combinación inválida (por campo).
           content:
@@ -2247,6 +2250,9 @@ paths:
                 cierre_con_estado:
                   summary: Cierre con estado asignado
                   value: { estado_tu: ['Un estado que cierra el crédito no lleva estado de TransUnion.'] }
+                estado_de_cierre:
+                  summary: Estado de cierre asignado como estado (0.9.1)
+                  value: { estado_tu: ['Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior.'] }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404':
@@ -2523,15 +2529,15 @@ paths:
                 cargado_por: Carlos Sánchez
                 estado_corte: ENVIADO_CON_INCONSISTENCIAS
                 archivos_cargados:
-                  - { nombre_archivo: correctivas_SSR00112320260831.txt, tipo_archivo: CORRECTIVAS, n_filas: 1 }
-                  - { nombre_archivo: norep_SSR00112320260831.txt, tipo_archivo: NOREP, n_filas: 1 }
+                  - { nombre_archivo: Detalle_Inco_CSR_001_123_Correctivas_20260831.txt, tipo_archivo: CORRECTIVAS, n_filas: 1 }
+                  - { nombre_archivo: norep.001.123.CODIGOPRODUCTO.20260831.0.txt, tipo_archivo: NOREP, n_filas: 1 }
                 recibidos: 9
                 cargados: 8
                 con_inconsistencias: 2
                 no_reportadas: 1
                 inconsistencias:
-                  - { obligacion_id: 2, numero_obligacion: 2258-7731, tipo: CORRECTIVA, codigo: '707', descripcion: 'Edad de mora mayor a 00 sin valor de mora' }
-                  - { obligacion_id: 4, numero_obligacion: 2260-5543, tipo: NO_REPORTADA, codigo: R, descripcion: 'Obligación activa no reportada en el corte' }
+                  - { obligacion_id: 2, numero_obligacion: 2258-7731, tipo: CORRECTIVA, codigo: '707', descripcion: 'VALOR DE MORA ES REQUERIDO' }
+                  - { obligacion_id: 4, numero_obligacion: 2260-5543, tipo: NO_REPORTADA, codigo: R, descripcion: 'Obligación no reportada' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404':
@@ -2551,6 +2557,19 @@ paths:
         el corte en `ENVIADO` o, si hay correctivas, en `ENVIADO_CON_INCONSISTENCIAS`. Si un archivo no
         corresponde al corte o no tiene la estructura esperada responde `422` y **no guarda nada**.
         Solo para archivos ya enviados. *Propuesta.*
+
+        Los archivos se reconocen por el nombre que les da TransUnion (Manual, p. 43), donde `XXX_XXX` son
+        el tipo y el código de entidad y `AAAAMMDD` la fecha de corte:
+        `Esta_Inco_CSR_XXX_XXX_Correctivas_AAAAMMDD.txt`, `Esta_Inco_CSR_XXX_XXX_Alertas_AAAAMMDD.txt` y
+        `est.XXX.XXX.CODIGOPRODUCTO.AAAAMMDD..txt` (estadísticos); `Detalle_Inco_CSR_XXX_XXX_Correctivas_AAAAMMDD.txt`;
+        `Detalle_Inco_CSR_XXX_XXX_Alertas_AAAAMMDD.txt`; `Detalle_Inco_CSR_XXX_XXX_Especiales_AAAAMMDD.txt`;
+        `953_Detalle_Inco_CSR_XXX_XXX_Alertas_AAAAMMDD.txt`, y `norep.XXX.XXX.CODIGOPRODUCTO.AAAAMMDD.0.txt`.
+        El detalle de inconsistencias (pp. 52-53) trae por línea el registro tipo 2 enviado y hasta cinco
+        grupos de código, descripción y tipo; como la tabla del Manual salta el campo 7, se exige un mínimo de
+        campos y el total queda **por confirmar con TransUnion**; el número de obligación sale de las posiciones
+        89 a 108 del registro tipo 2 (Tabla 2). La estructura de los estadísticos no está en el Manual (por
+        confirmar). La p. 43 escribe `CSR`, pero en la Tabla 22 la sigla de cartera servicios es `SSR`
+        (`CSR` es cartera préstamos): se aceptan las dos hasta que TransUnion confirme.
       operationId: archivosResultadosCreate
       x-roles: [Analista de Cartera]
       parameters:
@@ -2584,13 +2603,13 @@ paths:
                     cargado_por: Carlos Sánchez
                     estado_corte: ENVIADO_CON_INCONSISTENCIAS
                     archivos_cargados:
-                      - { nombre_archivo: correctivas_SSR00112320260831.txt, tipo_archivo: CORRECTIVAS, n_filas: 1 }
+                      - { nombre_archivo: Detalle_Inco_CSR_001_123_Correctivas_20260831.txt, tipo_archivo: CORRECTIVAS, n_filas: 1 }
                     recibidos: 9
                     cargados: 8
                     con_inconsistencias: 1
                     no_reportadas: 0
                     inconsistencias:
-                      - { obligacion_id: 2, numero_obligacion: 2258-7731, tipo: CORRECTIVA, codigo: '707', descripcion: 'Edad de mora mayor a 00 sin valor de mora' }
+                      - { obligacion_id: 2, numero_obligacion: 2258-7731, tipo: CORRECTIVA, codigo: '707', descripcion: 'VALOR DE MORA ES REQUERIDO' }
                 sin_correctivas:
                   summary: Sin correctivas, el corte queda ENVIADO
                   value:
@@ -2601,7 +2620,7 @@ paths:
                     cargado_por: Carlos Sánchez
                     estado_corte: ENVIADO
                     archivos_cargados:
-                      - { nombre_archivo: estadisticos_SSR00112320260831.txt, tipo_archivo: ESTADISTICOS, n_filas: 9 }
+                      - { nombre_archivo: Esta_Inco_CSR_001_123_Correctivas_20260831.txt, tipo_archivo: ESTADISTICOS, n_filas: 9 }
                     recibidos: 9
                     cargados: 9
                     con_inconsistencias: 0
@@ -3480,10 +3499,10 @@ components:
           examples:
             otro_corte:
               summary: Archivo de otro corte
-              value: { detail: 'El archivo correctivas_SSR00112320260731.txt es del corte 31/07/2026, no del 31/08/2026.', code: archivo_de_otro_corte }
+              value: { detail: 'El archivo Detalle_Inco_CSR_001_123_Correctivas_20260731.txt es del corte 31/07/2026, no del 31/08/2026.', code: archivo_de_otro_corte }
             estructura:
               summary: Estructura distinta a la esperada
-              value: { detail: 'El archivo estadisticos.txt no tiene la estructura esperada (línea 3: se esperaban 6 campos separados por |).', code: estructura_invalida }
+              value: { detail: 'El archivo Detalle_Inco_CSR_001_123_Correctivas_20260831.txt no tiene la estructura esperada (línea 3: no trae el registro tipo 2 con el código, la descripción y el tipo de la inconsistencia).', code: estructura_invalida }
 
   schemas:
     # ── Errores ──
@@ -4374,9 +4393,10 @@ components:
         confirmado: { type: boolean }
     HomologacionEstado:
       type: object
-      required: [estado_sac, descripcion, accion, estado_tu, confirmado, actualizado_por, fecha_actualizacion]
+      required: [estado_sac, prioridad, descripcion, accion, estado_tu, confirmado, actualizado_por, fecha_actualizacion]
       properties:
         estado_sac: { type: string, pattern: '^[A-Z]$', example: A }
+        prioridad: { type: integer, minimum: 1, readOnly: true, description: "0.9.1. Si los créditos de una obligación tienen estados distintos, gana el de menor número (`NV_HOMOLOGA_ESTADO.PRIORIDAD`). Solo lectura." }
         descripcion: { type: string, nullable: true, description: Texto del estado en el SAC (lo carga el script 12; por confirmar con CENS). }
         accion: { type: string, enum: [ESTADO, CIERRE, null], nullable: true, description: "`null` = sin homologar: bloquea la obligación en RF53." }
         estado_tu: { $ref: '#/components/schemas/EstadoObligacionONulo' }
