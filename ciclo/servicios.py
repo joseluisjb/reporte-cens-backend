@@ -208,6 +208,22 @@ def _cargar_transiciones_permitidas():
     return {(r[0], r[1], r[2], r[3]) for r in rows}
 
 
+def _cargar_marcas_castigo(corte_id):
+    """Set de OBLIGACION_IDs con marca en NV_MARCA_CASTIGO para las obligaciones del corte (RF45)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT rd.OBLIGACION_ID "
+            "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
+            "JOIN NEXOVOLT.NV_MARCA_CASTIGO mc "
+            "  ON mc.CLIENTE_ID = o.CLIENTE_ID AND mc.NUMERO_PROCESO = o.NUMERO_PROCESO "
+            "WHERE rd.CORTE_ID = %s",
+            [corte_id],
+        )
+        rows = cursor.fetchall()
+    return {r[0] for r in rows}
+
+
 def _transicion_permitida(matriz, estado_desde, con_mora_desde, estado_hacia, con_mora_hacia):
     """True si la Matriz permite el cambio de estado (RF14)."""
     return (
@@ -403,6 +419,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         filas = _cargar_obligaciones_corte(corte_id)
         datos_previos = _cargar_datos_previos(corte_id)
         matriz = _cargar_transiciones_permitidas()
+        marcas_castigo = _cargar_marcas_castigo(corte_id)
 
         transiciones_data = []
         rechazos = []
@@ -412,6 +429,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         n_cambios_estado = 0
         n_cierres = 0
         n_a_dudoso = 0
+        n_a_castigada = 0
         n_con_pagos = 0
         n_normalizadas = 0
 
@@ -633,13 +651,88 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     })
                     continue
 
-                # ── RF14: Transición a Dudoso Recaudo ────────────────────────
+                # ── RF45 + RF14: Castigo y Caducado ──────────────────────────
                 nuevo_estado = estado_tu
                 regla_rf = "RF11"
                 regla_texto = None
                 regla_por_confirmar = False
+                castigo_procesado = False
 
-                if caducado_flag == 'S':
+                # ── RF45: Transición a Castigada ─────────────────────────────
+                if obligacion_id in marcas_castigo:
+                    if valor_mora_int is not None and valor_mora_int > 0:
+                        con_mora_ant = mora_anterior > 0
+                        estado_desde = estado_anterior or estado_tu
+                        if not _transicion_permitida(
+                            matriz, estado_desde, con_mora_ant, '06', True
+                        ):
+                            _insertar_inconsistencia_713(
+                                corte_id, obligacion_id,
+                                f"RF45 · Cambio de estado inválido: la Matriz no permite "
+                                f"pasar de {estado_desde} a 06 (Castigada)",
+                            )
+                            rechazos.append({
+                                "obligacion_id": obligacion_id,
+                                "numero_obligacion": numero_obl,
+                                "nombre_titular": nombre_titular,
+                                "estado_anterior": estado_anterior,
+                                "estado_calculado": "06",
+                                "codigo": "713",
+                                "motivo": (
+                                    f"RF45 · Error 713: la Matriz no permite pasar de "
+                                    f"{estado_desde} a 06 (Castigada)"
+                                ),
+                            })
+                            if estado_tu != estado_anterior:
+                                _actualizar_estado_obligacion(
+                                    corte_id, obligacion_id, estado_anterior
+                                )
+                            continue
+                        else:
+                            if nuevo_estado != '06':
+                                _actualizar_estado_obligacion(corte_id, obligacion_id, '06')
+                                nuevo_estado = '06'
+                            n_a_castigada += 1
+                            n_cambios_estado += 1
+                            castigo_procesado = True
+                            regla_rf = "RF45"
+                            regla_texto = "RF45 · CENS la castigó contablemente: Castigada"
+                            regla_por_confirmar = False
+                    else:
+                        # Castigo sin mora: no se puede reportar 06; marcar para revisión
+                        updates_revision.append((
+                            "S",
+                            "RF45 · Castigo contable sin mora; verificar (RF45).",
+                            corte_id, obligacion_id,
+                        ))
+                        filas_insert_trans.append((
+                            corte_id, obligacion_id, estado_anterior, nuevo_estado,
+                            edad_anterior or "00", edad_mora or "00",
+                            "N", "S",
+                            "RF45",
+                            "RF45 · Castigo contable sin mora; requiere revisión",
+                            "S",
+                        ))
+                        transiciones_data.append({
+                            "obligacion_id": obligacion_id,
+                            "numero_obligacion": numero_obl,
+                            "nombre_titular": nombre_titular,
+                            "estado_anterior": estado_anterior,
+                            "estado_nuevo": nuevo_estado,
+                            "edad_anterior": edad_anterior or "00",
+                            "edad_nueva": edad_mora or "00",
+                            "primer_reporte": False,
+                            "requiere_revision": True,
+                            "reglas": [{
+                                "rf": "RF45",
+                                "texto": "RF45 · Castigo contable sin mora; requiere revisión",
+                                "por_confirmar": True,
+                            }],
+                        })
+                        continue
+
+                # ── RF14: Transición a Dudoso Recaudo ────────────────────────
+                if caducado_flag == 'S' and not castigo_procesado:
                     if valor_mora_int is not None and valor_mora_int > 0:
                         # Crédito caducado con mora: intentar transición a 03
                         con_mora_ant = mora_anterior > 0
@@ -861,7 +954,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
             "rechazados": len(rechazos),
             "con_pagos": n_con_pagos,
             "a_dudoso": n_a_dudoso,
-            "a_castigada": 0,
+            "a_castigada": n_a_castigada,
             "normalizadas": n_normalizadas,
         }
         _guardar_ciclo(corte_id, fecha_ejecucion, usuario_id, conteos)
