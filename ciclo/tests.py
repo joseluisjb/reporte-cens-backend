@@ -1364,3 +1364,82 @@ def test_rf47_obtener_obligacion_sin_pago_mora_es_none():
         result = servicios.obtener_obligacion(52)
 
     assert result["pago_mora"] is None
+
+
+# ── Casos RF49 ────────────────────────────────────────────────────────────────
+
+def test_rf49_fecha_exigibilidad_cuota_antigua():
+    """Dos cuotas sin pagar; la más antigua del 14/08 → fecha_exigibilidad = '2026-08-14'."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            60, "2272-6001", "Empresa Solar", "5566778899",
+            "03", "02", 75, 2,
+            140000, 500000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 800000, 70000, date(2026, 8, 14),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0,
+        ),
+    ]
+    # Dos cuotas vencidas; la primera (más antigua) vence el 14/08
+    mock_cursor.fetchall.return_value = [
+        (date(2026, 8, 14), 70000, 47),
+        (date(2026, 9, 14), 70000, 17),
+    ]
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(60)
+
+    assert result["fecha_exigibilidad"] == "2026-08-14"
+    assert result["valor_mora"] == 140000
+
+
+def test_rf49_anios_mora_edad_14_800_dias():
+    """800 días de mora con edad '14' → anios_mora = 2 (800 // 365)."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            61, "2272-6002", "Cooperativa Sur", "9988776655",
+            "03", "14", 800, 0,
+            500000, 2000000,
+            "N", "N", "N", None,
+            date(2024, 10, 31), 3000000, 100000, date(2024, 10, 31),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0,
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(61)
+
+    assert result["edad_mora"] == "14"
+    assert result["dias_mora"] == 800
+    assert result["anios_mora"] == 2
+
+
+def test_rf49_al_dia_exigibilidad_nula():
+    """Obligación sin mora (valor_mora = 0) → fecha_exigibilidad es null."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            62, "2272-6003", "Hotel del Norte", "1122334466",
+            "01", "00", 0, 0,
+            0, 300000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 500000, 70000, date(2026, 9, 14),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0,
+        ),
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(62)
+
+    assert result["fecha_exigibilidad"] is None
+    assert result["anios_mora"] is None

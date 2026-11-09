@@ -610,6 +610,24 @@ def test_validar_corte_devuelve_advertencias():
     assert resultado["advertencias"][0]["regla"] == "SIN_FECHA_LIMITE_PAGO"
 
 
+def test_rf49_validar_corte_bloquea_exigibilidad_futura():
+    """Fecha de exigibilidad mayor a la fecha del sistema → V_VALIDACION_CORTE devuelve
+    correctiva FECHA_EXIGIBILIDAD_FUTURA y validar_corte lanza CorteConErroresCorrectivos."""
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchall.return_value = [
+        (
+            "FECHA_EXIGIBILIDAD_FUTURA",
+            "CORRECTIVA",
+            "La fecha de exigibilidad es posterior a la fecha del sistema (RF49).",
+        ),
+    ]
+    with patch("cartera.servicios.connection", mock_conn):
+        with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
+            servicios.validar_corte(1)
+    assert exc_info.value.errores[0]["regla"] == "FECHA_EXIGIBILIDAD_FUTURA"
+
+
 # ── Servicios — registrar_envio ───────────────────────────────────────────────
 
 def test_registrar_envio_no_encontrado():
