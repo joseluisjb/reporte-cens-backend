@@ -1238,7 +1238,7 @@ def obtener_obligacion(obligacion_id):
         "valor_inicial": int(row[15]) if row[15] is not None else None,
         "valor_cuota": int(row[16]) if row[16] is not None else 0,
         "valor_cuota_antes_cierre": None,
-        "fecha_exigibilidad": fecha_str(row[17]),
+        "fecha_exigibilidad": fecha_str(row[17]) if (row[8] is not None and int(row[8]) > 0) else None,
         "atrasos_permitidos": atrasos_permitidos,
         "cuotas_atrasadas": int(row[7]) if row[7] is not None else 0,
         "cierre": cierre,
