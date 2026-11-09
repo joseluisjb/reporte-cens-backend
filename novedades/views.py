@@ -12,6 +12,9 @@ from novedades.serializers import (
     NovedadCreateSerializer,
     NovedadGestionarSerializer,
     NovedadRechazarSerializer,
+    ReclamoCerrarSerializer,
+    ReclamoCreateSerializer,
+    ReclamoSerializer,
 )
 
 
@@ -142,3 +145,97 @@ class EliminacionesViewSet(viewsets.ViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(EliminacionSerializer(eliminacion).data)
+
+
+# ── RF23: Reclamos de Habeas Data ────────────────────────────────────────────
+
+class ReclamosViewSet(viewsets.ViewSet):
+    permission_classes = [EsAnalista]
+    lookup_value_regex = r"\d+"
+
+    def list(self, request):
+        estado = request.query_params.get("estado")
+        try:
+            reclamos = servicios.listar_reclamos(estado=estado)
+        except ValueError:
+            return Response(
+                {"estado": ["Estado no válido."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(ReclamoSerializer(reclamos, many=True).data)
+
+    def create(self, request):
+        serializer = ReclamoCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reclamo = servicios.crear_reclamo(
+                serializer.validated_data, usuario=request.user
+            )
+        except servicios.FechaRadicacionFutura:
+            return Response(
+                {"fecha_radicacion": ["La fecha de radicación no puede ser futura."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except servicios.ObligacionNoEncontrada:
+            return Response(
+                {"detail": "Obligación no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except servicios.TipologiaReclamoNoEncontrada:
+            return Response(
+                {"tipologia": ["Selecciona una tipología válida de la Ley 1266."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except servicios.ReclamoAbiertoExistente:
+            return Response(
+                {"detail": "La obligación ya tiene un reclamo abierto."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            ReclamoSerializer(reclamo).data, status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        serializer = ReclamoCerrarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reclamo = servicios.cerrar_reclamo(
+                int(pk), serializer.validated_data, usuario=request.user
+            )
+        except servicios.ReclamoNoEncontrado:
+            return Response(
+                {"detail": "Reclamo no encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except servicios.ReclamoYaCerrado:
+            return Response(
+                {"detail": "El reclamo ya está cerrado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except servicios.FechaCierreAnterior:
+            return Response(
+                {
+                    "fecha_cierre": [
+                        "La fecha de cierre no puede ser anterior a la de radicación."
+                    ]
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(ReclamoSerializer(reclamo).data)
+
+    @action(detail=False, methods=["get"], url_path="insumo")
+    def insumo(self, request):
+        tipo = request.query_params.get("tipo")
+        if tipo not in {"marcacion", "desmarcacion"}:
+            return Response(
+                {"tipo": ["Usa marcacion o desmarcacion."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        contenido = servicios.generar_insumo_reclamos(tipo)
+        nombre = "marcacion" if tipo == "marcacion" else "desmarcacion"
+        return Response(
+            contenido,
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{nombre}.txt"'},
+        )

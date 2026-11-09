@@ -56,6 +56,13 @@ EVENTOS = {
     "NOVEDAD_REGISTRADA": ("Novedad registrada", "creacion", "Novedades en Línea"),
     "NOVEDAD_GESTIONADA": ("Novedad gestionada", "modificacion", "Novedades en Línea"),
     "NOVEDAD_RECHAZADA": ("Novedad rechazada", "modificacion", "Novedades en Línea"),
+    "RECLAMO_REGISTRADO": ("Reclamo registrado", "creacion", "Novedades en Línea"),
+    "RECLAMO_CERRADO": ("Reclamo cerrado", "modificacion", "Novedades en Línea"),
+    "INSUMO_RECLAMOS_GENERADO": (
+        "Insumo de reclamos generado",
+        "exportacion",
+        "Novedades en Línea",
+    ),
 }
 
 _COLUMNAS = (

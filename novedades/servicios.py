@@ -1,9 +1,11 @@
 import logging
+from datetime import date, timedelta
+from functools import lru_cache
 
 from django.db import connection, transaction
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
-from config.formatos import fecha_str, hoy_bogota
+from config.formatos import fecha_str, hoy_bogota, timestamp_str
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,30 @@ class EliminacionYaReactivada(Exception):
     pass
 
 
+class ReclamoNoEncontrado(Exception):
+    pass
+
+
+class ReclamoYaCerrado(Exception):
+    pass
+
+
+class ReclamoAbiertoExistente(Exception):
+    pass
+
+
+class TipologiaReclamoNoEncontrada(Exception):
+    pass
+
+
+class FechaCierreAnterior(Exception):
+    pass
+
+
+class FechaRadicacionFutura(Exception):
+    pass
+
+
 _TIPOS_VALIDOS = {"INCLUSION", "ACTUALIZACION", "CORRECCION", "ELIMINACION"}
 _ESTADOS_VALIDOS = {"PENDIENTE", "GESTIONADA", "RECHAZADA"}
 
@@ -46,6 +72,277 @@ _FROM = (
     "LEFT JOIN NEXOVOLT.NV_MOTIVO_ELIMINACION me "
     "  ON me.MOTIVO_ID = n.MOTIVO_ELIMINACION_ID "
 )
+
+_SEL_RECLAMO = (
+    "r.RECLAMO_ID, r.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, "
+    "TRIM(ti.NOMBRES || ' ' || ti.PRIMER_APELLIDO || ' ' || ti.SEGUNDO_APELLIDO), "
+    "tr.CODIGO, tr.DESCRIPCION, tr.CONFIRMADO, r.FECHA_RADICACION, "
+    "r.OBSERVACION, r.ESTADO, r.RADICADO_EN_TU, r.FECHA_LIMITE_RESPUESTA, "
+    "r.RESULTADO, r.FECHA_CIERRE, r.OBSERVACION_CIERRE, u.NOMBRE, r.FECHA_REGISTRO"
+)
+_FROM_RECLAMO = (
+    "FROM NEXOVOLT.NV_RECLAMO r "
+    "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = r.OBLIGACION_ID "
+    "JOIN NEXOVOLT.NV_TIPOLOGIA_RECLAMO tr ON tr.TIPOLOGIA_ID = r.TIPOLOGIA_ID "
+    "LEFT JOIN NEXOVOLT.NV_TITULAR ti ON ti.CLIENTE_ID = o.CLIENTE_ID "
+    "LEFT JOIN USUARIOS_USUARIO u ON u.ID = r.USUARIO_ID "
+)
+
+
+def _domingo_de_pascua(anio):
+    a = anio % 19
+    b, c = divmod(anio, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    mes, dia = divmod(h + l - 7 * m + 114, 31)
+    return date(anio, mes, dia + 1)
+
+
+def _lunes_festivo(fecha):
+    return fecha + timedelta(days=(7 - fecha.weekday()) % 7)
+
+
+@lru_cache(maxsize=32)
+def _festivos_colombia(anio):
+    festivos = {
+        date(anio, 1, 1),
+        date(anio, 5, 1),
+        date(anio, 7, 20),
+        date(anio, 8, 7),
+        date(anio, 12, 8),
+        date(anio, 12, 25),
+    }
+    festivos.update(
+        _lunes_festivo(date(anio, mes, dia))
+        for mes, dia in ((1, 6), (3, 19), (6, 29), (8, 15), (10, 12), (11, 1), (11, 11))
+    )
+    pascua = _domingo_de_pascua(anio)
+    festivos.update(
+        _lunes_festivo(pascua + timedelta(days=dias))
+        for dias in (39, 60, 68)
+    )
+    return frozenset(festivos)
+
+
+def calcular_fecha_limite_reclamo(fecha_radicacion, dias_habiles=15):
+    """Cuenta días hábiles después de la radicación, sin fines de semana ni festivos colombianos."""
+    fecha = fecha_radicacion
+    contados = 0
+    while contados < dias_habiles:
+        fecha += timedelta(days=1)
+        if fecha.weekday() < 5 and fecha not in _festivos_colombia(fecha.year):
+            contados += 1
+    return fecha
+
+
+def _fila_a_reclamo(row, hoy=None):
+    hoy = hoy or hoy_bogota()
+    fecha_limite = row[11].date() if hasattr(row[11], "date") else row[11]
+    return {
+        "id": row[0],
+        "obligacion_id": row[1],
+        "numero_obligacion": row[2],
+        "nombre_titular": row[3],
+        "tipologia": {
+            "codigo": row[4],
+            "descripcion": row[5],
+            "confirmado": row[6] == "S",
+        },
+        "fecha_radicacion": fecha_str(row[7]),
+        "observacion": row[8],
+        "estado": row[9],
+        "radicado_en_tu": row[10] == "S",
+        "fecha_limite_respuesta": fecha_str(fecha_limite),
+        "vencido": row[9] == "EN_RECLAMO" and fecha_limite < hoy,
+        "resultado": row[12],
+        "fecha_cierre": fecha_str(row[13]),
+        "observacion_cierre": row[14],
+        "registrado_por": row[15],
+        "fecha_registro": timestamp_str(row[16]),
+    }
+
+
+def _fetch_reclamo(reclamo_id):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {_SEL_RECLAMO} {_FROM_RECLAMO}WHERE r.RECLAMO_ID = %s",
+            [reclamo_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise ReclamoNoEncontrado()
+    return _fila_a_reclamo(row)
+
+
+def listar_reclamos(estado=None):
+    if estado is not None and estado not in {"EN_RECLAMO", "CERRADO"}:
+        raise ValueError(f"Estado no válido: {estado}")
+    condicion = " WHERE r.ESTADO = %s" if estado is not None else ""
+    parametros = [estado] if estado is not None else []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {_SEL_RECLAMO} {_FROM_RECLAMO}{condicion} "
+            "ORDER BY r.FECHA_RADICACION DESC, r.RECLAMO_ID DESC",
+            parametros,
+        )
+        filas = cursor.fetchall()
+    hoy = hoy_bogota()
+    return [_fila_a_reclamo(fila, hoy) for fila in filas]
+
+
+def crear_reclamo(data, usuario=None):
+    fecha_radicacion = data["fecha_radicacion"]
+    if fecha_radicacion > hoy_bogota():
+        raise FechaRadicacionFutura()
+
+    usuario_id = getattr(usuario, "pk", None)
+    fecha_limite = calcular_fecha_limite_reclamo(fecha_radicacion)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT OBLIGACION_ID FROM NEXOVOLT.NV_OBLIGACION "
+                "WHERE OBLIGACION_ID = %s FOR UPDATE",
+                [data["obligacion_id"]],
+            )
+            if cursor.fetchone() is None:
+                raise ObligacionNoEncontrada()
+            cursor.execute(
+                "SELECT RECLAMO_ID FROM NEXOVOLT.NV_RECLAMO "
+                "WHERE OBLIGACION_ID = %s AND ESTADO = 'EN_RECLAMO'",
+                [data["obligacion_id"]],
+            )
+            if cursor.fetchone() is not None:
+                raise ReclamoAbiertoExistente()
+            cursor.execute(
+                "SELECT TIPOLOGIA_ID FROM NEXOVOLT.NV_TIPOLOGIA_RECLAMO "
+                "WHERE CODIGO = %s AND CONFIRMADO = 'S'",
+                [data["tipologia"]],
+            )
+            tipologia = cursor.fetchone()
+            if tipologia is None:
+                raise TipologiaReclamoNoEncontrada()
+            cursor.execute("SELECT NEXOVOLT.SEQ_NV_RECLAMO.NEXTVAL FROM DUAL")
+            reclamo_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO NEXOVOLT.NV_RECLAMO "
+                "(RECLAMO_ID, OBLIGACION_ID, TIPOLOGIA_ID, FECHA_RADICACION, "
+                "OBSERVACION, ESTADO, FECHA_LIMITE_RESPUESTA, USUARIO_ID) "
+                "VALUES (%s, %s, %s, %s, %s, 'EN_RECLAMO', %s, %s)",
+                [
+                    reclamo_id,
+                    data["obligacion_id"],
+                    tipologia[0],
+                    fecha_radicacion,
+                    data.get("observacion"),
+                    fecha_limite,
+                    usuario_id,
+                ],
+            )
+
+    with tolerar_fallo_bitacora("RECLAMO_REGISTRADO"):
+        registrar_bitacora(
+            "RECLAMO_REGISTRADO",
+            "NV_RECLAMO",
+            str(reclamo_id),
+            f"Obligación {data['obligacion_id']}, tipología {data['tipologia']}",
+            usuario=usuario,
+        )
+    return _fetch_reclamo(reclamo_id)
+
+
+def cerrar_reclamo(reclamo_id, data, usuario=None):
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ESTADO, FECHA_RADICACION FROM NEXOVOLT.NV_RECLAMO "
+                "WHERE RECLAMO_ID = %s FOR UPDATE",
+                [reclamo_id],
+            )
+            fila = cursor.fetchone()
+            if fila is None:
+                raise ReclamoNoEncontrado()
+            if fila[0] == "CERRADO":
+                raise ReclamoYaCerrado()
+            fecha_radicacion = fila[1].date() if hasattr(fila[1], "date") else fila[1]
+            if data["fecha_cierre"] < fecha_radicacion:
+                raise FechaCierreAnterior()
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_RECLAMO "
+                "SET ESTADO = 'CERRADO', RESULTADO = %s, FECHA_CIERRE = %s, "
+                "OBSERVACION_CIERRE = %s, DESMARCACION_GENERADA = 'N' "
+                "WHERE RECLAMO_ID = %s",
+                [
+                    data["resultado"],
+                    data["fecha_cierre"],
+                    data.get("observacion_cierre"),
+                    reclamo_id,
+                ],
+            )
+
+    with tolerar_fallo_bitacora("RECLAMO_CERRADO"):
+        registrar_bitacora(
+            "RECLAMO_CERRADO",
+            "NV_RECLAMO",
+            str(reclamo_id),
+            f"Resultado: {data['resultado']}",
+            usuario=usuario,
+        )
+    return _fetch_reclamo(reclamo_id)
+
+
+def _formatear_insumo_reclamo(tipo, filas):
+    return "".join(
+        f"{fila[1]}|{fila[2]}|{fecha_str(fila[3]).replace('-', '')}\r\n"
+        for fila in filas
+    )
+
+
+def generar_insumo_reclamos(tipo):
+    if tipo not in {"marcacion", "desmarcacion"}:
+        raise ValueError("Usa marcacion o desmarcacion.")
+    if tipo == "marcacion":
+        condicion = "r.ESTADO = 'EN_RECLAMO' AND r.MARCACION_GENERADA = 'N'"
+        fecha = "r.FECHA_RADICACION"
+        bandera = "MARCACION_GENERADA"
+    else:
+        condicion = "r.ESTADO = 'CERRADO' AND r.DESMARCACION_GENERADA = 'N'"
+        fecha = "r.FECHA_CIERRE"
+        bandera = "DESMARCACION_GENERADA"
+
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT r.RECLAMO_ID, o.NUMERO_OBLIGACION_TU, t.CODIGO, "
+                f"{fecha} "
+                "FROM NEXOVOLT.NV_RECLAMO r "
+                "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = r.OBLIGACION_ID "
+                "JOIN NEXOVOLT.NV_TIPOLOGIA_RECLAMO t ON t.TIPOLOGIA_ID = r.TIPOLOGIA_ID "
+                f"WHERE {condicion} "
+                f"ORDER BY r.RECLAMO_ID FOR UPDATE OF r.RECLAMO_ID"
+            )
+            filas = cursor.fetchall()
+            for fila in filas:
+                cursor.execute(
+                    f"UPDATE NEXOVOLT.NV_RECLAMO SET {bandera} = 'S' "
+                    f"WHERE RECLAMO_ID = %s AND {bandera} = 'N'",
+                    [fila[0]],
+                )
+
+    contenido = _formatear_insumo_reclamo(tipo, filas)
+    if filas:
+        with tolerar_fallo_bitacora("INSUMO_RECLAMOS_GENERADO"):
+            registrar_bitacora(
+                "INSUMO_RECLAMOS_GENERADO",
+                "NV_RECLAMO",
+                tipo,
+                f"Registros incluidos: {len(filas)}",
+            )
+    return contenido
 
 
 def _fila_a_novedad(row):

@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from config.formatos import hoy_bogota
+
 
 class ItemCatalogoONuloSerializer(serializers.Serializer):
     codigo = serializers.CharField()
@@ -94,4 +96,59 @@ class EliminacionReactivarSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Ingresa el número de la activación en TransUnion."
             )
+        return value
+
+
+# ── RF23: Reclamos de Habeas Data ────────────────────────────────────────────
+
+class ReclamoSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    obligacion_id = serializers.IntegerField()
+    numero_obligacion = serializers.CharField()
+    nombre_titular = serializers.CharField(allow_null=True)
+    tipologia = ItemCatalogoONuloSerializer()
+    fecha_radicacion = serializers.CharField()
+    observacion = serializers.CharField(allow_null=True)
+    estado = serializers.ChoiceField(choices=["EN_RECLAMO", "CERRADO"])
+    radicado_en_tu = serializers.BooleanField()
+    fecha_limite_respuesta = serializers.CharField()
+    vencido = serializers.BooleanField()
+    resultado = serializers.CharField(allow_null=True)
+    fecha_cierre = serializers.CharField(allow_null=True)
+    observacion_cierre = serializers.CharField(allow_null=True)
+    registrado_por = serializers.CharField(allow_null=True)
+    fecha_registro = serializers.CharField()
+
+
+class ReclamoCreateSerializer(serializers.Serializer):
+    obligacion_id = serializers.IntegerField(min_value=1)
+    tipologia = serializers.CharField(max_length=20)
+    fecha_radicacion = serializers.DateField()
+    observacion = serializers.CharField(
+        max_length=500, required=False, allow_null=True, allow_blank=True,
+    )
+
+    def validate_fecha_radicacion(self, value):
+        if value > hoy_bogota():
+            raise serializers.ValidationError(
+                "La fecha de radicación no puede ser futura."
+            )
+        return value
+
+
+class ReclamoCerrarSerializer(serializers.Serializer):
+    resultado = serializers.CharField(max_length=30)
+    fecha_cierre = serializers.DateField()
+    observacion_cierre = serializers.CharField(
+        max_length=500, required=False, allow_null=True, allow_blank=True,
+    )
+
+    def validate_resultado(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Ingresa el resultado del reclamo.")
+        return value
+
+    def validate_observacion_cierre(self, value):
+        if value is not None and not value.strip():
+            return None
         return value

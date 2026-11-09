@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,7 +7,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from tests.ayudas import usuario_con_rol
 from novedades import servicios
-from novedades.views import EliminacionesViewSet, NovedadesViewSet
+from novedades.views import EliminacionesViewSet, NovedadesViewSet, ReclamosViewSet
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -453,3 +453,167 @@ def test_rf50_reactivar_ya_reactivada_409():
 
     assert response.status_code == 409
     assert "reactivada" in response.data["detail"]
+
+
+# ── RF23: Reclamos de Habeas Data ────────────────────────────────────────────
+
+_FILA_RECLAMO = (
+    7,
+    4,
+    "2260-5543",
+    "Diana Patricia Niño",
+    "01",
+    "PAGO NO REFLEJADO",
+    "S",
+    date(2026, 9, 22),
+    "El titular indica un pago realizado el 15/09.",
+    "EN_RECLAMO",
+    "N",
+    date(2026, 10, 14),
+    None,
+    None,
+    None,
+    "Juan Pérez",
+    datetime(2026, 9, 22, 9, 15),
+)
+
+
+def test_rf23_fecha_limite_excluye_fines_de_semana_y_festivos_colombianos():
+    assert servicios.calcular_fecha_limite_reclamo(date(2026, 9, 22)) == date(2026, 10, 14)
+
+
+def test_rf23_crear_reclamo_persiste_plazo_y_estado():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [
+        (4,),              # Obligación bloqueada para evitar reclamos concurrentes
+        None,              # No hay reclamo abierto
+        (2,),              # Tipología confirmada
+        (101,),            # SEQ_NV_RECLAMO.NEXTVAL
+        _FILA_RECLAMO,     # Reclamo consultado después del INSERT
+    ]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic), \
+         patch("novedades.servicios.registrar_bitacora"), \
+         patch("novedades.servicios.tolerar_fallo_bitacora", _noop_tolerar), \
+         patch("novedades.servicios.hoy_bogota", return_value=date(2026, 9, 22)):
+        reclamo = servicios.crear_reclamo(
+            {
+                "obligacion_id": 4,
+                "tipologia": "01",
+                "fecha_radicacion": date(2026, 9, 22),
+                "observacion": "El titular indica un pago realizado el 15/09.",
+            },
+            usuario=usuario_con_rol("ANALISTA_CARTERA"),
+        )
+
+    assert reclamo["estado"] == "EN_RECLAMO"
+    assert reclamo["fecha_limite_respuesta"] == "2026-10-14"
+    assert reclamo["radicado_en_tu"] is False
+    inserts = [call.args[0] for call in mock_cursor.execute.call_args_list]
+    assert any("INSERT INTO NEXOVOLT.NV_RECLAMO" in sql for sql in inserts)
+
+
+def test_rf23_segundo_reclamo_abierto_se_rechaza():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(4,), (7,)]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic):
+        with pytest.raises(servicios.ReclamoAbiertoExistente):
+            servicios.crear_reclamo(
+                {
+                    "obligacion_id": 4,
+                    "tipologia": "01",
+                    "fecha_radicacion": date(2026, 9, 22),
+                }
+            )
+
+    assert mock_cursor.execute.call_count == 2
+
+
+def test_rf23_tipologia_fuera_del_catalogo_devuelve_400():
+    factory = APIRequestFactory()
+    view = ReclamosViewSet.as_view({"post": "create"})
+    request = factory.post(
+        "/reclamos/",
+        {
+            "obligacion_id": 4,
+            "tipologia": "99",
+            "fecha_radicacion": "2026-09-22",
+        },
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    with patch(
+        "novedades.servicios.crear_reclamo",
+        side_effect=servicios.TipologiaReclamoNoEncontrada(),
+    ):
+        response = view(request)
+
+    assert response.status_code == 400
+    assert "tipologia" in response.data
+
+
+def test_rf23_cierre_con_fecha_anterior_devuelve_error_de_campo():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.return_value = ("EN_RECLAMO", date(2026, 9, 22))
+    factory = APIRequestFactory()
+    view = ReclamosViewSet.as_view({"post": "cerrar"})
+    request = factory.post(
+        "/reclamos/7/cerrar/",
+        {"resultado": "Procedente", "fecha_cierre": "2026-09-21"},
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic):
+        response = view(request, pk="7")
+
+    assert response.status_code == 400
+    assert "fecha_cierre" in response.data
+
+
+def test_rf23_generar_insumo_marcacion_marca_las_filas_procesadas():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchall.return_value = [
+        (7, "2260-5543", "01", date(2026, 9, 22)),
+    ]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic), \
+         patch("novedades.servicios.registrar_bitacora"), \
+         patch("novedades.servicios.tolerar_fallo_bitacora", _noop_tolerar):
+        resultado = servicios.generar_insumo_reclamos("marcacion")
+
+    assert resultado == "2260-5543|01|20260922\r\n"
+    assert any(
+        "SET MARCACION_GENERADA = 'S'" in call.args[0]
+        for call in mock_cursor.execute.call_args_list
+    )
+
+
+def test_rf23_segundo_insumo_marcacion_no_repite_filas():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchall.return_value = []
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.transaction.atomic", _noop_atomic):
+        resultado = servicios.generar_insumo_reclamos("marcacion")
+
+    assert resultado == ""
+    sql = mock_cursor.execute.call_args.args[0]
+    assert "MARCACION_GENERADA = 'N'" in sql
+
+
+def test_rf23_listado_alerta_reclamo_vencido():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchall.return_value = [_FILA_RECLAMO]
+
+    with patch("novedades.servicios.connection", mock_conn), \
+         patch("novedades.servicios.hoy_bogota", return_value=date(2026, 10, 15)):
+        reclamos = servicios.listar_reclamos()
+
+    assert reclamos[0]["vencido"] is True
