@@ -320,7 +320,8 @@ _CMD = "historial.management.commands.actualizar_estados_mensual"
 
 
 def test_comando_sin_argumentos():
-    with patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK) as mock_gc, \
+    with patch(f"{_CMD}.hoy_bogota", return_value=date(2026, 10, 10)), \
+         patch(f"{_CMD}.generar_corte", return_value=_RESULTADO_MOCK) as mock_gc, \
          patch(f"{_CMD}.registrar_bitacora"), \
          patch(f"{_CMD}.transaction.atomic", _noop_atomic):
         out = StringIO()

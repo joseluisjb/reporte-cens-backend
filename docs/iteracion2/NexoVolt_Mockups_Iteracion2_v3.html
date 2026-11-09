@@ -1,0 +1,2372 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexoVolt — Mockups Iteración 2 (v3)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Mulish:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bosque:#0D9648; --bosque-d:#0a7a3a; --citrico:#9FCF67; --gris:#A1A1A5;
+  --ink:#1E293B; --muted:#64748B; --line:#E2E8F0; --bg:#F8FAFC;
+  --hd:'Baloo 2','Trebuchet MS',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:'Mulish',system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--ink);background:var(--bg);font-size:14px;line-height:1.4}
+h1,h2,h3,p,ul{margin:0}
+ul{padding:0;list-style:none}
+a{color:inherit;text-decoration:none}
+button,input,select{font-family:inherit}
+:focus-visible{outline:2px solid var(--bosque);outline-offset:2px}
+.hd{font-family:var(--hd)}
+.mut{color:var(--muted)}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+[hidden]{display:none!important}
+
+/* ---------- controles ---------- */
+.lbl{display:block;font-size:14px;font-weight:600;margin-bottom:6px}
+.inp{width:100%;padding:12px 16px;font-size:14px;border-radius:8px;border:1px solid var(--gris);background:#fff;color:var(--ink)}
+.inp:focus{outline:none;border-color:var(--bosque);box-shadow:0 0 0 1px var(--bosque)}
+.inp[aria-invalid=true],.inp[aria-invalid=true]:focus{border-color:#DC2626;box-shadow:0 0 0 1px #DC2626}
+.inp:disabled{background:#F1F5F9;color:#94A3B8;cursor:not-allowed}
+.sel{appearance:none;-webkit-appearance:none;padding-right:40px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 14px center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid transparent;text-align:center;line-height:1.2}
+.btn-p{background:var(--bosque);color:#fff}
+.btn-p:hover{background:var(--bosque-d)}
+.btn-o{background:#fff;color:var(--bosque);border-color:var(--bosque)}
+.btn-o:hover{background:#F0FDF4}
+.btn-g{background:#fff;color:#334155;border-color:var(--gris)}
+.btn-g:hover{background:#F8FAFC}
+.btn-sm{padding:8px 16px;font-size:13px}
+.btn-lg{padding:14px;font-size:16px}
+.btn-block{display:flex;width:100%}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.link{display:block;text-align:center;margin-top:16px;font-size:14px;font-weight:500;color:var(--bosque)}
+.link:hover,.lnk:hover{text-decoration:underline}
+.lnk{color:var(--bosque);font-weight:600;text-decoration:underline}
+.err{margin-top:6px;font-size:13px;font-weight:600;color:#B91C1C}
+.pw{position:relative;margin-bottom:8px}
+.pw .inp{padding-right:44px}
+.eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:#94A3B8;padding:4px;display:flex;border-radius:6px}
+.eye:hover{color:#475569}
+.alert{display:flex;align-items:center;gap:8px;padding:10px 12px;margin:4px 0 20px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;font-size:14px;font-weight:500;color:#DC2626}
+
+/* ---------- login ---------- */
+.login{display:flex;min-height:100vh;background:#fff}
+.login-l{width:40%;flex-shrink:0;background:var(--bosque);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:56px}
+.login-li{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:flex-start}
+.eyebrow{font-size:20px;font-weight:700;margin-bottom:8px}
+.ltitle{font-size:36px;font-weight:700;line-height:1.2;margin:0 0 40px}
+.login-r{width:60%;display:flex;align-items:center;justify-content:center;padding:32px}
+.login-f{width:100%;max-width:380px;display:flex;flex-direction:column}
+.brand{font-size:34px;font-weight:700;margin-bottom:32px;color:var(--bosque)}
+.brand span{color:var(--citrico)}
+.lbl2{margin-top:20px}
+@media(max-width:900px){.login-l{display:none}.login-r{width:100%}}
+
+/* ---------- tarjetas centradas (cambio / recuperar) ---------- */
+.center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:#F4F3F7}
+.acard{width:100%;max-width:440px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.acard.sm{max-width:420px}
+.a-ico{display:flex;justify-content:center;margin-bottom:16px;color:var(--bosque)}
+.a-t{font-family:var(--hd);font-size:24px;font-weight:700;text-align:center;margin-bottom:8px}
+.a-s{font-size:14px;color:var(--muted);text-align:center;margin-bottom:28px}
+.fieldgap{margin-bottom:18px}
+.req{display:flex;flex-direction:column;gap:6px;padding:12px 14px;background:#F8FAFC;border-radius:8px;margin:12px 0 24px}
+.req div{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.req svg{color:var(--bosque)}
+
+/* ---------- layout de la aplicación ---------- */
+.app{display:flex;min-height:100vh;background:var(--bg)}
+.side{width:260px;flex-shrink:0;background:var(--bosque);color:#fff;display:flex;flex-direction:column;padding:24px 0;position:sticky;top:0;height:100vh;align-self:flex-start}
+.side :focus-visible{outline-color:#fff}
+.logo{font-size:24px;font-weight:700;padding:0 24px 32px}
+.logo b{color:var(--citrico)}
+.nav{display:flex;flex-direction:column;gap:4px;flex:1;overflow:auto}
+.nav a,.out{display:flex;align-items:center;gap:10px;padding:12px 20px;font-size:14px;font-weight:500;opacity:.9;color:#fff;background:none;border:0;width:100%;text-align:left;cursor:pointer}
+.nav a:hover,.out:hover{background:rgba(255,255,255,.08);opacity:1}
+.nav a[aria-current=page]{font-weight:600;background:rgba(255,255,255,.16);opacity:1}
+.nav a.locked{opacity:.7}
+.nav a svg{flex-shrink:0}
+.nav a .tag{font-size:9px;padding:2px 5px}
+.tag{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:10px;background:var(--citrico);color:var(--bosque);padding:2px 6px;border-radius:999px;font-weight:700;flex-shrink:0}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;justify-content:flex-end;align-items:center;padding:12px 32px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:30}
+.content{padding:32px}
+
+/* menú de perfil */
+.profile{position:relative}
+.pbtn{display:flex;align-items:center;gap:12px;padding:6px 10px;border-radius:10px;border:1px solid transparent;background:none;cursor:pointer;color:var(--ink);text-align:right}
+.pbtn:hover,.pbtn[aria-expanded=true]{background:#F1F5F9}
+.who{display:flex;flex-direction:column;align-items:flex-end}
+.who .n{font-size:14px;font-weight:600}
+.who .r{font-size:12px;color:var(--muted)}
+.av{color:var(--bosque);display:flex}
+.menu{position:absolute;right:0;top:calc(100% + 6px);width:290px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,.14);padding:6px;z-index:60}
+.mh{padding:12px 12px 12px;border-bottom:1px solid #F1F5F9;margin-bottom:6px;display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+.mh .n{font-weight:700;font-size:15px}
+.mh .e{font-size:12px;color:var(--muted);margin-bottom:6px}
+.mi{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;background:none;border-radius:8px;font-size:14px;font-weight:600;color:#334155;cursor:pointer;text-align:left}
+.mi:hover,.mi:focus-visible{background:#F0FDF4;color:var(--bosque)}
+.mi.danger{color:#B91C1C}
+.mi.danger:hover,.mi.danger:focus-visible{background:#FEF2F2;color:#B91C1C}
+.sep{height:1px;background:#F1F5F9;margin:6px 0}
+
+/* ---------- contenido común ---------- */
+.h1{font-family:var(--hd);font-size:28px;font-weight:700;margin:0 0 24px}
+.h2{font-family:var(--hd);font-size:20px;font-weight:700}
+.ph{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.ph .h1{margin:0}
+.ph-a{display:flex;gap:10px;flex-wrap:wrap}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px}
+.tw{overflow:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{background:#F8FAFC;text-align:left;padding:12px 20px;font-weight:600;color:var(--muted);white-space:nowrap}
+.tbl td{padding:12px 20px;border-top:1px solid #F1F5F9;vertical-align:middle}
+.tbl tbody tr:nth-child(even){background:#FAFAFA}
+.tbl td.off{color:#94A3B8}
+.tbl.compact th,.tbl.compact td{padding:12px 14px}
+.tbl .nw{white-space:nowrap}
+.tbl .gcol{min-width:150px}
+.tbl .ccol{min-width:230px}
+.tbl .ccol .chip{margin:2px 2px 2px 0}
+.bd{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.bd-ok{background:#DCFCE7;color:var(--bosque)}
+.bd-off{background:#F1F5F9;color:var(--muted)}
+.bd-adm{background:#EFF6FF;color:#1D4ED8}
+.chip{display:inline-block;padding:3px 9px;border-radius:6px;background:#F0FDF4;border:1px solid #BBF7D0;color:#166534;font-size:12px;font-weight:600;white-space:nowrap}
+.acts{display:flex;gap:10px;align-items:center;color:var(--muted)}
+.empty{padding:32px;text-align:center;color:var(--muted)}
+
+/* inicio */
+.feat{padding:24px;margin-bottom:20px}
+.feat-h{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.feat-h .grow{flex:1;min-width:200px}
+.feat-h .h2{font-size:20px}
+.ico{width:44px;height:44px;border-radius:12px;background:#F0FDF4;color:var(--bosque);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stats{display:grid;grid-template-columns:1.35fr 1.35fr 1fr 1fr;gap:16px;margin-top:20px}
+.stat .k,.k{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px}
+.stat .v{font-size:17px;font-weight:700}
+.stat .sub{font-size:13px;color:var(--muted);margin-top:1px}
+.feat-g{margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9;display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap}
+.cards2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.mini{padding:20px;display:flex;flex-direction:column;gap:8px}
+.mini svg{color:var(--citrico)}
+.mini .lbl-m{font-size:13px;color:var(--muted)}
+.mini .val{font-size:20px;font-weight:700}
+@media(max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.cards2{grid-template-columns:1fr}}
+
+/* parametrización */
+.tb{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+.sbox{display:flex;align-items:center;gap:8px;border:1px solid var(--gris);border-radius:8px;padding:9px 14px;width:280px;background:#fff;color:var(--muted)}
+.sbox input{border:0;outline:0;font-size:13px;flex:1;background:transparent;min-width:0}
+.fbox{display:flex;align-items:center;gap:8px;border:1px solid var(--gris);border-radius:8px;padding:9px 14px;font-size:13px;color:#334155;background:#fff}
+.sec{margin-top:36px}
+.sec-h{margin-bottom:16px}
+.sec-h p{margin-top:2px;color:var(--muted)}
+.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.gcard{padding:18px;display:flex;flex-direction:column;gap:10px}
+.g-h{display:flex;align-items:center;gap:10px}
+.g-ic{width:34px;height:34px;border-radius:9px;background:#F0FDF4;color:var(--bosque);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.g-n{font-family:var(--hd);font-size:18px;font-weight:700;line-height:1.2}
+.g-ch{display:flex;gap:6px;flex-wrap:wrap}
+.g-f{font-size:12px;color:var(--muted);margin-top:auto}
+@keyframes flc{from{background:#DCFCE7}to{background:#fff}}
+@keyframes flr{from{background:#DCFCE7}to{background:transparent}}
+.gcard.flash{animation:flc 2.6s ease-out}
+.flash td{animation:flr 2.6s ease-out}
+
+/* extracción */
+.ctl{padding:20px;margin-bottom:24px}
+.ctl-row{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.fld{min-width:190px}
+.fld.grow{flex:1;min-width:280px}
+.help{margin-top:14px;font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.proc{padding:20px;margin-bottom:24px}
+.proc-t{font-size:14px;font-weight:700;margin-bottom:12px}
+.prog{height:8px;background:#E2E8F0;border-radius:999px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--citrico);transition:width .5s ease}
+.steps{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.step{display:flex;gap:10px;align-items:center;font-size:13px;color:#334155}
+.step.pend{color:#94A3B8}
+.sic{width:16px;height:16px;display:flex;align-items:center;justify-content:center;color:var(--bosque);flex-shrink:0}
+.dot{width:8px;height:8px;border-radius:50%;border:2px solid #CBD5E1}
+.spin{width:14px;height:14px;border:2px solid #CBD5E1;border-top-color:var(--bosque);border-radius:50%;animation:sp .8s linear infinite}
+.btn .spin{border-color:rgba(255,255,255,.45);border-top-color:#fff}
+@keyframes sp{to{transform:rotate(360deg)}}
+.final-log{margin-top:16px;padding:12px 14px;border-radius:10px;background:#F0FDF4;border:1px solid #BBF7D0;display:flex;gap:6px 10px;align-items:center;flex-wrap:wrap;font-size:13px}
+.final-log svg{color:var(--bosque)}
+.res{margin-bottom:32px;overflow:hidden}
+.res-h{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
+.hist{margin-top:8px}
+.hist .sec-h{margin-bottom:12px}
+
+/* auditoría */
+.filt{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.filt .fbox{gap:8px}
+.card-h{display:flex;justify-content:flex-end;padding:14px 20px;border-bottom:1px solid var(--line)}
+
+/* restringido */
+.restr{max-width:520px;margin:48px auto;padding:36px;text-align:center}
+.restr .a-ico{color:var(--bosque)}
+
+/* ---------- modales ---------- */
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px}
+.dlg{background:#fff;border-radius:16px;width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden}
+.dlg>form{display:flex;flex-direction:column;min-height:0;flex:1}
+.dlg-h{padding:24px 28px 0}
+.dlg-h h2{font-family:var(--hd);font-size:22px;font-weight:700}
+.m-sub{margin-top:4px;color:var(--muted);font-size:13px}
+.dlg-b{padding:18px 28px;overflow:auto;flex:1}
+.dlg-f{padding:16px 28px 24px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #F1F5F9}
+.ov.side{justify-content:flex-end;padding:0}
+.ov.side .dlg{height:100vh;max-height:none;max-width:420px;border-radius:0}
+.ro{display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding:12px 14px;background:#F8FAFC;border-radius:8px;font-size:13px}
+.ro span{color:var(--muted)}
+.pick-h{display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px;gap:12px;flex-wrap:wrap}
+.pick-h .lbl{margin:0}
+.all{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--bosque);cursor:pointer}
+.pick{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pick label{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid #F1F5F9;cursor:pointer}
+.pick label:first-child{border-top:0}
+.pick label:hover{background:#F8FAFC}
+.pick label.dis{opacity:.6;cursor:not-allowed;background:#FAFAFA}
+.pick input,.all input,.pcard input{width:18px;height:18px;accent-color:var(--bosque);flex-shrink:0}
+.pc-code{font-weight:700;min-width:70px;font-size:13px}
+.pc-desc{flex:1;font-size:13px}
+.pick-c{margin-top:10px;font-size:13px;font-weight:600;color:var(--bosque)}
+.pcard{display:flex;align-items:center;gap:14px;padding:14px;border:1px solid var(--line);border-radius:12px;cursor:pointer;margin-bottom:10px}
+.pcard:hover{background:#F8FAFC}
+.pcard:has(input:checked){border-color:var(--bosque);background:#F0FDF4}
+.pc-av{color:var(--bosque);display:flex}
+.pc-t{flex:1;display:flex;flex-direction:column}
+.pc-t small{color:var(--muted);font-size:12px}
+
+/* toasts */
+#toast-root{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:#0f172a;color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;max-width:min(560px,92vw);transition:opacity .3s}
+.toast.ok .ti{color:var(--citrico)}
+.toast.err .ti{color:#FCA5A5}
+.toast.out{opacity:0}
+
+/* navegador de pantallas (solo para revisar la maqueta) */
+.snav{position:fixed;right:16px;bottom:16px;z-index:150;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.snav-b{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:999px;border:0;background:rgba(15,23,42,.88);color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.snav-b:hover{background:#0f172a}
+.snav-l{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,.18);padding:6px;min-width:300px}
+.snav-l a{display:block;padding:9px 12px;border-radius:8px;font-size:13px;font-weight:600;color:#334155}
+.snav-l a:hover{background:#F0FDF4;color:var(--bosque)}
+.snav-l a[aria-current=true]{background:#F0FDF4;color:var(--bosque)}
+
+/* ---------- Iteración 2: ciclo de vida, reporte y novedades ---------- */
+.nav-sec{padding:14px 20px 4px;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;opacity:.65}
+.bd-info{background:#EFF6FF;color:#1D4ED8}
+.bd-warn{background:#FEF3C7;color:#92400E}
+.bd-bad{background:#FEE2E2;color:#B91C1C}
+.bd-rec{background:#CCFBF1;color:#0F766E}
+.rf{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;background:#F1F5F9;color:var(--muted);font-size:11px;font-weight:700;white-space:nowrap}
+.h3{font-family:var(--hd);font-size:16px;font-weight:700;margin:0 0 10px}
+.num{text-align:right}
+.tbl th.num{text-align:right}
+.tbl.dense th,.tbl.dense td{padding:10px 12px}
+.stc{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.lnkb{background:none;border:0;padding:0;cursor:pointer;color:var(--bosque);font-weight:700;text-decoration:underline;font-size:13px}
+.lnkb:hover{color:var(--bosque-d)}
+.lk{display:inline-flex;vertical-align:middle;color:#64748B;margin-left:4px}
+.sub{font-size:11px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;font-family:inherit;color:var(--ink)}
+.kpi:hover{background:#F8FAFC}
+.kpi[aria-pressed=true]{border-color:var(--bosque);box-shadow:0 0 0 1px var(--bosque);background:#F0FDF4}
+.kpi.static{cursor:default}
+.kpi.static:hover{background:#fff}
+.kpi .kn{font-family:var(--hd);font-size:26px;font-weight:700;line-height:1.1}
+.kpi .kl{font-size:12px;color:var(--muted);font-weight:600}
+.mon-g{display:flex;gap:14px 28px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9}
+.mon-s{display:flex;align-items:center;gap:10px;font-size:13px}
+.note{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1E3A8A;font-size:13px;margin-bottom:20px}
+.note svg{flex-shrink:0;margin-top:1px}
+.note.warn{background:#FFFBEB;border-color:#FDE68A;color:#92400E}
+.note.err{background:#FEF2F2;border-color:#FECACA;color:#B91C1C}
+.note a{font-weight:700;text-decoration:underline}
+/* el panel lateral comparte la clase .side con el menú: se restablecen sus estilos */
+.ov.side{width:auto;height:auto;flex-direction:row;align-items:stretch;align-self:auto;color:var(--ink);padding:0}
+.ov.side.wide .dlg{max-width:540px}
+.dg{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:6px}
+.dg .k{margin-bottom:0}
+.dg b{font-size:14px}
+.dsec{margin-top:22px;padding-top:18px;border-top:1px solid #F1F5F9}
+.pos{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.pos li{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pay-prev{margin-top:10px;padding:10px 12px;background:#F8FAFC;border-radius:8px;font-size:13px;color:var(--muted)}
+.pay-prev.ok{background:#F0FDF4;color:#166534}
+.pay-b{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.tl{list-style:none;padding:0;margin:0}
+.tl li{position:relative;padding:0 0 16px 28px}
+.tl li:before{content:"";position:absolute;left:7px;top:18px;bottom:-2px;width:2px;background:#E2E8F0}
+.tl li:last-child:before{display:none}
+.tl li i{position:absolute;left:0;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--bosque)}
+.tl li.closed i{border-color:#3B82F6;background:#3B82F6}
+.tl .t-d{font-size:12px;color:var(--muted);font-weight:600;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tl .t-n{font-size:13px;margin-top:3px}
+.dbar{display:flex;height:14px;border-radius:999px;overflow:hidden;background:#E2E8F0;margin:18px 0 12px}
+.dbar i{display:block;height:100%}
+.s-01{background:#16A34A}.s-02{background:#3B82F6}.s-03{background:#F59E0B}.s-06{background:#DC2626}.s-07{background:#14B8A6}
+.leg{display:flex;gap:6px 18px;flex-wrap:wrap;font-size:13px}
+.leg .sw-c{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+.cards3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-bottom:20px}
+a.mini:hover{background:#F8FAFC}
+.chk{list-style:none;padding:0;margin:0}
+.chk li{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-top:1px solid #F1F5F9}
+.chk li:first-child{border-top:0;padding-top:0}
+.chk .ci{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.chk .ci.ok{background:#DCFCE7;color:var(--bosque)}
+.chk .ci.bad{background:#FEE2E2;color:#B91C1C}
+.chk .ci.inf{background:#EFF6FF;color:#1D4ED8}
+.chk b{display:block;font-size:14px}
+.chk .cd{font-size:13px;color:var(--muted);margin-top:2px}
+.chips-ro{display:flex;gap:8px;flex-wrap:wrap}
+.chips-ro .bd{background:#F1F5F9;color:#334155}
+.pre{background:#0F172A;color:#E2E8F0;border-radius:10px;padding:14px 16px;font-size:12px;line-height:1.65;overflow:auto;white-space:pre}
+.pre .rul{color:#64748B}
+.resf{padding:20px;margin-bottom:24px}
+.resf-g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:16px 0}
+.resf-a{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.pill{padding:8px 14px;border-radius:999px;border:1px solid var(--gris);background:#fff;font-size:13px;font-weight:600;color:#334155;cursor:pointer;font-family:inherit}
+.pill:hover{background:#F8FAFC}
+.pill[aria-pressed=true]{background:var(--bosque);border-color:var(--bosque);color:#fff}
+.flow{display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;margin-bottom:24px}
+.fl-b{flex:1;min-width:210px;padding:16px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:13px}
+.fl-b b{display:block;font-size:14px;margin-bottom:4px}
+.fl-n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--bosque);color:#fff;font-size:12px;font-weight:700;margin-bottom:8px}
+.fl-a{display:flex;align-items:center;color:var(--muted)}
+.ta{width:100%;padding:12px 16px;font-size:14px;border-radius:8px;border:1px solid var(--gris);background:#fff;color:var(--ink);font-family:inherit;resize:vertical;min-height:84px}
+.ta:focus{outline:none;border-color:var(--bosque);box-shadow:0 0 0 1px var(--bosque)}
+.ta[aria-invalid=true]{border-color:#DC2626;box-shadow:0 0 0 1px #DC2626}
+.steps2{margin:14px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.steps2 li{display:flex;gap:10px;font-size:13px;align-items:flex-start}
+.steps2 .fl-n{margin:0;flex-shrink:0}
+.snav{z-index:90}
+.snav-l{max-height:72vh;overflow:auto}
+.snav-l small{display:block;color:var(--muted);font-weight:500;font-size:11px;margin-top:1px}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.cards3{grid-template-columns:1fr}.resf-g{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* modo limpio: pensado para capturar pantallas completas (Figma, impresión) */
+.limpio .app>.side{position:static;height:auto;align-self:stretch}
+.limpio .top{position:static}
+.limpio #snav,.limpio #toast-root{display:none}
+
+@media(max-width:900px){.side{width:200px}.content{padding:20px}.top{padding:10px 16px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* v3 · ajustes a los requerimientos corregidos */
+.ci.warn{background:#FEF3C7;color:#92400E}
+.mx td,.mx th{text-align:center;padding:6px 4px;font-size:12px}
+.mx th.rh{text-align:left;white-space:nowrap}
+.mx .mS{color:var(--bosque);font-weight:700;background:#F0FDF4}
+.mx .mN{color:#B91C1C;background:#FEF2F2}
+.pc-tag{display:inline-block;font-size:11px;font-weight:700;color:#92400E;background:#FEF3C7;border-radius:6px;padding:1px 6px;margin-left:6px}
+.ent-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:760px){.ent-g{grid-template-columns:1fr}}
+.vt{width:100%;border-collapse:collapse;font-size:13px}
+.vt td,.vt th{padding:6px 8px;border-bottom:1px solid #E5E7EB;text-align:left}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+<div id="snav" class="snav" hidden></div>
+<noscript>Esta maqueta interactiva requiere JavaScript.</noscript>
+
+<script>
+(function(){
+'use strict';
+
+/* =====================================================================
+   Utilidades
+   ===================================================================== */
+const $  = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const fmtD   = d => pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear();
+const fmtT   = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
+const fmtDT  = d => fmtD(d) + ' ' + fmtT(d);
+const fmtLong= d => d.getDate() + ' de ' + MONTHS[d.getMonth()] + ' de ' + d.getFullYear();
+const isoP   = iso => iso.split('-').map(Number);
+const fmtISO     = iso => { const p = isoP(iso); return pad(p[2]) + '/' + pad(p[1]) + '/' + p[0]; };
+const fmtISOLong = iso => { const p = isoP(iso); return p[2] + ' de ' + MONTHS[p[1] - 1] + ' de ' + p[0]; };
+const fmtCOP = n => '$' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const plural = (n, s, p) => n + ' ' + (n === 1 ? s : p);
+
+/* =====================================================================
+   Iconos (trazo, sin emojis)
+   ===================================================================== */
+const ICON = {
+  home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  bolt:'<polygon points="13 2 3 14 11 14 9 22 21 10 13 10 13 2"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>',
+  avatar:'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="9" r="3"/><path d="M6 19c0-3 3-5 6-5s6 2 6 5"/>',
+  shield:'<path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  check:'<path d="M8 12l2.5 2.5L16 9"/>',
+  checkCircle:'<circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/>',
+  search:'<circle cx="10" cy="10" r="7"/><line x1="21" y1="21" x2="15.5" y2="15.5"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+  plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  download:'<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/>',
+  refresh:'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  chevron:'<polyline points="6 9 12 15 18 9"/>',
+  eye:'<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff:'<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="3" x2="21" y2="21"/>',
+  lock:'<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  mail:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 6l10 7 10-7"/>',
+  warn:'<path d="M12 3l10 18H2L12 3z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>',
+  layers:'<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  swap:'<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/>',
+  flag:'<path d="M4 22V4"/><path d="M4 4h14l-2.5 4.5L18 13H4"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  list:'<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+  arrow:'<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+  ext:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+  link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  wallet:'<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+  info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r=".6" fill="currentColor"/>',
+  xCircle:'<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+  x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'
+};
+function ic(name, size, sw){
+  return '<svg width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (sw || 2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[name] + '</svg>';
+}
+function sw(on){
+  return on
+    ? '<svg width="30" height="17" viewBox="0 0 36 20" aria-hidden="true"><rect x="1" y="1" width="34" height="18" rx="9" fill="#0D9648" stroke="#0D9648"/><circle cx="26" cy="10" r="6" fill="#fff"/></svg>'
+    : '<svg width="30" height="17" viewBox="0 0 36 20" aria-hidden="true"><rect x="1" y="1" width="34" height="18" rx="9" fill="none" stroke="#A1A1A5" stroke-width="2"/><circle cx="10" cy="10" r="6" fill="#A1A1A5"/></svg>';
+}
+
+/* =====================================================================
+   Datos de ejemplo (todo es ficticio)
+   ===================================================================== */
+const OBL = [
+  {num:'2257-4156', nombre:'Carlos Andrés Rueda',         concepto:'30', saldo:1276016, dias:23,  edad:'00 - Normal'},
+  {num:'2258-7731', nombre:'María Fernanda Ortiz',        concepto:'3625', saldo:842300,  dias:47,  edad:'01 - Mora 30'},
+  {num:'2259-1092', nombre:'Jorge Iván Salcedo',          concepto:'3588', saldo:0,       dias:0,   edad:'00 - Normal'},
+  {num:'2260-5543', nombre:'Diana Patricia Niño',         concepto:'3801', saldo:3112450, dias:112, edad:'03 - Mora 90'},
+  {num:'2261-8820', nombre:'Luis Fernando Cáceres',       concepto:'30', saldo:498700,  dias:15,  edad:'00 - Normal'},
+  {num:'2262-3318', nombre:'Centro Educativo Las Palmas', concepto:'3839', saldo:1904120, dias:38,  edad:'01 - Mora 30'}
+];
+function runQuery(codes){
+  const rows = OBL.filter(o => codes.indexOf(o.concepto) > -1);
+  return {rows:rows, count:rows.length, total:rows.reduce((a, o) => a + o.saldo, 0)};
+}
+const ALL_ACTIVE = ['30','3625','3588','3801','3839'];
+const q0 = runQuery(ALL_ACTIVE);
+
+const S = {
+  route:'login',
+  userId:'u1',
+  ui:{recoverSent:false, xGroup:'', xCut:'2026-09-30'},
+  run:null, lastResult:null, flashId:null, flashGroup:null,
+  users:[
+    {id:'u1', nombre:'Juan Pérez',       correo:'jperez@example.com',    tel:'', rol:'Analista de Cartera', estado:'Activo',   ultimo:new Date(2026,8,30,8,14)},
+    {id:'u2', nombre:'Rosa Martínez',    correo:'rmartinez@example.com', tel:'', rol:'Administrador',       estado:'Activo',   ultimo:new Date(2026,8,30,9,2)},
+    {id:'u3', nombre:'Carlos Sánchez',   correo:'csanchez@example.com',  tel:'', rol:'Analista de Cartera', estado:'Activo',   ultimo:new Date(2026,8,29,17,40)},
+    {id:'u4', nombre:'Ana Lucía Vargas', correo:'avargas@example.com',   tel:'', rol:'Analista de Cartera', estado:'Inactivo', ultimo:new Date(2026,5,2,11,5)},
+    {id:'u5', nombre:'Pablo Rincón',    correo:'princon@example.com',   tel:'', rol:'Administrador',       estado:'Activo',   ultimo:new Date(2026,8,30,7,51)},
+    {id:'u6', nombre:'Diana Niño',       correo:'dnino@example.com',     tel:'', rol:'Analista de Cartera', estado:'Activo',   ultimo:new Date(2026,8,30,10,22)}
+  ],
+  concepts:[
+    {code:'30',   desc:'Cuota financiación consumo de energía',      estado:'Activo',   fecha:'12/01/2024'},
+    {code:'3625', desc:'Cuota financiación energía no regulados',    estado:'Activo',   fecha:'12/01/2024'},
+    {code:'3588', desc:'Cuota recuperación energía dejada de facturar', estado:'Activo', fecha:'03/03/2024'},
+    {code:'3801', desc:'Cuota energía recuperada CRPE',              estado:'Activo',   fecha:'03/03/2024'},
+    {code:'3839', desc:'Cuota financiación energía recargable',      estado:'Activo',   fecha:'03/03/2024'},
+    {code:'3705', desc:'Alumbrado público (migración)',              estado:'Inactivo', fecha:'19/06/2024'},
+    {code:'—',    desc:'Aseo, medidores y terceros (excluidos del alcance)', estado:'Excluido', fecha:'—'}
+  ],
+  groups:[
+    {id:'g1', nombre:'Todos los conceptos activos', codes:ALL_ACTIVE.slice(),          creado:new Date(2026,7,15,10,0),  por:'Rosa Martínez'},
+    {id:'g2', nombre:'Consumo y no regulados',      codes:['30','3625'],         creado:new Date(2026,8,5,9,30),   por:'Rosa Martínez'},
+    {id:'g3', nombre:'Recuperaciones de energía',   codes:['3588','3801'],         creado:new Date(2026,8,5,9,41),   por:'Rosa Martínez'}
+  ],
+  extractions:[
+    {id:'x2', ts:new Date(2026,8,30,9,12), user:'Juan Pérez',     cut:'2026-09-30', groupId:'g1', groupName:'Todos los conceptos activos', codes:ALL_ACTIVE.slice(),   count:q0.count, total:q0.total},
+    {id:'x1', ts:new Date(2026,8,15,10,5), user:'Carlos Sánchez', cut:'2026-08-31', groupId:'g2', groupName:'Consumo y no regulados',       codes:['30','3625'], count:3,        total:2484100}
+  ],
+  audit:[
+    {ts:new Date(2026,8,30,9,12),  user:'Juan Pérez',     rol:'Analista',      action:'Extracción de cartera ejecutada', module:'Extracción',      detail:'Corte 30/09/2026 · Grupo: Todos los conceptos activos'},
+    {ts:new Date(2026,8,30,9,5),   user:'Rosa Martínez',  rol:'Administrador', action:'Usuario creado',                  module:'Usuarios',        detail:'María Gómez'},
+    {ts:new Date(2026,8,29,16,40), user:'Rosa Martínez',  rol:'Administrador', action:'Código de concepto desactivado',  module:'Parametrización', detail:'3705 Alumbrado público (migración)'},
+    {ts:new Date(2026,8,29,14,22), user:'Carlos Sánchez', rol:'Analista',      action:'Consulta de obligación',          module:'Extracción',      detail:'N° 2257-4156'},
+    {ts:new Date(2026,8,28,11,3),  user:'Juan Pérez',     rol:'Analista',      action:'Inicio de sesión',                module:'Seguridad',       detail:'IP 10.20.4.112'},
+    {ts:new Date(2026,8,27,18,55), user:'Pablo Rincón',  rol:'Administrador', action:'Usuario desactivado',             module:'Usuarios',        detail:'Ana Lucía Vargas'},
+    {ts:new Date(2026,8,26,8,30),  user:'Diana Niño',     rol:'Analista',      action:'Corrección de obligación',        module:'Extracción',      detail:'N° 2260-5543'},
+    {ts:new Date(2026,8,25,13,48), user:'Rosa Martínez',  rol:'Administrador', action:'Código de concepto creado',       module:'Parametrización', detail:'3801 Energía recuperada CRPE'}
+  ]
+};
+const STEPS = ['Extracción de deudores vigentes','Aislamiento de conceptos de energía','Consolidación de pagos y saldos','Cálculo de días de mora (Tabla 9)','Unificación de número de obligación'];
+
+/* =====================================================================
+   Iteración 2 — datos de ejemplo (todo es ficticio)
+   Estados de la obligación (HU-B) y ciclo de vida
+   ===================================================================== */
+const EST = {
+  '01':{n:'Vigente',            cls:'bd-ok',   closed:false},
+  '02':{n:'Saldada',            cls:'bd-info', closed:true},
+  '03':{n:'Dudoso Recaudo',     cls:'bd-warn', closed:false},
+  '04':{n:'Suspendida',         cls:'bd-off',  closed:false},
+  '06':{n:'Castigada',          cls:'bd-bad',  closed:false},
+  '07':{n:'Cartera Recuperada', cls:'bd-rec',  closed:true},
+  '08':{n:'Inactivo',           cls:'bd-off',  closed:false},
+  '10':{n:'Ley 550',            cls:'bd-off',  closed:false},
+  '11':{n:'Ley 1116',           cls:'bd-off',  closed:false},
+  '12':{n:'Ley 1564',           cls:'bd-off',  closed:false}
+};
+const EST_ORDER = ['01','03','06','02','07'];                         // los 5 estados que usa CENS
+const MX_ORDER  = ['01','02','04','08','06','07','03','10','11','12']; // columnas de la matriz de la p. 40
+/* Matriz de cambios de estado · Sector Real Servicios (Manual v34, p. 40).
+   Fila = estado del corte anterior (n = sin mora, m = con mora). Cada letra es una columna,
+   en el orden de MX_ORDER y con n y m alternados. S = TransUnion lo acepta, N = lo rechaza (error 713). */
+const MX = {
+  '01n':'SSSNNNSSNSNNNSSSSSSS', '01m':'SSSNNSSSNSNNNSSSSSSS',
+  '02n':'NNNNNNNNNNNNNNNNNNNN', '02m':'NNNNNNNNNNNNNNNNNNNN',
+  '04n':'NNNNSSSSNNNNNNNNNNNN', '04m':'NNNNSSSSNSNNNSNNNNNN',
+  '08n':'SSSNNNSSNSNNNNNNNNNN', '08m':'SSSNNNSSNSNNNSNNNNNN',
+  '06n':'NNNNNNNNNNNNNNNNNNNN', '06m':'SSNNNNNNNSSNNNSSSSSS',
+  '07n':'NNNNNNNNNNNNNNNNNNNN', '07m':'NNNNNNNNNNNNNNNNNNNN',
+  '03n':'NNNNNNNNNNNNNNNNNNNN', '03m':'SSNNNNNNNSSNNSSSSSSS',
+  '10n':'SSNNNNNNNSNNNSSSNNNN', '10m':'SSNNNNNNNSNNNSSSNNNN',
+  '11n':'SSNNNNSSNSNNNSNNSSNN', '11m':'SSNNSSSSNSNNNSNNSSNN',
+  '12n':'SSNNNSSSNSNNNSNNNNSS', '12m':'SSNNNSSSNSNNNSNNNNSS'
+};
+const mxOK = (de, deM, a, aM) => MX[de + (deM ? 'm' : 'n')].charAt(MX_ORDER.indexOf(a) * 2 + (aM ? 1 : 0)) === 'S';
+/* Primer reporte (p. 38-39): nunca Cartera Recuperada; Dudoso solo con mora; Castigada solo con mora y edad 01 o mayor. */
+const primerOK = (est, conMora, edad) => est !== '07' && !(est === '03' && !conMora) && !(est === '06' && !(conMora && edad >= 1));
+
+/* Tabla 9 · Edad de mora: 00 a 11 en tramos de 30 días; 12 = 360-539; 13 = 540-729; 14 = 730 o más. */
+const edadCod = d => d < 360 ? Math.floor(d / 30) : d < 540 ? 12 : d < 730 ? 13 : 14;
+const EDAD_TXT = {0:'Normal', 12:'Mora 360', 13:'Mora 540', 14:'Mora 730+'};
+const edadTxt = d => { const c = edadCod(d); return pad(c) + ' - ' + (EDAD_TXT[c] || 'Mora ' + (c * 30)); };
+
+const isoD     = iso => { const p = isoP(iso); return Date.UTC(p[0], p[1] - 1, p[2]); };
+const diasEntre= (a, b) => Math.round((isoD(b) - isoD(a)) / 86400000);
+const finMes   = iso => { const p = isoP(iso), d = new Date(Date.UTC(p[0], p[1], 0)); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };
+const esFinMes = iso => finMes(iso) === iso;
+const enMes    = (cutIso, dia) => cutIso.slice(0, 8) + pad(Math.min(dia, +cutIso.slice(8, 10)));
+const v  = (f, val) => ({f:f, v:val});
+const ev = (f, est, t, edad) => ({f:f, est:est, edad:edad || '00', t:t});
+const mkO = o => Object.assign({cuotaOrig:null, refOrig:null, refDest:null, reclamo:false, nuevo:false, venc:[], pagos:[], dia:15, atrPerm:4,
+  caducado:false, castigo:false, primer:false, eliminada:false, reestr:false, nRestr:0, nat:null, cierre:null, pagoMora:null}, o);
+
+/* Recalcula al corte: mora = cuotas vencidas sin pagar; días desde la más antigua (RF7, RF49); cuotas en mora (RF19). */
+function recalc(o, cut){
+  const pend = o.venc.filter(x => x.v > 0).sort((a, b) => a.f < b.f ? -1 : 1);
+  o.mora = pend.reduce((a, x) => a + x.v, 0);
+  o.cuotasAtr = pend.length;
+  o.exig = pend.length ? pend[0].f : null;
+  o.dias = pend.length ? Math.max(0, diasEntre(pend[0].f, cut)) : 0;
+}
+
+const TIPOS_RECLAMO = ['Información incorrecta','Pago no reflejado','Titular no reconoce la obligación','Suplantación de identidad'];
+/* Tabla 11 del manual (en el anexo aparece como "Tabla 5"): naturaleza de la reestructuración. */
+const NATURALEZAS = ['01 · Ley 550','02 · Concordato','03 · Ley 617','04 · Acuerdo acreedores o privado','05 · Extraordinaria','06 · Ordinaria','07 · Otra','08 · Ley 1116','09 · Ley 546'];
+const TIPOS_NOV = ['Inclusión','Actualización','Corrección','Eliminación'];
+const OBL_RE = /^[A-Za-z0-9()*,\-.\/\\_¯·]{1,20}$/;   // máx. 20 caracteres y solo los especiales permitidos
+
+Object.assign(S.ui, {oEst:'', oQ:'', detNum:null, rCut:'2026-09-30', cCut:'2026-10-31', nvTab:'todas', resFile:null});
+Object.assign(S, {
+  chg:{}, flashRow:null, cy:null, cyRes:null, rp:null, rpRes:null,
+  ent:{tipo:'XXX', cod:'XXX', suc:'XXXXXX'},
+  cuts:['2026-09-30'],
+  obls:[
+    mkO({num:'2257-4156', nombre:'Carlos Andrés Rueda', concepto:'30', est:'01', saldo:1276016, cuota:98000, dia:7, ingreso:'2026-03-31',
+      venc:[v('2026-09-07',98000)], ev:[
+      ev('2026-03-31','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-09-30','01','Una cuota sin pagar: 23 días de mora (edad 00, con valor en mora)')]}),
+    mkO({num:'2258-7731', nombre:'María Fernanda Ortiz', concepto:'3625', est:'01', saldo:842300, cuota:70000, dia:14, ingreso:'2026-02-28',
+      venc:[v('2026-08-14',70000), v('2026-09-14',70000)], ev:[
+      ev('2026-02-28','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-08-31','01','Primera cuota sin pagar: 17 días de mora'),
+      ev('2026-09-30','01','Dos cuotas sin pagar: 47 días desde la más antigua, edad 01','01')]}),
+    mkO({num:'2259-1092', nombre:'Jorge Iván Salcedo', concepto:'3588', est:'02', saldo:0, cuota:0, cuotaOrig:85000, ingreso:'2025-11-30',
+      cierre:{cut:'2026-09-30', fecha:'2026-09-12', modo:'01 · Voluntario', tipo:'01 · Voluntario'}, ev:[
+      ev('2025-11-30','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-08-31','01','Una cuota sin pagar: 20 días de mora'),
+      ev('2026-09-12','02','Pago total: pasa a Saldada (02). Fecha de pago 12/09/2026, modo de extinción 01, tipo de pago 01'),
+      ev('2026-09-30','02','Se reporta como Saldada en este corte, una sola vez')]}),
+    mkO({num:'2260-5543', nombre:'Diana Patricia Niño', concepto:'3801', est:'01', saldo:3112450, cuota:215000, dia:10, atrPerm:6, ingreso:'2025-12-31', reclamo:true,
+      venc:[v('2026-06-10',215000), v('2026-07-10',215000), v('2026-08-10',215000), v('2026-09-10',215000)], ev:[
+      ev('2025-12-31','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-06-30','01','Primera cuota sin pagar: 20 días de mora'),
+      ev('2026-07-31','01','51 días desde la cuota más antigua sin pagar','01'),
+      ev('2026-08-31','01','82 días desde la cuota más antigua sin pagar','02'),
+      ev('2026-09-22','01','Marcada en reclamo Habeas Data (Pago no reflejado). Se sigue reportando','03'),
+      ev('2026-09-30','01','112 días. Su crédito caduca en el SAC a las 6 cuotas atrasadas (lleva 4)','03')]}),
+    mkO({num:'2261-8820', nombre:'Luis Fernando Cáceres', concepto:'30', est:'01', saldo:498700, cuota:41000, dia:15, ingreso:'2026-01-31',
+      venc:[v('2026-09-15',41000)], ev:[
+      ev('2026-01-31','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-09-30','01','Una cuota sin pagar: 15 días de mora')]}),
+    mkO({num:'2262-3318', nombre:'Centro Educativo Las Palmas', concepto:'3839', est:'01', saldo:1904120, cuota:160000, dia:23, ingreso:'2026-04-30', reclamo:true,
+      venc:[v('2026-08-23',160000), v('2026-09-23',160000)], ev:[
+      ev('2026-04-30','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-08-31','01','Primera cuota sin pagar: 8 días de mora'),
+      ev('2026-09-18','01','Marcada en reclamo Habeas Data (Información incorrecta). Se sigue reportando'),
+      ev('2026-09-30','01','38 días desde la cuota más antigua sin pagar','01')]}),
+    mkO({num:'2250-0987', nombre:'Hotel Mirador Cúcuta', concepto:'3588', est:'03', saldo:5420000, cuota:270000, dia:27, caducado:true, ingreso:'2025-06-30',
+      venc:[v('2026-04-27',270000), v('2026-05-27',270000), v('2026-06-27',270000), v('2026-07-27',270000), v('2026-08-27',270000), v('2026-09-27',270000)], ev:[
+      ev('2025-06-30','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-07-31','03','Crédito caducado en el SAC (4 cuotas atrasadas): pasa a Dudoso Recaudo (03)','03'),
+      ev('2026-09-30','03','156 días desde la cuota más antigua sin pagar','05')]}),
+    mkO({num:'2244-6410', nombre:'Transportes Catatumbo S.A.S.', concepto:'3801', est:'06', saldo:2980000, cuota:190000, dia:2, caducado:true, castigo:true, ingreso:'2025-01-31',
+      venc:[v('2026-02-02',190000), v('2026-03-02',190000), v('2026-04-02',190000), v('2026-05-02',190000), v('2026-06-02',190000), v('2026-07-02',190000), v('2026-08-02',190000), v('2026-09-02',190000)], ev:[
+      ev('2025-01-31','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-05-31','03','Crédito caducado en el SAC: pasa a Dudoso Recaudo (03)','03'),
+      ev('2026-07-31','06','CENS la castigó contablemente (marca de castigo del SAC): pasa a Castigada (06)','05'),
+      ev('2026-09-30','06','240 días desde la cuota más antigua sin pagar','08')]}),
+    mkO({num:'2241-3302', nombre:'Panadería El Trigal', concepto:'30', est:'07', saldo:0, cuota:0, ingreso:'2025-02-28',
+      cierre:{cut:'2026-08-31', fecha:'2026-08-20', modo:'01 · Voluntario', tipo:'01 · Voluntario'}, ev:[
+      ev('2025-02-28','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-02-28','03','Crédito caducado en el SAC: pasa a Dudoso Recaudo (03)','04'),
+      ev('2026-08-20','07','Pago total estando en Dudoso Recaudo: pasa a Cartera Recuperada (07)'),
+      ev('2026-08-31','07','Se reportó como Cartera Recuperada en el corte 31/08/2026. Desde septiembre ya no se reporta')]}),
+    mkO({num:'2263-9004', nombre:'Ferretería La Esquina', concepto:'3588', est:'01', saldo:1450000, cuota:120000, ingreso:'2026-09-30', nuevo:true, primer:true, ev:[
+      ev('2026-09-30','01','Ingresa en este corte: primer reporte en Vigente (01), al día')]}),
+    mkO({num:'2255-7788', nombre:'Inversiones Pamplona S.A.S.', concepto:'3801', est:'02', saldo:0, cuota:0, cuotaOrig:230000, ingreso:'2025-08-31', refDest:'2271-5502',
+      cierre:{cut:'2026-09-30', fecha:'2026-09-28', modo:'16 · Refinanciación', tipo:'02 · No voluntario'}, ev:[
+      ev('2025-08-31','01','Primer reporte en Vigente (01), al día'),
+      ev('2026-09-28','02','Refinanciada: se cierra en Saldada (02) con modo de extinción 16 Refinanciación')]}),
+    mkO({num:'2271-5502', nombre:'Inversiones Pamplona S.A.S.', concepto:'3801', est:'01', saldo:4380000, cuota:165000, ingreso:'2026-09-28', refOrig:'2255-7788',
+      primer:true, reestr:true, nRestr:1, nat:'07 · Otra', ev:[
+      ev('2026-09-28','01','Nueva obligación por la refinanciación de 2255-7788: primer reporte en Vigente (01), marcada como reestructurada')]})
+  ],
+  /* Financiaciones nuevas que trae la próxima extracción del SAC: entran con su estado y su mora reales (RF10). */
+  nuevas:[
+    {num:'2265-2208', nombre:'Panadería La Espiga',       concepto:'30',   saldo:612000,  cuota:51000,  dia:15, venc:[]},
+    {num:'2266-7745', nombre:'Colegio San Rafael',        concepto:'3839', saldo:2210000, cuota:184000, dia:5,  atrPerm:6, venc:[v('2026-09-05',184000), v('2026-10-05',184000)]},
+    {num:'2267-3361', nombre:'Taller Mecánico Los Pinos', concepto:'3588', saldo:934000,  cuota:78000,  dia:10, caducado:true,
+      venc:[v('2026-07-10',78000), v('2026-08-10',78000), v('2026-09-10',78000), v('2026-10-10',78000)]}
+  ],
+  cycles:[
+    {id:'c1', ts:new Date(2026,8,30,10,2), user:'Juan Pérez', cut:'2026-09-30', primer:2, cambios:2, cierres:2, rech:0}
+  ],
+  refis:[
+    {id:'rf1', ts:new Date(2026,8,28,15,20), user:'Juan Pérez', orig:'2255-7788', nueva:'2271-5502', saldo:4380000, nat:'07 · Otra', cierre:'02', cuotas:36}
+  ],
+  files:[
+    {id:'f1', ts:new Date(2026,8,1,9,20), user:'Carlos Sánchez', cut:'2026-08-31', tipo:'TOTAL', n:9, saldo:19844130, excl:0, name:'SSRXXXXXX20260831', apto:false, enviado:false, res:null}
+  ],
+  claims:[
+    {id:'r1', num:'2260-5543', nombre:'Diana Patricia Niño',         tip:'Pago no reflejado',                 fecha:'2026-09-22', estado:'En reclamo', radicado:false, obs:'El titular indica un pago realizado el 15/09.'},
+    {id:'r2', num:'2262-3318', nombre:'Centro Educativo Las Palmas', tip:'Información incorrecta',            fecha:'2026-09-18', estado:'En reclamo', radicado:true,  obs:'Dirección de contacto desactualizada.'},
+    {id:'r3', num:'2241-3302', nombre:'Panadería El Trigal',         tip:'Titular no reconoce la obligación', fecha:'2026-08-30', estado:'Cerrado',    radicado:true,  cierre:'2026-09-20', res:'Procedente', cerradoArchivo:false, obs:'Se corrigió el titular de la obligación.'}
+  ],
+  novs:[
+    {id:'n1', tipo:'Actualización', suj:'Obligación', ref:'2260-5543', motivo:'Pago del titular posterior al corte: se actualiza sin esperar al próximo reporte', det:'2026-09-29', estado:'Pendiente', origen:'Automática'},
+    {id:'n2', tipo:'Corrección',    suj:'Obligación', ref:'2258-7731', motivo:'El corte 31/08/2026 reportó un valor en mora errado (rectificación)', det:'2026-09-30', estado:'Pendiente', origen:'Manual', corte:'2026-08-31', medio:'Actualización en Línea'},
+    {id:'n3', tipo:'Actualización', suj:'Obligación', ref:'2262-3318', motivo:'Cambio de dirección de contacto del titular', det:'2026-09-24', estado:'Gestionada', origen:'Manual', conf:'TU-AL-001532', gest:'2026-09-24'},
+    {id:'n4', tipo:'Eliminación',   suj:'Obligación', ref:'2249-1180', motivo:'Obligación reportada por error: no era una financiación de energía', det:'2026-09-14', estado:'Gestionada', origen:'Manual', conf:'TU-AL-001198', gest:'2026-09-15'}
+  ],
+  elims:[
+    {num:'2249-1180', fecha:'2026-09-15', conf:'TU-AL-001198', motivo:'Obligación reportada por error: no era una financiación de energía'}
+  ]
+});
+S.obls.forEach(o => recalc(o, '2026-09-30'));
+S.audit.unshift(
+  {ts:new Date(2026,8,30,10,2),  user:'Juan Pérez',     rol:'Analista', action:'Actualización mensual de estados ejecutada', module:'Ciclo de vida',      detail:'Corte 30/09/2026 · 2 en primer reporte · 2 cierres · 0 rechazados'},
+  {ts:new Date(2026,8,28,15,20), user:'Juan Pérez',     rol:'Analista', action:'Refinanciación registrada',                  module:'Ciclo de vida',      detail:'2255-7788 → 2271-5502 · original en Saldada (02), modo de extinción 16'},
+  {ts:new Date(2026,8,24,11,40), user:'Carlos Sánchez', rol:'Analista', action:'Novedad gestionada en línea',                module:'Novedades urgentes', detail:'Actualización · 2262-3318 · TU-AL-001532'},
+  {ts:new Date(2026,8,22,9,15),  user:'Diana Niño',     rol:'Analista', action:'Obligación marcada en reclamo',              module:'Reclamos',           detail:'2260-5543 · Pago no reflejado'},
+  {ts:new Date(2026,8,18,16,30), user:'Carlos Sánchez', rol:'Analista', action:'Obligación marcada en reclamo',              module:'Reclamos',           detail:'2262-3318 · Información incorrecta'},
+  {ts:new Date(2026,8,15,8,10),  user:'Carlos Sánchez', rol:'Analista', action:'Novedad gestionada en línea',                module:'Novedades urgentes', detail:'Eliminación · 2249-1180 · TU-AL-001198 · no se vuelve a reportar'},
+  {ts:new Date(2026,8,1,9,20),   user:'Carlos Sánchez', rol:'Analista', action:'Archivo plano generado',                     module:'Reporte TransUnion', detail:'Corte 31/08/2026 · TOTAL · 9 registros · NO APTO PARA ENVÍO (entidad con relleno)'}
+);
+S.audit.sort((a, b) => b.ts - a.ts);
+const relleno = s => /^X+$/.test(s);
+const entOK   = () => !relleno(S.ent.tipo) && !relleno(S.ent.cod) && !relleno(S.ent.suc);
+const fileName = cut => 'SSR' + S.ent.tipo + S.ent.cod + cut.replace(/-/g, '');
+
+const cur = () => S.users.find(u => u.id === S.userId);
+const isAdmin = () => cur().rol === 'Administrador';
+const descOf = code => (S.concepts.find(c => c.code === code) || {}).desc || '';
+const chips = codes => codes.map(c => '<span class="chip" title="' + esc(descOf(c)) + '">' + esc(c) + '</span>').join(' ');
+function logAudit(action, module, detail){
+  const u = cur();
+  S.audit.unshift({ts:new Date(), user:u.nombre, rol:u.rol === 'Administrador' ? 'Administrador' : 'Analista', action:action, module:module, detail:detail});
+}
+
+/* =====================================================================
+   Vistas — autenticación
+   ===================================================================== */
+function vLogin(){
+  return '' +
+  '<div class="login">' +
+    '<div class="login-l"><div class="login-li">' +
+      '<span class="hd eyebrow">Sistema Empresarial CENS</span>' +
+      '<h1 class="hd ltitle">Gestión y Control de Cartera</h1>' +
+      '<svg width="220" height="220" viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<circle cx="120" cy="120" r="104" stroke-dasharray="4 6" stroke-opacity="0.3"/>' +
+        '<circle cx="120" cy="120" r="88" stroke-opacity="0.8"/>' +
+        '<path d="M 68 152 A 64 64 0 1 1 172 152" stroke-opacity="0.4"/>' +
+        '<polygon points="126,68 98,124 122,124 114,172 146,112 122,112"/>' +
+      '</svg>' +
+    '</div></div>' +
+    '<div class="login-r">' +
+      '<form class="login-f" data-form="login" novalidate>' +
+        '<div class="hd brand">Nexo<span>Volt</span></div>' +
+        '<label class="lbl" for="l-email">Correo electrónico</label>' +
+        '<input class="inp" id="l-email" type="email" placeholder="nombre@example.com" autocomplete="username">' +
+        '<label class="lbl lbl2" for="l-pw">Contraseña</label>' +
+        '<div class="pw"><input class="inp" id="l-pw" type="password" placeholder="••••••••••••" autocomplete="current-password">' +
+          '<button type="button" class="eye" data-act="toggle-pw" data-target="l-pw" aria-label="Mostrar contraseña">' + ic('eye', 20) + '</button></div>' +
+        '<div class="alert">' + ic('warn', 16) + '<span>Usuario o contraseña incorrectos.</span></div>' +
+        '<button type="submit" class="btn btn-p btn-block btn-lg">Iniciar sesión</button>' +
+        '<a class="link" href="#/recuperar">¿Olvidaste tu contraseña?</a>' +
+      '</form>' +
+    '</div>' +
+  '</div>';
+}
+
+function pwField(id, label, last){
+  return '<label class="lbl" for="' + id + '">' + label + '</label>' +
+    '<div class="pw ' + (last ? '' : 'fieldgap') + '" style="margin-bottom:' + (last ? '0' : '18px') + '">' +
+      '<input class="inp" id="' + id + '" type="password" autocomplete="new-password">' +
+      '<button type="button" class="eye" data-act="toggle-pw" data-target="' + id + '" aria-label="Mostrar u ocultar ' + label.toLowerCase() + '">' + ic('eye', 18) + '</button>' +
+    '</div>';
+}
+function vCambio(){
+  return '' +
+  '<div class="center"><div class="acard">' +
+    '<div class="a-ico">' + ic('lock', 40) + '</div>' +
+    '<h1 class="a-t">Debes cambiar tu contraseña</h1>' +
+    '<p class="a-s">Por seguridad, debes definir una nueva contraseña antes de continuar.</p>' +
+    pwField('c-temp', 'Contraseña temporal') + pwField('c-new', 'Nueva contraseña') + pwField('c-rep', 'Confirmar nueva contraseña') +
+    '<div class="req">' +
+      '<div>' + ic('check', 14, 3) + 'Mínimo 8 caracteres</div>' +
+      '<div>' + ic('check', 14, 3) + 'Al menos una letra mayúscula</div>' +
+      '<div>' + ic('check', 14, 3) + 'Al menos un número</div>' +
+    '</div>' +
+    '<button type="button" class="btn btn-p btn-block btn-lg" data-act="cambio-save">Guardar y continuar</button>' +
+  '</div></div>';
+}
+
+function vRecuperar(){
+  const sent = S.ui.recoverSent;
+  return '' +
+  '<div class="center"><div class="acard sm">' + (sent
+    ? '<div style="display:flex;flex-direction:column;align-items:center;text-align:center">' +
+        '<div style="color:var(--citrico)">' + ic('checkCircle', 48) + '</div>' +
+        '<h1 class="hd" style="font-size:22px;font-weight:700;margin:16px 0 8px">Enlace enviado</h1>' +
+        '<p class="mut" style="margin-bottom:24px">Hemos enviado un enlace a tu correo. Revisa tu bandeja de entrada.</p>' +
+        '<a class="lnk" href="#/login" style="text-decoration:none">← Volver al inicio de sesión</a>' +
+      '</div>'
+    : '<div class="a-ico">' + ic('mail', 40) + '</div>' +
+      '<h1 class="a-t">Recuperar contraseña</h1>' +
+      '<p class="a-s">Ingresa tu correo corporativo y te enviaremos un enlace para restablecer tu contraseña.</p>' +
+      '<label class="lbl" for="r-email">Correo electrónico corporativo</label>' +
+      '<input class="inp" id="r-email" type="email" placeholder="nombre@example.com" style="margin-bottom:20px">' +
+      '<button type="button" class="btn btn-p btn-block btn-lg" data-act="recover-send">Enviar enlace de recuperación</button>' +
+      '<a class="link" href="#/login">← Volver al inicio de sesión</a>') +
+  '</div></div>';
+}
+
+/* =====================================================================
+   Layout de la aplicación (sidebar + barra superior con menú de perfil)
+   ===================================================================== */
+function perfil(){
+  const u = cur();
+  return '' +
+  '<div class="profile">' +
+    '<button type="button" class="pbtn" id="pbtn" data-act="profile-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="pmenu">' +
+      '<span class="who"><span class="n">' + esc(u.nombre) + '</span><span class="r">' + esc(u.rol) + '</span></span>' +
+      '<span class="av">' + ic('avatar', 36, 1.5) + '</span>' + ic('chevron', 16) +
+    '</button>' +
+    '<div class="menu" id="pmenu" role="menu" aria-label="Menú de perfil" hidden>' +
+      '<div class="mh"><span class="n">' + esc(u.nombre) + '</span><span class="e">' + esc(u.correo) + '</span>' +
+        '<span class="bd ' + (isAdmin() ? 'bd-adm' : 'bd-ok') + '">' + esc(u.rol) + '</span></div>' +
+      '<button type="button" role="menuitem" class="mi" data-act="edit-profile">' + ic('edit', 18) + 'Cambiar datos</button>' +
+      '<button type="button" role="menuitem" class="mi" data-act="switch-profile">' + ic('swap', 18) + 'Cambiar de perfil</button>' +
+      '<div class="sep" role="separator"></div>' +
+      '<button type="button" role="menuitem" class="mi danger" data-act="logout">' + ic('logout', 18) + 'Cerrar sesión</button>' +
+    '</div>' +
+  '</div>';
+}
+function navItem(r, label, icon, adminOnly, analystOnly){
+  const locked = (adminOnly && !isAdmin()) || (analystOnly && isAdmin());
+  const rolReq = adminOnly ? 'Administrador' : 'Analista de Cartera';
+  return '<a href="#/' + r + '"' + (S.route === r ? ' aria-current="page"' : '') + (locked ? ' class="locked" title="Solo para el rol ' + rolReq + '"' : '') + '>' +
+    ic(icon, 18) + '<span>' + label + '</span>' +
+    (adminOnly ? '<span class="tag">' + (locked ? ic('lock', 10, 2.5) : '') + 'ADMIN</span>' : (locked ? '<span class="tag">' + ic('lock', 10, 2.5) + 'ANALISTA</span>' : '')) + '</a>';
+}
+function layout(inner){
+  return '' +
+  '<div class="app">' +
+    '<aside class="side">' +
+      '<div class="hd logo">Nexo<b>Volt</b></div>' +
+      '<nav class="nav" aria-label="Navegación principal">' +
+        navItem('panel', 'Inicio', 'home') +
+        '<div class="nav-sec">Extracción</div>' +
+        navItem('extraccion', 'Extracción de Cartera', 'bolt') +
+        navItem('parametrizacion', 'Parametrización de Conceptos', 'gear') +
+        '<div class="nav-sec">Ciclo de vida</div>' +
+        navItem('obligaciones', 'Obligaciones y Estados', 'list', false, true) +
+        navItem('ciclo', 'Actualización Mensual', 'refresh', false, true) +
+        navItem('refinanciaciones', 'Refinanciaciones', 'link', false, true) +
+        '<div class="nav-sec">Reporte a TransUnion</div>' +
+        navItem('reporte', 'Generar Reporte', 'file', false, true) +
+        navItem('reclamos', 'Reclamos Habeas Data', 'flag', false, true) +
+        navItem('novedades', 'Novedades Urgentes', 'clock', false, true) +
+        '<div class="nav-sec">Administración</div>' +
+        navItem('usuarios', 'Gestión de Usuarios', 'user', true) +
+        navItem('auditoria', 'Auditoría', 'shield', true) +
+        navItem('entidad', 'Datos de la Entidad', 'wallet', true) +
+      '</nav>' +
+      '<button type="button" class="out" data-act="logout">' + ic('logout', 18) + '<span>Cerrar sesión</span></button>' +
+    '</aside>' +
+    '<div class="main">' +
+      '<header class="top">' + perfil() + '</header>' +
+      '<main class="content" id="main">' + inner + '</main>' +
+    '</div>' +
+  '</div>';
+}
+function vRestringido(seccion, rolReq){
+  rolReq = rolReq || 'Administrador';
+  return '<div class="card restr">' +
+    '<div class="a-ico">' + ic('lock', 40) + '</div>' +
+    '<h1 class="a-t">Acceso restringido</h1>' +
+    '<p class="a-s" style="margin-bottom:24px">La sección «' + esc(seccion) + '» es exclusiva del rol ' + esc(rolReq) + '. Tu perfil actual es <b>' + esc(cur().rol) + '</b>.</p>' +
+    '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+      '<button type="button" class="btn btn-p" data-act="switch-profile">' + ic('swap', 16) + 'Cambiar de perfil</button>' +
+      '<a class="btn btn-g" href="#/panel">Volver al inicio</a>' +
+    '</div></div>';
+}
+
+/* =====================================================================
+   Vista — Inicio (muestra la última extracción realizada)
+   ===================================================================== */
+function vPanel(){
+  const u = cur(), last = S.extractions[0];
+  const activos = S.users.filter(x => x.estado === 'Activo').length;
+  const feat = last
+    ? '<section class="card feat" aria-labelledby="lx-t">' +
+        '<div class="feat-h">' +
+          '<div class="ico">' + ic('refresh', 22) + '</div>' +
+          '<div class="grow"><h2 class="h2" id="lx-t">Última extracción de cartera</h2><div class="mut">Ejecutada por ' + esc(last.user) + '</div></div>' +
+          '<a class="btn btn-o" href="#/extraccion">Ir a Extracción de Cartera</a>' +
+        '</div>' +
+        '<div class="stats">' +
+          '<div class="stat"><div class="k">Fecha y hora</div><div class="v">' + fmtLong(last.ts) + '</div><div class="sub">a las ' + fmtT(last.ts) + '</div></div>' +
+          '<div class="stat"><div class="k">Fecha de corte</div><div class="v">' + fmtISOLong(last.cut) + '</div></div>' +
+          '<div class="stat"><div class="k">Obligaciones extraídas</div><div class="v">' + last.count + '</div></div>' +
+          '<div class="stat"><div class="k">Saldo consolidado</div><div class="v">' + fmtCOP(last.total) + '</div></div>' +
+        '</div>' +
+        '<div class="feat-g"><div class="k" style="margin:0">Grupo de conceptos utilizado</div><b>' + esc(last.groupName) + '</b>' + chips(last.codes) + '</div>' +
+      '</section>'
+    : '<section class="card feat"><div class="empty">Aún no se ha realizado ninguna extracción. <a class="lnk" href="#/extraccion">Ir a Extracción de Cartera</a></div></section>';
+  return layout(
+    '<h1 class="h1">Bienvenido, ' + esc(u.nombre.split(' ')[0]) + '</h1>' + feat + vPanel2() +
+    '<div class="cards2">' +
+      '<div class="card mini">' + ic('user', 22) + '<div class="lbl-m">Usuarios activos</div><div class="val">' + activos + '</div></div>' +
+      '<div class="card mini">' + ic('calendar', 22) + '<div class="lbl-m">Último corte procesado</div><div class="val">' + (last ? fmtISOLong(last.cut) : '—') + '</div></div>' +
+    '</div>'
+  );
+}
+
+/* =====================================================================
+   Vista — Extracción y Consolidación de Cartera
+   ===================================================================== */
+function groupHelp(g){
+  return g
+    ? '<span>Conceptos incluidos:</span> ' + chips(g.codes)
+    : 'El grupo define qué conceptos de facturación se consideran energía en esta extracción. <a class="lnk" href="#/parametrizacion">Crear grupos de conceptos</a>';
+}
+function stepIcon(state){
+  return state === 'done' ? ic('check', 14, 3) : state === 'run' ? '<span class="spin"></span>' : '<span class="dot"></span>';
+}
+function stepState(i, step){ return i < step ? 'done' : (i === step ? 'run' : 'pend'); }
+
+function vProceso(){
+  const run = S.run, res = S.lastResult;
+  if(!run && !res) return '';
+  const name  = run ? run.groupName : res.ext.groupName;
+  const codes = run ? run.codes : res.ext.codes;
+  const step  = run ? run.step : STEPS.length;
+  const pct   = Math.round(step / STEPS.length * 100);
+  const items = STEPS.map((t, i) => {
+    const st = stepState(i, step);
+    const extra = i === 1 ? ' — grupo: <b>' + esc(name) + '</b>' : '';
+    return '<li class="step ' + st + '" data-step="' + i + '"><span class="sic">' + stepIcon(st) + '</span><span>' + t + extra + '</span></li>';
+  }).join('');
+  return '<section class="card proc" aria-label="Estado de la extracción">' +
+    '<div class="proc-t">' + (run ? 'Extrayendo información de la base de datos comercial de CENS…' : 'Extracción completada — base de datos comercial de CENS') + '</div>' +
+    '<div class="prog" role="progressbar" aria-label="Progreso de la extracción" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i id="run-bar" style="width:' + pct + '%"></i></div>' +
+    '<ul class="steps">' + items + '</ul>' +
+    (!run ? '<div class="final-log">' + ic('layers', 18) + '<span>Grupo de conceptos utilizado:</span> <b>' + esc(name) + '</b> ' + chips(codes) + '</div>' : '') +
+  '</section>';
+}
+function vResultados(){
+  const res = S.lastResult;
+  if(!res) return '';
+  const rows = res.rows.map(o =>
+    '<tr><td>' + o.num + '</td><td>' + esc(o.nombre) + '</td><td>' + o.concepto + '</td><td>' + fmtCOP(o.saldo) + '</td><td>' + o.dias + '</td><td>' + o.edad + '</td></tr>').join('');
+  return '<section class="card res" aria-label="Resultado de la extracción">' +
+    '<div class="res-h"><div><b>' + plural(res.ext.count, 'obligación', 'obligaciones') + '</b> · Saldo consolidado <b>' + fmtCOP(res.ext.total) + '</b> · Grupo: <b>' + esc(res.ext.groupName) + '</b></div>' +
+      '<button type="button" class="btn btn-o btn-sm">' + ic('download', 14) + 'Exportar resumen</button></div>' +
+    (res.rows.length
+      ? '<div class="tw"><table class="tbl"><thead><tr><th>Número de Obligación</th><th>Nombre del Deudor</th><th>Concepto de la cuota</th><th>Saldo Consolidado</th><th>Días de Mora</th><th>Edad de Mora (Tabla 9)</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '<div class="empty">No se encontraron obligaciones con saldo para los conceptos del grupo seleccionado.</div>') +
+  '</section>';
+}
+function vHistorial(){
+  const rows = S.extractions.map(x =>
+    '<tr' + (S.flashId === x.id ? ' class="flash"' : '') + '>' +
+      '<td class="mono nw">' + fmtDT(x.ts) + '</td><td class="nw">' + esc(x.user) + '</td><td class="nw">' + fmtISO(x.cut) + '</td>' +
+      '<td class="gcol"><b>' + esc(x.groupName) + '</b></td><td class="ccol">' + chips(x.codes) + '</td>' +
+      '<td>' + x.count + '</td><td class="nw">' + fmtCOP(x.total) + '</td></tr>').join('');
+  return '<section class="hist" aria-labelledby="h-t">' +
+    '<div class="sec-h"><h2 class="h2" id="h-t">Registro de extracciones (logs)</h2><p>Cada extracción queda registrada con el grupo de conceptos con el que se ejecutó.</p></div>' +
+    '<div class="card tw"><table class="tbl compact"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Fecha de corte</th><th>Grupo de conceptos</th><th>Conceptos incluidos</th><th>Obligaciones</th><th>Saldo consolidado</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+  '</section>';
+}
+function vExtraccion(){
+  const running = !!S.run;
+  const g = S.groups.find(x => x.id === S.ui.xGroup);
+  const opts = '<option value="">Selecciona un grupo…</option>' + S.groups.map(x =>
+    '<option value="' + x.id + '"' + (x.id === S.ui.xGroup ? ' selected' : '') + '>' + esc(x.nombre) + ' (' + plural(x.codes.length, 'concepto', 'conceptos') + ')</option>').join('');
+  return layout(
+    '<h1 class="h1">Extracción y Consolidación de Cartera</h1>' +
+    '<section class="card ctl" aria-label="Parámetros de la extracción">' +
+      '<div class="ctl-row">' +
+        '<div class="fld"><label class="lbl" for="x-cut">Fecha de corte</label>' +
+          '<input class="inp" id="x-cut" type="date" value="' + esc(S.ui.xCut) + '"' + (running ? ' disabled' : '') + '>' +
+          '<div class="err" id="x-cut-err" hidden>Selecciona una fecha de corte.</div></div>' +
+        '<div class="fld grow"><label class="lbl" for="x-group">Grupo de conceptos</label>' +
+          '<select class="inp sel" id="x-group"' + (running ? ' disabled' : '') + ' aria-describedby="x-group-help x-group-err">' + opts + '</select>' +
+          '<div class="err" id="x-group-err" hidden role="alert">Selecciona un grupo de conceptos para iniciar la extracción.</div></div>' +
+        '<button type="button" class="btn btn-p" data-act="run-extraction"' + (running ? ' disabled' : '') + '>' +
+          (running ? '<span class="spin"></span>Extrayendo…' : ic('refresh', 16) + 'Iniciar extracción') + '</button>' +
+      '</div>' +
+      '<div class="help" id="x-group-help">' + groupHelp(g) + '</div>' +
+    '</section>' +
+    vProceso() + vResultados() + vHistorial()
+  );
+}
+
+/* =====================================================================
+   Vista — Parametrización de Conceptos (incluye grupos de conceptos)
+   ===================================================================== */
+function vParam(){
+  const rows = S.concepts.map(c => {
+    if(c.estado === 'Excluido'){
+      return '<tr><td class="off" style="text-decoration:line-through">—</td><td class="off" style="text-decoration:line-through">' + esc(c.desc) + '</td><td><span class="bd bd-off">Excluido</span></td><td class="off">—</td><td class="off">—</td></tr>';
+    }
+    const on = c.estado === 'Activo';
+    return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.desc) + '</td><td><span class="bd ' + (on ? 'bd-ok' : 'bd-off') + '">' + c.estado + '</span></td><td>' + c.fecha + '</td>' +
+      '<td><div class="acts">' + ic('edit', 16) + sw(on) + '</div></td></tr>';
+  }).join('');
+  const cards = S.groups.map(g => {
+    const n = S.extractions.filter(x => x.groupId === g.id).length;
+    return '<article class="card gcard' + (S.flashGroup === g.id ? ' flash' : '') + '">' +
+      '<div class="g-h"><div class="g-ic">' + ic('layers', 18) + '</div><h3 class="g-n">' + esc(g.nombre) + '</h3></div>' +
+      '<div class="mut">' + plural(g.codes.length, 'concepto', 'conceptos') + ' · usado en ' + plural(n, 'extracción', 'extracciones') + '</div>' +
+      '<div class="g-ch">' + chips(g.codes) + '</div>' +
+      '<div class="g-f">Creado el ' + fmtD(g.creado) + ' por ' + esc(g.por) + '</div></article>';
+  }).join('');
+  return layout(
+    '<div class="ph"><h1 class="h1">Códigos de Concepto de Energía</h1>' +
+      '<div class="ph-a">' +
+        '<button type="button" class="btn btn-o" id="btn-newgroup" data-act="new-group">' + ic('layers', 16) + 'Crear grupo de conceptos</button>' +
+        '<button type="button" class="btn btn-p">' + ic('plus', 16) + 'Agregar código</button>' +
+      '</div></div>' +
+    '<div class="tb">' +
+      '<div class="sbox">' + ic('search', 16) + '<input type="text" placeholder="Buscar código o descripción" aria-label="Buscar código o descripción"></div>' +
+      '<div class="fbox">Todos los estados' + ic('chevron', 14) + '</div>' +
+    '</div>' +
+    '<div class="card tw"><table class="tbl"><thead><tr><th>Código</th><th>Descripción del Concepto</th><th>Estado</th><th>Fecha de Creación</th><th>Acciones</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<section class="sec" aria-labelledby="gr-t">' +
+      '<div class="sec-h"><h2 class="h2" id="gr-t">Grupos de conceptos</h2><p>Agrupa conceptos de energía para elegirlos al ejecutar una extracción de cartera.</p></div>' +
+      '<div class="ggrid">' + cards + '</div>' +
+    '</section>'
+  );
+}
+
+/* =====================================================================
+   Vistas — Gestión de usuarios y Log de auditoría (solo Administrador)
+   ===================================================================== */
+function vUsuarios(){
+  if(!isAdmin()) return layout(vRestringido('Gestión de Usuarios'));
+  const rows = S.users.map(u =>
+    '<tr><td>' + esc(u.nombre) + '</td><td>' + esc(u.correo) + '</td>' +
+    '<td><span class="bd ' + (u.rol === 'Administrador' ? 'bd-adm' : 'bd-ok') + '">' + esc(u.rol) + '</span></td>' +
+    '<td><span class="bd ' + (u.estado === 'Activo' ? 'bd-ok' : 'bd-off') + '">' + u.estado + '</span></td>' +
+    '<td>' + (u.ultimo ? fmtDT(u.ultimo) : '—') + '</td>' +
+    '<td><div class="acts">' + ic('edit', 16) + sw(u.estado === 'Activo') + '</div></td></tr>').join('');
+  return layout(
+    '<div class="ph"><h1 class="h1">Usuarios del Sistema</h1>' +
+      '<button type="button" class="btn btn-p" data-act="new-user">' + ic('plus', 16) + 'Crear usuario</button></div>' +
+    '<div class="card tw"><table class="tbl"><thead><tr><th>Nombre completo</th><th>Correo corporativo</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th>Acciones</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+  );
+}
+function vAuditoria(){
+  if(!isAdmin()) return layout(vRestringido('Auditoría'));
+  const rows = S.audit.map(a =>
+    '<tr><td class="mono">' + fmtDT(a.ts) + '</td><td>' + esc(a.user) + '</td><td>' + esc(a.rol) + '</td><td>' + esc(a.action) + '</td><td>' + esc(a.module) + '</td><td>' + esc(a.detail) + '</td></tr>').join('');
+  return layout(
+    '<h1 class="h1">Log de Auditoría del Sistema</h1>' +
+    '<div class="filt">' +
+      '<div class="fbox">' + ic('calendar', 15) + '<span>01/09/2026 – 30/09/2026</span></div>' +
+      '<div class="fbox">Usuario: Todos' + ic('chevron', 14) + '</div>' +
+      '<div class="fbox">Tipo de acción: Todas' + ic('chevron', 14) + '</div>' +
+      '<button type="button" class="btn btn-p btn-sm">Aplicar filtros</button>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="card-h"><button type="button" class="btn btn-o btn-sm">' + ic('download', 14) + 'Exportar log</button></div>' +
+      '<div class="tw"><table class="tbl"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Rol</th><th>Acción realizada</th><th>Módulo afectado</th><th>Detalle</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '</div>'
+  );
+}
+
+/* =====================================================================
+   Iteración 2 · utilidades comunes
+   ===================================================================== */
+const getO     = num => S.obls.find(o => o.num === num);
+const isClosed = o => EST[o.est].closed;
+const estBd    = c => '<span class="bd ' + EST[c].cls + '">' + c + ' · ' + EST[c].n + '</span>';
+const cuotasBd = n => '<span class="bd ' + (n === 0 ? 'bd-off' : n === 1 ? 'bd-warn' : 'bd-bad') + '">' + n + '</span>';
+const rfTag    = t => '<span class="rf">' + t + '</span>';
+const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+const noteBox  = (cls, icon, html) => '<div class="note ' + cls + '">' + ic(icon, 18) + '<div>' + html + '</div></div>';
+
+function vProc2(id, runTitle, doneTitle, steps, step, running){
+  const pct = Math.round(step / steps.length * 100);
+  return '<section class="card proc" aria-label="' + esc(doneTitle) + '">' +
+    '<div class="proc-t">' + esc(running ? runTitle : doneTitle) + '</div>' +
+    '<div class="prog" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i id="' + id + '-bar" style="width:' + pct + '%"></i></div>' +
+    '<ul class="steps">' + steps.map((t, i) => {
+      const st = stepState(i, step);
+      return '<li class="step ' + st + '" data-s2="' + id + ':' + i + '"><span class="sic">' + stepIcon(st) + '</span><span>' + t + '</span></li>';
+    }).join('') + '</ul></section>';
+}
+function paint2(id, steps, step){
+  const bar = $('#' + id + '-bar');
+  if(bar){ const pct = Math.round(step / steps.length * 100); bar.style.width = pct + '%'; bar.parentNode.setAttribute('aria-valuenow', pct); }
+  $$('[data-s2^="' + id + ':"]').forEach(function(li){
+    const i = +li.getAttribute('data-s2').split(':')[1], st = stepState(i, step);
+    li.className = 'step ' + st;
+    li.querySelector('.sic').innerHTML = stepIcon(st);
+  });
+}
+
+/* =====================================================================
+   Inicio — secciones de la Iteración 2
+   ===================================================================== */
+function vPanel2(){
+  if(isAdmin()) return '';
+  const vivas = S.obls.filter(o => !o.eliminada);
+  const tot = vivas.length;
+  const dist = EST_ORDER.map(c => [c, vivas.filter(o => o.est === c).length]);
+  const seg = dist.filter(d => d[1]).map(d => '<i class="s-' + d[0] + '" style="width:' + (d[1] / tot * 100) + '%" title="' + esc(EST[d[0]].n) + ': ' + d[1] + '"></i>').join('');
+  const leg = dist.map(d => '<span><i class="sw-c s-' + d[0] + '"></i>' + esc(EST[d[0]].n) + ' <b>' + d[1] + '</b></span>').join('');
+  const f = S.files[0];
+  const rec = S.claims.filter(c => c.estado === 'En reclamo').length;
+  const nov = S.novs.filter(n => n.estado === 'Pendiente').length;
+  const mor = vivas.filter(o => !isClosed(o) && o.cuotasAtr >= 2).length;
+  return (entOK() ? '' : noteBox('warn', 'warn', 'TransUnion aún no asigna los datos de la entidad: el tipo de entidad, el código de entidad y la sucursal llevan relleno (<span class="mono">XXX</span>), así que los archivos salen <b>no aptos para envío</b>. El Administrador los cambia en «Datos de la entidad» cuando TransUnion los asigne.')) +
+    '<section class="card feat" aria-labelledby="ec-t">' +
+      '<div class="feat-h"><div class="ico">' + ic('layers', 22) + '</div>' +
+        '<div class="grow"><h2 class="h2" id="ec-t">Estado de la cartera</h2><div class="mut">' + plural(tot, 'obligación', 'obligaciones') + ' (una por financiación) · Última actualización mensual: ' + fmtISO(S.cycles[0].cut) + '</div></div>' +
+        '<a class="btn btn-o" href="#/obligaciones">Ir a Obligaciones y Estados</a></div>' +
+      '<div class="dbar" role="img" aria-label="Distribución de obligaciones por estado">' + seg + '</div><div class="leg">' + leg + '</div>' +
+    '</section>' +
+    (f ? '<section class="card feat" aria-labelledby="ur-t">' +
+      '<div class="feat-h"><div class="ico">' + ic('file', 22) + '</div>' +
+        '<div class="grow"><h2 class="h2" id="ur-t">Último archivo para TransUnion</h2><div class="mut">Generado por ' + esc(f.user) + ' · <span class="mono">' + esc(f.name) + '</span> · ' + fileBd(f) + '</div></div>' +
+        '<a class="btn btn-o" href="#/reporte">Ir a Reporte a TransUnion</a></div>' +
+      '<div class="stats">' +
+        '<div class="stat"><div class="k">Fecha y hora</div><div class="v">' + fmtLong(f.ts) + '</div><div class="sub">a las ' + fmtT(f.ts) + '</div></div>' +
+        '<div class="stat"><div class="k">Fecha de corte</div><div class="v">' + fmtISOLong(f.cut) + '</div></div>' +
+        '<div class="stat"><div class="k">Obligaciones reportadas</div><div class="v">' + f.n + '</div><div class="sub">Tipo ' + f.tipo + '</div></div>' +
+        '<div class="stat"><div class="k">Saldo del archivo</div><div class="v">' + fmtCOP(f.saldo) + '</div></div>' +
+      '</div></section>' : '') +
+    '<div class="cards3">' +
+      '<a class="card mini" href="#/reclamos">' + ic('flag', 22) + '<div class="lbl-m">Obligaciones en reclamo</div><div class="val">' + rec + '</div></a>' +
+      '<a class="card mini" href="#/novedades">' + ic('clock', 22) + '<div class="lbl-m">Novedades urgentes pendientes</div><div class="val">' + nov + '</div></a>' +
+      '<a class="card mini" href="#/obligaciones">' + ic('warn', 22) + '<div class="lbl-m">Obligaciones con 2 o más cuotas en mora</div><div class="val">' + mor + '</div></a>' +
+    '</div>';
+}
+const fileBd = f => f.enviado ? '<span class="bd bd-ok">Enviado</span>' : f.apto ? '<span class="bd bd-info">Apto para envío</span>' : '<span class="bd bd-bad">No apto para envío</span>';
+
+/* =====================================================================
+   Vista — Obligaciones y Estados (HU-B)
+   ===================================================================== */
+function filtObls(){
+  const q = (S.ui.oQ || '').trim().toLowerCase();
+  return S.obls.filter(o => (!S.ui.oEst || (S.ui.oEst === 'ELIM' ? o.eliminada : (o.est === S.ui.oEst && !o.eliminada))) &&
+    (!q || o.num.toLowerCase().indexOf(q) > -1 || o.nombre.toLowerCase().indexOf(q) > -1));
+}
+function oblRows(){
+  const rows = filtObls();
+  if(!rows.length) return '<tr><td colspan="6"><div class="empty">No hay obligaciones que coincidan con el filtro.</div></td></tr>';
+  return rows.map(o => {
+    const lock = isClosed(o) ? ' <span class="lk" title="Cerrada: se reporta una sola vez, en el corte en que cierra">' + ic('lock', 14, 2.2) + '</span>' : '';
+    return '<tr' + (S.chg[o.num] ? ' class="flash"' : '') + '>' +
+      '<td class="nw"><button type="button" class="lnkb mono" data-act="ver-obl" data-num="' + o.num + '" aria-label="Ver el detalle de la obligación ' + o.num + '">' + o.num + '</button>' +
+        (o.primer ? '<div><span class="pc-tag">Primer reporte</span></div>' : '') + '</td>' +
+      '<td style="min-width:130px">' + esc(o.nombre) + '</td>' +
+      '<td><div class="stc"><span class="nw">' + estBd(o.est) + lock + '</span>' +
+        (o.eliminada ? '<span class="bd bd-bad">Eliminada en TransUnion</span>' : '') +
+        (o.reclamo ? '<span class="bd bd-warn">En reclamo</span>' : '') +
+        (o.caducado && !isClosed(o) ? '<span class="bd bd-off">Caducado en el SAC</span>' : '') + '</div></td>' +
+      '<td class="nw">' + edadTxt(o.dias) + '<div class="sub">' + plural(o.dias, 'día', 'días') + ' de mora</div></td>' +
+      '<td class="num nw">' + fmtCOP(o.mora) + '<div style="margin-top:4px"><span class="bd ' + (o.cuotasAtr === 0 ? 'bd-off' : o.cuotasAtr === 1 ? 'bd-warn' : 'bd-bad') + '">' + (o.cuotasAtr === 0 ? 'Al día' : plural(o.cuotasAtr, 'cuota en mora', 'cuotas en mora')) + '</span></div></td>' +
+      '<td class="num nw">' + fmtCOP(o.saldo) + '</td></tr>';
+  }).join('');
+}
+function vObligaciones(){
+  const vivas = S.obls.filter(o => !o.eliminada), act = vivas.filter(o => !isClosed(o)), nElim = S.obls.length - vivas.length;
+  const kpi = (v, label, n) => '<button type="button" class="kpi" data-act="f-est" data-v="' + v + '" aria-pressed="' + (S.ui.oEst === v) + '"><span class="kn">' + n + '</span><span class="kl">' + label + '</span></button>';
+  const kpis = kpi('', 'Todas', S.obls.length) + EST_ORDER.map(c => kpi(c, c + ' · ' + EST[c].n, vivas.filter(o => o.est === c).length)).join('') +
+    (nElim ? kpi('ELIM', 'Eliminadas', nElim) : '');
+  const g = [
+    ['Al día', act.filter(o => o.cuotasAtr === 0).length, 'bd-off'],
+    ['1 cuota en mora', act.filter(o => o.cuotasAtr === 1).length, 'bd-warn'],
+    ['2 a 3 cuotas', act.filter(o => o.cuotasAtr > 1 && o.cuotasAtr < 4).length, 'bd-bad'],
+    ['4 o más cuotas', act.filter(o => o.cuotasAtr >= 4).length, 'bd-bad']
+  ];
+  const mon = g.map(x => '<div class="mon-s"><span class="bd ' + x[2] + '">' + x[1] + '</span><span>' + x[0] + '</span></div>').join('');
+  return layout(
+    '<div class="ph"><h1 class="h1">Obligaciones y Estados</h1>' +
+      '<div class="ph-a"><a class="btn btn-p" href="#/ciclo">' + ic('refresh', 16) + 'Actualización mensual</a></div></div>' +
+    '<div class="kpis" role="group" aria-label="Filtrar por estado">' + kpis + '</div>' +
+    '<section class="card feat" aria-labelledby="mon-t">' +
+      '<div class="feat-h"><div class="ico">' + ic('clock', 22) + '</div><div class="grow"><h2 class="h2" id="mon-t">Cuotas en mora por obligación</h2>' +
+        '<div class="mut">Se calcula en cada actualización mensual, por financiación (RF19) · Último corte: ' + fmtISO(S.cycles[0].cut) + '</div></div></div>' +
+      '<div class="mon-g">' + mon + '</div></section>' +
+    '<div class="tb"><div class="sbox">' + ic('search', 16) + '<input id="o-q" type="text" placeholder="Buscar por número o deudor" aria-label="Buscar por número o deudor" value="' + esc(S.ui.oQ) + '"></div>' +
+      '<div class="mut"><span id="o-count" aria-live="polite">' + plural(filtObls().length, 'obligación', 'obligaciones') + '</span> · Haz clic en el número para ver el detalle</div></div>' +
+    '<div class="card tw"><table class="tbl dense"><thead><tr><th>Número de Obligación</th><th>Deudor</th><th>Estado</th><th>Edad de Mora (Tabla 9)</th><th class="num">Valor en Mora y Cuotas en Mora</th><th class="num">Saldo</th></tr></thead><tbody id="o-tbody">' + oblRows() + '</tbody></table></div>' +
+    '<p class="mut" style="margin-top:14px;display:flex;gap:8px;align-items:center">' + ic('lock', 14, 2.2) + 'Saldada (02) y Cartera Recuperada (07) se reportan una sola vez, en el corte en que cierran, y después ya no (RF13, RF16).</p>'
+  );
+}
+
+/* =====================================================================
+   Vista — Actualización Mensual de Estados (HU-B)
+   ===================================================================== */
+const CY_STEPS = [
+  'Primer reporte: las obligaciones nuevas entran con su estado y su mora reales — RF10',
+  'Aplicación de los pagos extraídos del sistema comercial, de la cuota más antigua a la más reciente [orden por confirmar con CENS] — RF17',
+  'Días de mora desde la cuota vencida más antigua sin pagar y edad de mora según la Tabla 9 — RF7, RF11, RF49',
+  'Crédito caducado en el SAC → Dudoso Recaudo (03) [por confirmar]; castigo contable → Castigada (06) — RF14, RF45',
+  'Pago de la mora sin cancelar el saldo: vuelve a Vigente y se reportan fecha, modo y tipo de pago — RF46, RF47',
+  'Pago total: Saldada (02) o Cartera Recuperada (07), con fecha de pago, modo de extinción y tipo de pago — RF12, RF15, RF22',
+  'Validación de cada cambio contra la matriz de TransUnion y las reglas de primer reporte',
+  'Cuotas en mora por obligación — RF19'
+];
+function vCicloRes(){
+  const r = S.cyRes;
+  if(!r) return '';
+  const k = (n, l) => '<div class="kpi static"><span class="kn">' + n + '</span><span class="kl">' + l + '</span></div>';
+  const rows = r.trans.map(t =>
+    '<tr><td class="mono nw">' + t.num + '</td><td>' + esc(t.nombre) + '</td>' +
+    '<td class="nw">' + (t.de === '—' ? '<span class="pc-tag">Primer reporte</span> ' : estBd(t.de)) + (t.de !== t.a ? ' ' + ic('arrow', 14) + ' ' + estBd(t.a) : '') + '</td>' +
+    '<td class="nw">' + esc(t.edad) + '</td><td>' + t.regla + '</td></tr>').join('');
+  const rej = r.rechazos.map(x =>
+    '<tr><td class="mono nw">' + x.num + '</td><td>' + esc(x.nombre) + '</td><td class="nw">' + (x.de === '—' ? 'Primer reporte' : estBd(x.de)) + ' ' + ic('arrow', 14) + ' ' + estBd(x.a) + '</td><td>' + esc(x.motivo) + '</td></tr>').join('');
+  return '<div class="kpis">' +
+      k(r.primer, 'En primer reporte') + k(r.pagos, 'Con pagos aplicados') + k(r.cierres, 'Cierres (02 o 07)') +
+      k(r.dudoso + r.castigo, 'A Dudoso o Castigada') + k(r.normal, 'Pagaron la mora') + k(r.rechazos.length, 'Cambios rechazados') +
+    '</div>' +
+    '<section class="card res" aria-label="Cambios aplicados">' +
+      '<div class="res-h"><div><b>' + plural(r.trans.length, 'obligación actualizada', 'obligaciones actualizadas') + '</b> en el corte <b>' + fmtISO(r.cut) + '</b></div>' +
+        '<a class="btn btn-o btn-sm" href="#/obligaciones">Ver obligaciones</a></div>' +
+      '<div class="tw"><table class="tbl"><thead><tr><th>Número de Obligación</th><th>Deudor</th><th>Estado</th><th>Edad de mora</th><th>Qué pasó</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '</section>' +
+    (r.rechazos.length
+      ? '<section class="card res" aria-label="Cambios rechazados">' +
+          '<div class="res-h"><div><b>' + plural(r.rechazos.length, 'cambio rechazado', 'cambios rechazados') + '</b>: bloquean la validación del corte hasta revisarlos</div></div>' +
+          '<div class="tw"><table class="tbl"><thead><tr><th>Número de Obligación</th><th>Deudor</th><th>Cambio calculado</th><th>Motivo</th></tr></thead><tbody>' + rej + '</tbody></table></div></section>'
+      : noteBox('', 'checkCircle', 'Todos los cambios de estado cumplen la matriz de TransUnion y las reglas de primer reporte.'));
+}
+function vMatriz(){
+  const cols = [];
+  EST_ORDER.forEach(c => { cols.push([c, false]); cols.push([c, true]); });
+  const head = '<tr><th class="rh">Desde \\ hacia</th>' + cols.map(c => '<th title="' + esc(EST[c[0]].n) + (c[1] ? ' con mora' : ' sin mora') + '">' + c[0] + (c[1] ? ' m' : ' n') + '</th>').join('') + '</tr>';
+  const body = cols.map(r => '<tr><th class="rh">' + estBd(r[0]) + ' <span class="mut">' + (r[1] ? 'con mora' : 'sin mora') + '</span></th>' +
+    cols.map(c => { const ok = mxOK(r[0], r[1], c[0], c[1]); return '<td class="' + (ok ? 'mS' : 'mN') + '">' + (ok ? 'S' : 'N') + '</td>'; }).join('') + '</tr>').join('');
+  return '<section class="sec" aria-labelledby="mx-t"><div class="sec-h"><h2 class="h2" id="mx-t">Matriz de cambios de estado (Sector Real Servicios)</h2>' +
+      '<p>Fila: estado del corte anterior. Columna: estado nuevo. <b>n</b> = sin mora, <b>m</b> = con mora. <b>S</b> = TransUnion lo acepta, <b>N</b> = lo rechaza (error 713). Se muestran los 5 estados que usa CENS; el sistema valida contra la matriz completa de 10 estados (Manual, p. 40).</p></div>' +
+      '<div class="card tw"><table class="tbl compact mx"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
+      '<p class="mut" style="margin-top:10px">Primer reporte (p. 38-39): nunca se acepta Cartera Recuperada; Dudoso Recaudo solo con mora; Castigada solo con mora y edad 01 o mayor (error 881).</p></section>';
+}
+function vCiclo(){
+  const running = !!S.cy, last = S.cycles[0], pend = S.nuevas.length;
+  const proc = (S.cy || S.cyRes) ? vProc2('cy', 'Actualizando los estados de las obligaciones…', 'Actualización mensual completada', CY_STEPS, S.cy ? S.cy.step : CY_STEPS.length, running) : '';
+  const hist = S.cycles.map(c =>
+    '<tr><td class="mono nw">' + fmtDT(c.ts) + '</td><td class="nw">' + esc(c.user) + '</td><td class="nw">' + fmtISO(c.cut) + '</td><td class="num">' + c.primer + '</td><td class="num">' + c.cambios + '</td><td class="num">' + c.cierres + '</td><td class="num">' + c.rech + '</td></tr>').join('');
+  return layout(
+    '<h1 class="h1">Actualización Mensual de Estados</h1>' +
+    '<section class="card ctl" aria-label="Parámetros de la actualización"><div class="ctl-row">' +
+      '<div class="fld"><label class="lbl" for="c-cut">Fecha de corte</label>' +
+        '<input class="inp" id="c-cut" type="date" value="' + esc(S.ui.cCut) + '"' + (running ? ' disabled' : '') + ' aria-describedby="c-cut-help">' +
+        '<div class="err" id="c-cut-err" hidden role="alert"></div></div>' +
+      '<div class="fld grow"><div class="k">Última actualización</div><b>' + fmtISOLong(last.cut) + '</b><div class="mut">Ejecutada por ' + esc(last.user) + '</div></div>' +
+      '<button type="button" class="btn btn-p" data-act="run-cycle"' + (running ? ' disabled' : '') + '>' + (running ? '<span class="spin"></span>Actualizando…' : ic('refresh', 16) + 'Ejecutar actualización mensual') + '</button>' +
+    '</div>' +
+    '<div class="help" id="c-cut-help">El corte es siempre el <b>último día del mes</b>. ' + (pend
+      ? '<span>Financiaciones nuevas en el SAC:</span> ' + S.nuevas.map(n => '<span class="chip" title="' + esc(n.nombre) + '">' + n.num + '</span>').join(' ') + ' <span>entrarán en <b>primer reporte</b> con su estado y su mora reales.</span>'
+      : 'No hay financiaciones nuevas por ingresar.') + ' Los pagos vienen de la extracción del sistema comercial.</div></section>' +
+    proc + vCicloRes() +
+    '<section class="hist" aria-labelledby="ch-t"><div class="sec-h"><h2 class="h2" id="ch-t">Actualizaciones mensuales anteriores</h2><p>Cada ejecución queda registrada con sus resultados.</p></div>' +
+      '<div class="card tw"><table class="tbl compact"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Fecha de corte</th><th class="num">Primer reporte</th><th class="num">Cambios de estado</th><th class="num">Cierres</th><th class="num">Rechazados</th></tr></thead><tbody>' + hist + '</tbody></table></div></section>' +
+    vMatriz()
+  );
+}
+
+/* =====================================================================
+   Vista — Refinanciaciones (HU-B · RF18)
+   ===================================================================== */
+function vRefinanciaciones(){
+  const rows = S.refis.map(r => {
+    const o = getO(r.orig), n = getO(r.nueva);
+    return '<tr' + (S.flashRow === r.id ? ' class="flash"' : '') + '>' +
+      '<td class="nw"><span class="mono">' + fmtDT(r.ts) + '</span><div class="sub">' + esc(r.user) + '</div></td>' +
+      '<td class="nw"><span class="mono">' + r.orig + '</span><div class="sub">' + esc(o ? o.nombre : '') + '</div><div class="stc" style="margin-top:4px">' + estBd(r.cierre) + '<span class="sub">modo de extinción 16</span></div></td>' +
+      '<td class="num nw">' + fmtCOP(r.saldo) + '</td>' +
+      '<td class="nw"><span class="mono">' + r.nueva + '</span><div class="stc" style="margin-top:4px">' + (n ? estBd(n.est) : '') + '<span class="bd bd-info">Reestructurada</span></div></td>' +
+      '<td class="nw"><span class="chip">' + esc(r.nat) + '</span><div class="sub">' + plural(r.cuotas, 'cuota', 'cuotas') + '</div></td></tr>';
+  }).join('');
+  return layout(
+    '<div class="ph"><h1 class="h1">Refinanciaciones</h1>' +
+      '<button type="button" class="btn btn-p" data-act="refi-new">' + ic('plus', 16) + 'Registrar refinanciación</button></div>' +
+    '<div class="flow" aria-label="Cómo funciona">' +
+      '<div class="fl-b"><span class="fl-n">1</span><b>Se detecta en el SAC</b>Cada extracción revisa el campo de refinanciación del proceso. Este registro manual es de respaldo.</div>' +
+      '<div class="fl-a">' + ic('arrow', 20) + '</div>' +
+      '<div class="fl-b"><span class="fl-n">2</span><b>Se cierra la obligación original</b>En Saldada (02) si estaba Vigente, o en Cartera Recuperada (07) si estaba en Dudoso Recaudo o Castigada. Modo de extinción 16 «Refinanciación».</div>' +
+      '<div class="fl-a">' + ic('arrow', 20) + '</div>' +
+      '<div class="fl-b"><span class="fl-n">3</span><b>Nace la nueva obligación</b>Con número propio, marcada como reestructurada y con su naturaleza (Tabla 11). El vínculo entre las dos queda en NexoVolt: el archivo de TransUnion no tiene un campo para eso.</div>' +
+    '</div>' +
+    '<section aria-labelledby="rf-t"><div class="sec-h"><h2 class="h2" id="rf-t">Refinanciaciones registradas</h2></div>' +
+      '<div class="card tw"><table class="tbl dense"><thead><tr><th>Fecha y registrada por</th><th>Obligación original y cierre</th><th class="num">Saldo refinanciado</th><th>Nueva obligación</th><th>Naturaleza (Tabla 11)</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>'
+  );
+}
+
+/* =====================================================================
+   Vista — Reporte a TransUnion (HU-C · RF20 a RF22, RF50 a RF54, RF57)
+   ===================================================================== */
+const RP_STEPS = [
+  'Revisar las validaciones del corte: las correctivas bloquean — RF53',
+  'Elegir las obligaciones: las abiertas y las que cerraron en este corte; sin las cerradas antes ni las eliminadas — RF13, RF16, RF21, RF50',
+  'Revisar los campos de cierre de Saldadas y Recuperadas — RF22',
+  'Convertir los valores a miles de pesos [redondeo por confirmar con TransUnion] — RF51',
+  'Armar el registro 1 (encabezado), un registro 2 por obligación y el registro 9 (totales) — RF20',
+  'Nombrar el archivo: SSR + tipo de entidad + código de entidad + fecha de corte — RF57'
+];
+const inclCorte = (o, cut) => !o.eliminada && o.ingreso <= cut && (!isClosed(o) || (o.cierre && o.cierre.cut === cut));
+function repStats(cut){
+  const incl = S.obls.filter(o => inclCorte(o, cut));
+  return {incl:incl, n:incl.length, total:incl.reduce((a, o) => a + o.saldo, 0), excl:S.obls.length - incl.length};
+}
+function validaciones(cut){
+  const incl = repStats(cut).incl, cy = S.cycles.find(c => c.cut === cut);
+  const malNum = incl.filter(o => !OBL_RE.test(o.num));
+  const cierres = incl.filter(o => isClosed(o));
+  const malCierre = cierres.filter(o => !o.cierre || !o.cierre.fecha || !o.cierre.modo || !o.cierre.tipo || o.saldo || o.mora || o.cuota || o.cuotasAtr);
+  const largas = incl.filter(o => !isClosed(o) && o.dias >= 540);
+  return [
+    {lvl: cy ? 'ok' : 'bad', t:'Actualización mensual del corte', d: cy ? 'Ejecutada el ' + fmtDT(cy.ts) + ' por ' + esc(cy.user) + '.' : 'Falta ejecutar la actualización mensual de este corte.'},
+    {lvl: cy && cy.rech ? 'bad' : 'ok', t:'Cambios de estado y primer reporte', d: cy && cy.rech ? plural(cy.rech, 'obligación tiene', 'obligaciones tienen') + ' un cambio no permitido (errores 713 u 881). Revísalas en Actualización mensual.' : 'Todos cumplen la matriz de TransUnion y las reglas de primer reporte.'},
+    {lvl: malNum.length ? 'bad' : 'ok', t:'Números de obligación', d: malNum.length ? 'Con más de 20 caracteres o caracteres no permitidos: ' + malNum.map(o => o.num).join(', ') + '.' : 'Todos tienen máximo 20 caracteres y solo caracteres permitidos.'},
+    {lvl: malCierre.length ? 'bad' : 'ok', t:'Campos de cierre (RF22)', d: malCierre.length ? 'Les falta fecha de pago, modo de extinción o tipo de pago: ' + malCierre.map(o => o.num).join(', ') + '.' : plural(cierres.length, 'cierre', 'cierres') + ' con saldo, mora y cuota en cero, fecha de pago, modo de extinción y tipo de pago.'},
+    {lvl:'inf', t:'Valores en miles de pesos (RF51)', d:'Saldo, mora, cuota y valor inicial se reportan en miles, sin decimales. [Regla de redondeo por confirmar con TransUnion.]'},
+    {lvl: entOK() ? 'ok' : 'warn', t:'Datos de la entidad (RF57)', d: entOK() ? 'Tipo de entidad, código de entidad y sucursal asignados por TransUnion.' : 'Llevan relleno mientras TransUnion no los asigne: el archivo saldrá <b>no apto para envío</b>.'},
+    {lvl: largas.length ? 'warn' : 'ok', t:'Mora de más de 18 meses', d: largas.length ? plural(largas.length, 'obligación lleva', 'obligaciones llevan') + ' 540 días o más en mora (' + largas.map(o => o.num).join(', ') + '). Qué hacer con ellas depende del concepto de jurídica (Ley 2157).' : 'Ninguna obligación supera 540 días de mora.'}
+  ];
+}
+function previewTxt(cut){
+  const incl = repStats(cut).incl;
+  const r1 = '1' + '11' + S.ent.tipo + S.ent.cod + ' '.repeat(10) + '01' + cut.replace(/-/g, '');
+  const r2 = incl.slice(0, 5).map(o => {
+    const idn = ('10' + o.num.replace(/\D/g, '')).slice(0, 11).padEnd(11, '0');
+    return '2' + '01' + idn + o.num.padEnd(20) + S.ent.suc + o.est + pad(edadCod(o.dias)) +
+      String(Math.round(o.mora / 1000)).padStart(11, '0') + String(Math.round(o.saldo / 1000)).padStart(11, '0') + String(o.cuotasAtr).padStart(3, '0') + ' …';
+  });
+  const p8 = n => String(n).padStart(8, '0');
+  const r9 = '9' + p8(incl.length + 2) + p8(incl.length) + p8(0) + p8(0);
+  return [r1].concat(r2, incl.length > 5 ? ['… ' + plural(incl.length - 5, 'registro 2 más', 'registros 2 más')] : [], [r9]).map(esc).join('\n');
+}
+function vReporteRes(){
+  const r = S.rpRes;
+  if(!r) return '';
+  const f = r.file;
+  return '<section class="card resf" aria-label="Archivo generado">' +
+    '<div class="feat-h"><div class="ico">' + ic('file', 22) + '</div><div class="grow"><h2 class="h2">Archivo generado</h2><div class="mut mono">' + esc(f.name) + '</div></div>' + fileBd(f) + '</div>' +
+    (f.apto ? '' : noteBox('err', 'warn', '<b>No apto para envío:</b> el tipo de entidad, el código de entidad y la sucursal llevan relleno. Sirve para revisar el contenido, pero TransUnion lo rechazaría.')) +
+    '<div class="resf-g">' +
+      '<div class="stat"><div class="k">Obligaciones (registros 2)</div><div class="v">' + f.n + '</div><div class="sub">' + (f.n + 2) + ' registros con el 1 y el 9</div></div>' +
+      '<div class="stat"><div class="k">No incluidas</div><div class="v">' + f.excl + '</div><div class="sub">Cerradas antes o eliminadas</div></div>' +
+      '<div class="stat"><div class="k">Fecha de corte</div><div class="v">' + fmtISOLong(f.cut) + '</div></div>' +
+      '<div class="stat"><div class="k">Saldo del archivo</div><div class="v">' + fmtCOP(f.saldo) + '</div><div class="sub">Se reporta en miles: ' + Math.round(f.saldo / 1000).toLocaleString('es-CO') + '</div></div>' +
+    '</div>' +
+    '<div class="resf-a"><button type="button" class="btn btn-p" data-act="download-file">' + ic('download', 16) + 'Descargar archivo</button></div>' +
+    '<div class="k" style="margin-bottom:6px">Vista previa (ilustrativa): registro 1 (29 caracteres), primeros campos de cada registro 2 (el completo tiene 930) y registro 9 (33)</div>' +
+    '<div class="pre mono" tabindex="0" aria-label="Vista previa del archivo plano">' + previewTxt(f.cut) + '</div>' +
+  '</section>';
+}
+function vResCargue(){
+  const f = S.files.find(x => x.id === S.ui.resFile);
+  if(!f || !f.res) return '';
+  const r = f.res;
+  const rows = r.inc.map(i => '<tr><td class="mono nw">' + i.num + '</td><td><span class="bd ' + (i.tipo === 'Correctiva' ? 'bd-bad' : 'bd-warn') + '">' + i.tipo + '</span></td><td>' + esc(i.desc) + '</td></tr>').join('');
+  return '<section class="card res" aria-labelledby="rs-t">' +
+    '<div class="res-h"><div><h2 class="h2" id="rs-t" style="margin:0">Resultados del cargue · corte ' + fmtISO(f.cut) + '</h2><div class="mut">Archivos de respuesta de TransUnion cargados el ' + fmtDT(r.ts) + ' (RF54)</div></div></div>' +
+    '<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">' +
+      '<div class="kpi static"><span class="kn">' + r.recibidos + '</span><span class="kl">Registros recibidos</span></div>' +
+      '<div class="kpi static"><span class="kn">' + r.cargados + '</span><span class="kl">Cargados</span></div>' +
+      '<div class="kpi static"><span class="kn">' + r.inc.length + '</span><span class="kl">Con inconsistencias</span></div>' +
+      '<div class="kpi static"><span class="kn">' + r.noRep + '</span><span class="kl">No reportadas (R)</span></div>' +
+    '</div>' +
+    (rows ? '<div class="tw"><table class="tbl compact"><thead><tr><th>Obligación</th><th>Tipo</th><th>Inconsistencia</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '') +
+    noteBox('', 'info', 'Ejemplo ilustrativo. Los códigos y textos reales salen de los archivos que devuelve TransUnion. Las correctivas se corrigen y se reenvían; las informativas no impiden el cargue.') +
+  '</section>';
+}
+function vReporte(){
+  const running = !!S.rp, cut = S.cuts[0];
+  S.ui.rCut = cut;
+  const proc = (S.rp || S.rpRes) ? vProc2('rp', 'Generando el archivo plano…', 'Generación del archivo completada', RP_STEPS, S.rp ? S.rp.step : RP_STEPS.length, running) : '';
+  const exist = S.files.some(f => f.cut === cut);
+  const vals = validaciones(cut), bloq = vals.some(x => x.lvl === 'bad');
+  const ICV = {ok:'check', bad:'x', warn:'warn', inf:'info'};
+  const checks = vals.map(x => '<li><span class="ci ' + x.lvl + '">' + ic(ICV[x.lvl], 14, 3) + '</span><div><b>' + x.t + '</b><div class="cd">' + x.d + '</div></div></li>').join('');
+  const st = repStats(cut);
+  const acts = f => f.enviado
+    ? (f.res ? '<button type="button" class="btn btn-o btn-sm" data-act="ver-res" data-id="' + f.id + '">Ver resultados</button>' : '<button type="button" class="btn btn-o btn-sm" data-act="cargar-res" data-id="' + f.id + '">' + ic('download', 14) + 'Cargar resultados</button>')
+    : f.apto ? '<button type="button" class="btn btn-o btn-sm" data-act="marcar-env" data-id="' + f.id + '">Registrar envío</button>' : '<span class="sub">Requiere los datos de la entidad</span>';
+  const hist = S.files.map(f =>
+    '<tr' + (S.flashRow === f.id ? ' class="flash"' : '') + '><td class="mono nw">' + fmtDT(f.ts) + '</td><td class="nw">' + esc(f.user) + '</td><td class="nw">' + fmtISO(f.cut) + '</td><td class="num">' + f.n + '</td><td class="num nw">' + fmtCOP(f.saldo) + '</td><td class="mono">' + esc(f.name) + '</td><td class="nw">' + fileBd(f) + '</td><td class="nw">' + acts(f) + '</td></tr>').join('');
+  return layout(
+    '<h1 class="h1">Reporte a TransUnion</h1>' +
+    (entOK() ? '' : noteBox('warn', 'warn', 'TransUnion aún no asigna los datos de la entidad. Mientras el tipo de entidad, el código de entidad y la sucursal lleven relleno, los archivos salen <b>no aptos para envío</b>. Los cambia el Administrador en «Datos de la entidad».')) +
+    '<section class="card ctl" aria-label="Parámetros del reporte"><div class="ctl-row">' +
+      '<div class="fld"><div class="k">Fecha de corte</div><b>' + fmtISOLong(cut) + '</b><div class="mut">Último corte actualizado</div></div>' +
+      '<div class="fld grow"><div class="k">Formato del archivo</div><div class="chips-ro"><span class="bd">TOTAL · toda la cartera</span><span class="bd">ANSI · longitud fija</span><span class="bd">Registros 1, 2 y 9 · Sector Real Servicios (SSR)</span></div>' +
+        '<div class="mut" style="margin-top:6px">Nombre: <span class="mono">' + esc(fileName(cut)) + '</span> · ' + plural(st.n, 'obligación', 'obligaciones') + ' · ' + st.excl + ' no se incluyen (cerradas antes o eliminadas)</div></div>' +
+      '<button type="button" class="btn btn-p" data-act="run-report"' + (running || bloq ? ' disabled' : '') + '>' + (running ? '<span class="spin"></span>Generando…' : ic('file', 16) + 'Generar archivo plano') + '</button>' +
+    '</div>' +
+    '<div class="help">' + (bloq ? 'Corrige las validaciones en rojo para poder generar el archivo.' : exist ? 'Ya existe un archivo para este corte: se generará una nueva versión.' : 'Incluye las obligaciones abiertas y las que cerraron en este corte. Las que cerraron antes ya no se reportan.') +
+      '</div></section>' +
+    '<section class="card feat" aria-labelledby="vl-t"><h2 class="h2" id="vl-t" style="margin-bottom:16px">Validaciones antes de generar (RF53)</h2><ul class="chk">' + checks + '</ul>' +
+      '<p class="mut" style="margin-top:12px">Rojo: bloquea (en TransUnion sería correctiva). Amarillo: solo avisa. Azul: informativo.</p></section>' +
+    proc + vReporteRes() +
+    '<section class="hist" aria-labelledby="rh-t"><div class="sec-h"><h2 class="h2" id="rh-t">Archivos generados</h2><p>Cada archivo queda registrado con su corte, sus obligaciones y su estado. Después de enviarlo se cargan los archivos de respuesta de TransUnion.</p></div>' +
+      '<div class="card tw"><table class="tbl compact"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Fecha de corte</th><th class="num">Obligaciones</th><th class="num">Saldo</th><th>Archivo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>' + hist + '</tbody></table></div></section>' +
+    vResCargue()
+  );
+}
+
+/* =====================================================================
+   Vista — Reclamos Habeas Data (HU-C · RF23)
+   ===================================================================== */
+function vReclamos(){
+  const open = S.claims.filter(c => c.estado === 'En reclamo');
+  const pendRad = open.filter(c => !c.radicado).length;
+  const pendCie = S.claims.filter(c => c.estado === 'Cerrado' && !c.cerradoArchivo).length;
+  const k = (n, l) => '<div class="kpi static"><span class="kn">' + n + '</span><span class="kl">' + l + '</span></div>';
+  const rows = S.claims.map(c => {
+    const abierto = c.estado === 'En reclamo';
+    const arch = abierto
+      ? (c.radicado ? '<span class="bd bd-ok">Marcación generada</span>' : '<span class="bd bd-warn">Pendiente de marcación</span>')
+      : (c.cerradoArchivo ? '<span class="bd bd-ok">Desmarcación generada</span>' : '<span class="bd bd-warn">Pendiente de desmarcación</span>');
+    return '<tr' + (S.flashRow === c.id ? ' class="flash"' : '') + '>' +
+      '<td class="nw"><span class="mono">' + c.num + '</span><div class="sub">' + esc(c.nombre) + '</div></td>' +
+      '<td style="min-width:230px">' + esc(c.tip) + '<div class="sub">' + esc(c.obs || '') + '</div></td>' +
+      '<td class="nw">' + fmtISO(c.fecha) + '</td>' +
+      '<td class="nw"><span class="bd ' + (abierto ? 'bd-warn' : 'bd-off') + '">' + c.estado + '</span>' + (abierto ? '' : '<div class="sub">' + esc(c.res) + ' · ' + fmtISO(c.cierre) + '</div>') + '</td>' +
+      '<td class="nw">' + arch + '</td>' +
+      '<td>' + (abierto ? '<button type="button" class="btn btn-o btn-sm" data-act="claim-close" data-id="' + c.id + '">Cerrar reclamo</button>' : '<span class="mut">—</span>') + '</td></tr>';
+  }).join('');
+  return layout(
+    '<div class="ph"><h1 class="h1">Reclamos Habeas Data</h1>' +
+      '<div class="ph-a">' +
+        '<button type="button" class="btn btn-o" data-act="gen-rad"' + (pendRad ? '' : ' disabled') + '>' + ic('file', 16) + 'Archivo de marcación (' + pendRad + ')</button>' +
+        '<button type="button" class="btn btn-o" data-act="gen-cierre"' + (pendCie ? '' : ' disabled') + '>' + ic('file', 16) + 'Archivo de desmarcación (' + pendCie + ')</button>' +
+        '<button type="button" class="btn btn-p" data-act="claim-new">' + ic('flag', 16) + 'Registrar reclamo</button>' +
+      '</div></div>' +
+    '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">' + k(open.length, 'Obligaciones en reclamo') + k(pendRad, 'Pendientes de marcación') + k(pendCie, 'Cerrados pendientes de desmarcación') + '</div>' +
+    noteBox('', 'info', 'Una obligación en reclamo <b>se sigue reportando</b> en el archivo mensual. Aquí solo se prepara el insumo de la «Marcación de obligaciones (Reclamos Batch)» de TransUnion, para que la marque como «en reclamo» y la desmarque al cerrarlo. Se podrá usar cuando TransUnion habilite el perfil de marcación.') +
+    '<div class="card tw"><table class="tbl dense"><thead><tr><th>Obligación</th><th>Tipología y observación</th><th>Fecha del reclamo</th><th>Estado</th><th>Archivo</th><th>Acciones</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+  );
+}
+
+/* =====================================================================
+   Vista — Novedades Urgentes (HU-C · RF24, RF50, RF55)
+   ===================================================================== */
+function vNovedades(){
+  const tab = S.ui.nvTab, all = S.novs;
+  const cnt = {todas:all.length, pendientes:all.filter(n => n.estado === 'Pendiente').length, gestionadas:all.filter(n => n.estado === 'Gestionada').length};
+  const pill = (k, l) => '<button type="button" class="pill" data-act="nv-tab" data-v="' + k + '" aria-pressed="' + (tab === k) + '">' + l + ' (' + cnt[k] + ')</button>';
+  const cls = {'Inclusión':'bd-ok', 'Actualización':'bd-info', 'Corrección':'bd-warn', 'Eliminación':'bd-bad'};
+  const list = all.filter(n => tab === 'todas' || (tab === 'pendientes' ? n.estado === 'Pendiente' : n.estado === 'Gestionada'));
+  const rows = list.length ? list.map(n =>
+    '<tr' + (S.flashRow === n.id ? ' class="flash"' : '') + '>' +
+      '<td class="nw"><span class="bd ' + cls[n.tipo] + '">' + n.tipo + '</span></td>' +
+      '<td class="nw"><span class="mono">' + esc(n.ref) + '</span><div class="sub">' + n.suj + '</div></td>' +
+      '<td style="min-width:240px">' + esc(n.motivo) + (n.corte ? '<div class="sub">Rectifica el corte ' + fmtISO(n.corte) + ' · ' + esc(n.medio) + ' (RF55)</div>' : '') + '</td>' +
+      '<td class="nw">' + fmtISO(n.det) + '<div class="sub">' + n.origen + '</div></td>' +
+      '<td class="nw"><span class="bd ' + (n.estado === 'Pendiente' ? 'bd-warn' : 'bd-ok') + '">' + n.estado + '</span></td>' +
+      '<td>' + (n.estado === 'Pendiente'
+        ? '<button type="button" class="btn btn-o btn-sm" data-act="nov-manage" data-id="' + n.id + '">' + ic('ext', 14) + 'Gestionar en línea</button>'
+        : '<span class="sub">Confirmación ' + esc(n.conf) + '<br>' + fmtISO(n.gest) + '</span>') + '</td></tr>').join('')
+    : '<tr><td colspan="6"><div class="empty">No hay novedades en esta vista.</div></td></tr>';
+  const elim = S.elims.map(e => '<tr><td class="mono nw">' + e.num + '</td><td>' + esc(e.motivo) + '</td><td class="nw">' + fmtISO(e.fecha) + '</td><td class="mono nw">' + esc(e.conf) + '</td></tr>').join('');
+  return layout(
+    '<div class="ph"><h1 class="h1">Novedades Urgentes</h1>' +
+      '<div class="ph-a"><button type="button" class="btn btn-o" data-act="nov-new">' + ic('plus', 16) + 'Registrar novedad</button>' +
+      '<button type="button" class="btn btn-p" data-act="nov-open-tu">' + ic('ext', 16) + 'Abrir Actualización en Línea</button></div></div>' +
+    noteBox('', 'clock', 'Las novedades urgentes no esperan al corte mensual: se hacen de inmediato en el módulo web <b>Actualización en Línea</b> de TransUnion. Lo que se gestione aquí se tiene en cuenta en el <b>próximo reporte mensual</b> (RF24). Las correcciones de un corte ya enviado se registran como «Corrección» (RF55).') +
+    '<div class="pills" role="group" aria-label="Filtrar novedades">' + pill('todas', 'Todas') + pill('pendientes', 'Pendientes') + pill('gestionadas', 'Gestionadas') + '</div>' +
+    '<div class="card tw"><table class="tbl dense"><thead><tr><th>Tipo</th><th>Referencia</th><th>Motivo</th><th>Detectada y origen</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<section class="sec" aria-labelledby="el-t"><div class="sec-h"><h2 class="h2" id="el-t">Obligaciones eliminadas en TransUnion (RF50)</h2><p>No se vuelven a reportar en los cortes siguientes y su número no se puede reutilizar.</p></div>' +
+      '<div class="card tw"><table class="tbl compact"><thead><tr><th>Obligación</th><th>Motivo</th><th>Fecha</th><th>Confirmación</th></tr></thead><tbody>' +
+      (elim || '<tr><td colspan="4"><div class="empty">No hay obligaciones eliminadas.</div></td></tr>') + '</tbody></table></div></section>'
+  );
+}
+
+/* =====================================================================
+   Vista — Datos de la entidad ante TransUnion (Administrador · RF57)
+   ===================================================================== */
+function vEntidad(){
+  if(!isAdmin()) return layout(vRestringido('Datos de la Entidad'));
+  const fld = (id, label, val, len, help) => '<div class="fld"><label class="lbl" for="' + id + '">' + label + '</label>' +
+    '<input class="inp mono" id="' + id + '" value="' + esc(val) + '" maxlength="' + len + '" autocomplete="off" aria-describedby="' + id + '-h">' +
+    '<div class="sub" id="' + id + '-h">' + help + '</div><div class="err" id="' + id + '-err" hidden role="alert"></div></div>';
+  return layout(
+    '<h1 class="h1">Datos de la Entidad ante TransUnion</h1>' +
+    (entOK()
+      ? noteBox('', 'checkCircle', 'Los datos están completos: los archivos nuevos salen <b>aptos para envío</b>.')
+      : noteBox('warn', 'warn', 'TransUnion aún no asigna los datos de la entidad. Los datos llevan relleno (<span class="mono">X</span>) del mismo largo del campo y los archivos salen <b>no aptos para envío</b>. Cuando TransUnion los asigne, se cambian aquí una sola vez.')) +
+    '<form data-form="entidad" novalidate class="card ctl">' +
+      '<div class="ent-g">' +
+        fld('en-tipo', 'Tipo de entidad', S.ent.tipo, 3, '3 dígitos (Tabla 29). Va en el registro 1 y en el nombre del archivo.') +
+        fld('en-cod', 'Código de entidad', S.ent.cod, 3, '3 dígitos (Tabla 30). Va en el registro 1 y en el nombre del archivo.') +
+        fld('en-suc', 'Código de sucursal', S.ent.suc, 6, '6 caracteres. Va en cada registro 2 y debe existir en TransUnion.') +
+      '</div>' +
+      '<div class="ro" style="margin-top:16px"><span>Nombre del próximo archivo</span><b class="mono">' + esc(fileName(S.cuts[0])) + '</b></div>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap">' +
+        '<button type="button" class="btn btn-g" data-act="ent-reset">Volver al relleno</button>' +
+        '<button type="submit" class="btn btn-p">Guardar datos</button></div>' +
+    '</form>' +
+    '<p class="mut">Si TransUnion asigna varias sucursales, falta definir la regla para asignarlas a cada obligación (se acordará cuando TransUnion asigne las sucursales).</p>'
+  );
+}
+
+/* =====================================================================
+   Enrutador
+   ===================================================================== */
+const ROUTES = {
+  'login':           {n:'1. Inicio de sesión',                         rf:'RF25, RF29, RF31',            view:vLogin},
+  'cambio-password': {n:'2. Cambio de contraseña obligatorio',         rf:'RF28, RF31',                  view:vCambio},
+  'recuperar':       {n:'3. Recuperar contraseña',                     rf:'RF29',                        view:vRecuperar},
+  'panel':           {n:'4. Panel principal',                          rf:'RF6, RF19, RF23, RF24, RF44, RF57', view:vPanel},
+  'extraccion':      {n:'5. Extracción y Consolidación de Cartera',    rf:'RF1 a RF9, RF44',             view:vExtraccion},
+  'parametrizacion': {n:'6. Parametrización de Conceptos de Energía',  rf:'RF2, RF35, RF43',             view:vParam},
+  'usuarios':        {n:'7. Gestión de Usuarios',                      rf:'RF27, RF28',                  view:vUsuarios},
+  'auditoria':       {n:'8. Log de Auditoría',                         rf:'RF30',                        view:vAuditoria},
+  'obligaciones':    {n:'9. Obligaciones y Estados',                   rf:'RF10 a RF19, RF45 a RF49',    rol:'analista', view:vObligaciones},
+  'ciclo':           {n:'10. Actualización Mensual de Estados',        rf:'RF10 a RF17, RF19, RF45 a RF49', rol:'analista', view:vCiclo},
+  'refinanciaciones':{n:'11. Refinanciaciones',                        rf:'RF18',                        rol:'analista', view:vRefinanciaciones},
+  'reporte':         {n:'12. Reporte a TransUnion',                    rf:'RF20 a RF22, RF51 a RF54',    rol:'analista', view:vReporte},
+  'reclamos':        {n:'13. Reclamos Habeas Data',                    rf:'RF23',                        rol:'analista', view:vReclamos},
+  'novedades':       {n:'14. Novedades Urgentes',                      rf:'RF24, RF50, RF55',            rol:'analista', view:vNovedades},
+  'entidad':         {n:'15. Datos de la Entidad ante TransUnion',     rf:'RF57',                        view:vEntidad}
+};
+function parseRoute(){
+  const h = location.hash.replace(/^#\/?/, '');
+  return ROUTES[h] ? h : 'login';
+}
+function onEnter(r){
+  if(r === 'recuperar') S.ui.recoverSent = false;
+  if(r === 'extraccion' && !S.run) S.lastResult = null;
+  if(r === 'ciclo' && !S.cy) S.cyRes = null;
+  if(r === 'reporte' && !S.rp) S.rpRes = null;
+  S.route = r;
+}
+function go(r){
+  if(location.hash === '#/' + r) { onEnter(r); render(true); }
+  else location.hash = '#/' + r;
+}
+function render(toTop){
+  const y = window.scrollY;
+  const R = ROUTES[S.route];
+  $('#app').innerHTML = (R.rol === 'analista' && isAdmin()) ? layout(vRestringido(R.n.replace(/^\d+\.\s*/, ''), 'Analista de Cartera')) : R.view();
+  document.title = 'NexoVolt — ' + R.n.replace(/^\d+\.\s*/, '');
+  window.scrollTo(0, toTop ? 0 : y);
+  S.flashId = null; S.flashGroup = null; S.flashRow = null;
+  if(S.route === 'obligaciones') S.chg = {};
+  paintSnav();
+}
+window.addEventListener('hashchange', function(){ closeModal(true); onEnter(parseRoute()); render(true); });
+
+/* navegador de pantallas (ayuda para revisar la maqueta) */
+function paintSnav(){
+  const box = $('#snav');
+  if(/limpio/.test(location.search)) { box.hidden = true; return; }
+  const open = $('#snav-l') && !$('#snav-l').hidden;
+  box.hidden = false;
+  box.innerHTML = '<button type="button" class="snav-b" data-act="snav-toggle" aria-expanded="' + !!open + '" aria-controls="snav-l">' + ic('layers', 16) + 'Pantallas</button>' +
+    '<ul class="snav-l" id="snav-l"' + (open ? '' : ' hidden') + '>' +
+      Object.keys(ROUTES).map(k => '<li><a href="#/' + k + '"' + (k === S.route ? ' aria-current="true"' : '') + '>' + ROUTES[k].n + (ROUTES[k].rf ? '<small>' + ROUTES[k].rf + '</small>' : '') + '</a></li>').join('') +
+    '</ul>';
+}
+function snavOpen(open){
+  const l = $('#snav-l'), b = $('.snav-b');
+  if(!l) return;
+  l.hidden = !open; b.setAttribute('aria-expanded', open);
+}
+
+/* =====================================================================
+   Menú de perfil
+   ===================================================================== */
+function menuOpen(open){
+  const b = $('#pbtn'), m = $('#pmenu');
+  if(!b || !m) return;
+  m.hidden = !open;
+  b.setAttribute('aria-expanded', open);
+  if(open){ const f = $('.mi', m); if(f) f.focus(); }
+}
+
+/* =====================================================================
+   Modales y avisos
+   ===================================================================== */
+let lastFocus = null;
+function openModal(html, opts){
+  opts = opts || {};
+  closeModal(true);
+  lastFocus = opts.returnTo ? $(opts.returnTo) : document.activeElement;
+  $('#modal-root').innerHTML = '<div class="ov' + (opts.side ? ' side' : '') + (opts.wide ? ' wide' : '') + '"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="m-title">' + html + '</div></div>';
+  document.body.style.overflow = 'hidden';
+  const first = $('#modal-root input:not([disabled]):not([type=checkbox]):not([type=radio]), #modal-root input[type=radio]:checked, #modal-root button');
+  if(first) first.focus();
+}
+function closeModal(silent){
+  const root = $('#modal-root');
+  if(!root.innerHTML) return;
+  root.innerHTML = '';
+  document.body.style.overflow = '';
+  if(!silent && lastFocus && document.contains(lastFocus)) lastFocus.focus();
+}
+function toast(msg, type){
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || 'ok');
+  t.innerHTML = '<span class="ti">' + ic(type === 'err' ? 'warn' : 'checkCircle', 18) + '</span><span>' + esc(msg) + '</span>';
+  $('#toast-root').appendChild(t);
+  setTimeout(function(){ t.classList.add('out'); setTimeout(function(){ t.remove(); }, 320); }, 4200);
+}
+function showErr(el, msg){ if(msg) el.textContent = msg; el.hidden = false; }
+function hideErr(el){ if(el) el.hidden = true; }
+
+/* ---- Cambiar datos ---- */
+function modalPerfil(){
+  const u = cur();
+  openModal(
+    '<form data-form="profile" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Cambiar datos</h2><p class="m-sub">Actualiza tu información de contacto. El rol solo puede modificarlo un Administrador.</p></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="p-nombre">Nombre completo</label>' +
+        '<input class="inp" id="p-nombre" value="' + esc(u.nombre) + '" autocomplete="name">' +
+        '<div class="err" id="p-nombre-err" hidden></div>' +
+        '<label class="lbl lbl2" for="p-correo">Correo corporativo</label>' +
+        '<input class="inp" id="p-correo" type="email" value="' + esc(u.correo) + '" autocomplete="email">' +
+        '<div class="err" id="p-correo-err" hidden></div>' +
+        '<label class="lbl lbl2" for="p-tel">Teléfono (opcional)</label>' +
+        '<input class="inp" id="p-tel" type="tel" value="' + esc(u.tel) + '" placeholder="Ej.: 300 123 4567" autocomplete="tel">' +
+        '<div class="ro"><span>Rol asignado</span><b>' + esc(u.rol) + '</b></div>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Guardar cambios</button></div>' +
+    '</form>', {returnTo:'#pbtn'});
+}
+function submitPerfil(){
+  const n = $('#p-nombre').value.trim(), c = $('#p-correo').value.trim(), t = $('#p-tel').value.trim();
+  const en = $('#p-nombre-err'), ec = $('#p-correo-err');
+  let ok = true;
+  if(!n){ showErr(en, 'Ingresa tu nombre completo.'); $('#p-nombre').setAttribute('aria-invalid', 'true'); ok = false; }
+  else { hideErr(en); $('#p-nombre').removeAttribute('aria-invalid'); }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)){ showErr(ec, 'Ingresa un correo válido, por ejemplo nombre@example.com.'); $('#p-correo').setAttribute('aria-invalid', 'true'); ok = false; }
+  else { hideErr(ec); $('#p-correo').removeAttribute('aria-invalid'); }
+  if(!ok){ (n ? $('#p-correo') : $('#p-nombre')).focus(); return; }
+  const u = cur(), ch = [];
+  if(u.nombre !== n) ch.push('nombre'); if(u.correo !== c) ch.push('correo'); if(u.tel !== t) ch.push('teléfono');
+  if(ch.length){ logAudit('Datos de perfil actualizados', 'Seguridad', 'Campos: ' + ch.join(', ')); Object.assign(u, {nombre:n, correo:c, tel:t}); }
+  closeModal(true); render();
+  const b = $('#pbtn'); if(b) b.focus();
+  toast(ch.length ? 'Datos actualizados correctamente.' : 'No hubo cambios por guardar.');
+}
+
+/* ---- Cambiar de perfil ---- */
+function modalSwitch(){
+  const profs = ['u1', 'u2'].map(id => S.users.find(u => u.id === id));
+  const items = profs.map(p =>
+    '<label class="pcard"><input type="radio" name="perfil" value="' + p.id + '"' + (p.id === S.userId ? ' checked' : '') + '>' +
+    '<span class="pc-av">' + ic('avatar', 36, 1.5) + '</span>' +
+    '<span class="pc-t"><b>' + esc(p.nombre) + '</b><small>' + esc(p.rol) + '</small></span>' +
+    (p.id === S.userId ? '<span class="bd bd-ok">Perfil actual</span>' : '') + '</label>').join('');
+  openModal(
+    '<form data-form="switch" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Cambiar de perfil</h2><p class="m-sub">Selecciona el perfil con el que quieres continuar. Los permisos y el menú cambian según el rol.</p></div>' +
+      '<div class="dlg-b">' + items + '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p" id="sw-ok" disabled>Cambiar perfil</button></div>' +
+    '</form>', {returnTo:'#pbtn'});
+}
+function submitSwitch(){
+  const sel = $('input[name=perfil]:checked');
+  if(!sel || sel.value === S.userId) return;
+  const from = cur(), to = S.users.find(u => u.id === sel.value);
+  logAudit('Cambio de perfil', 'Seguridad', from.nombre + ' (' + from.rol + ') → ' + to.nombre + ' (' + to.rol + ')');
+  S.userId = to.id;
+  closeModal(true); render();
+  const b = $('#pbtn'); if(b) b.focus();
+  toast('Ahora estás usando el perfil: ' + to.nombre + ' · ' + to.rol + '.');
+}
+
+/* ---- Crear grupo de conceptos ---- */
+function modalGrupo(){
+  const list = S.concepts.map(c => {
+    const ok = c.estado === 'Activo';
+    return '<label class="' + (ok ? '' : 'dis') + '"><input type="checkbox" name="gc" value="' + esc(c.code) + '"' + (ok ? '' : ' disabled') + '>' +
+      '<span class="pc-code">' + esc(c.code) + '</span><span class="pc-desc">' + esc(c.desc) + '</span>' +
+      (ok ? '' : '<span class="bd bd-off">' + c.estado + '</span>') + '</label>';
+  }).join('');
+  openModal(
+    '<form data-form="group" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Crear grupo de conceptos</h2><p class="m-sub">Elige los conceptos de energía que harán parte del grupo y ponle un nombre. Luego podrás seleccionarlo al ejecutar una extracción de cartera.</p></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="g-name">Nombre del grupo</label>' +
+        '<input class="inp" id="g-name" maxlength="60" placeholder="Ej.: Energía Residencial y Comercial" autocomplete="off">' +
+        '<div class="err" id="g-name-err" hidden role="alert"></div>' +
+        '<div class="pick-h"><span class="lbl" id="pk-l">Conceptos del grupo</span><label class="all"><input type="checkbox" id="g-all">Seleccionar todos los activos</label></div>' +
+        '<div class="pick" role="group" aria-labelledby="pk-l">' + list + '</div>' +
+        '<div class="err" id="g-pick-err" hidden role="alert">Selecciona al menos un concepto.</div>' +
+        '<div class="pick-c" id="g-count" aria-live="polite">0 conceptos seleccionados</div>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Crear grupo</button></div>' +
+    '</form>');
+}
+function updatePick(){
+  const en = $$('input[name=gc]:not([disabled])'), on = en.filter(i => i.checked);
+  const all = $('#g-all');
+  if(all){ all.checked = en.length > 0 && on.length === en.length; all.indeterminate = on.length > 0 && on.length < en.length; }
+  const c = $('#g-count'); if(c) c.textContent = plural(on.length, 'concepto seleccionado', 'conceptos seleccionados');
+  if(on.length) hideErr($('#g-pick-err'));
+}
+function submitGrupo(){
+  const name = $('#g-name').value.trim().replace(/\s+/g, ' ');
+  const codes = $$('input[name=gc]:checked').map(i => i.value);
+  const en = $('#g-name-err'), ep = $('#g-pick-err');
+  let ok = true;
+  if(!name){ showErr(en, 'Ingresa un nombre para el grupo.'); ok = false; }
+  else if(S.groups.some(g => g.nombre.toLowerCase() === name.toLowerCase())){ showErr(en, 'Ya existe un grupo con ese nombre. Usa uno diferente.'); ok = false; }
+  else hideErr(en);
+  if(ok) $('#g-name').removeAttribute('aria-invalid'); else if(!en.hidden) $('#g-name').setAttribute('aria-invalid', 'true');
+  if(!codes.length){ showErr(ep); ok = false; } else hideErr(ep);
+  if(!ok){ (en.hidden ? $('input[name=gc]:not([disabled])') : $('#g-name')).focus(); return; }
+  const g = {id:'g' + Date.now(), nombre:name, codes:codes, creado:new Date(), por:cur().nombre};
+  S.groups.push(g); S.flashGroup = g.id;
+  logAudit('Grupo de conceptos creado', 'Parametrización', name + ' (' + codes.join(', ') + ')');
+  closeModal(true); render();
+  const el = $('.gcard.flash'); if(el) el.scrollIntoView({block:'center', behavior:'smooth'});
+  const b = $('#btn-newgroup'); if(b) b.focus({preventScroll:true});
+  toast('Grupo «' + name + '» creado con ' + plural(codes.length, 'concepto', 'conceptos') + '.');
+}
+
+/* ---- Crear usuario (panel lateral, igual que la maqueta original) ---- */
+function modalUsuario(){
+  openModal(
+    '<form data-form="user" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Crear nuevo usuario</h2></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="nu-nombre">Nombre completo</label><input class="inp" id="nu-nombre" type="text" autocomplete="off">' +
+        '<label class="lbl lbl2" for="nu-correo">Correo corporativo</label><input class="inp" id="nu-correo" type="email" autocomplete="off">' +
+        '<label class="lbl lbl2" for="nu-rol">Rol</label><select class="inp sel" id="nu-rol"><option>Analista de Cartera</option><option>Administrador</option></select>' +
+        '<p class="m-sub" style="margin-top:18px">Se generará una contraseña temporal que el usuario deberá cambiar en su primer ingreso.</p>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="submit" class="btn btn-p btn-block">Crear usuario</button></div>' +
+    '</form>', {side:true});
+}
+
+/* =====================================================================
+   Extracción: simulación del proceso
+   ===================================================================== */
+function startExtraction(){
+  if(S.run) return;
+  const gid = $('#x-group').value, cut = $('#x-cut').value;
+  const eg = $('#x-group-err'), ec = $('#x-cut-err');
+  let ok = true;
+  if(!gid){ showErr(eg); $('#x-group').setAttribute('aria-invalid', 'true'); ok = false; } else { hideErr(eg); $('#x-group').removeAttribute('aria-invalid'); }
+  if(!cut || !esFinMes(cut)){ showErr(ec, cut ? 'El corte es el último día del mes: ' + fmtISO(finMes(cut)) + '.' : 'Selecciona una fecha de corte.'); $('#x-cut').setAttribute('aria-invalid', 'true'); ok = false; } else { hideErr(ec); $('#x-cut').removeAttribute('aria-invalid'); }
+  if(!ok){ (gid ? $('#x-cut') : $('#x-group')).focus(); return; }
+  const g = S.groups.find(x => x.id === gid);
+  S.ui.xGroup = gid; S.ui.xCut = cut; S.lastResult = null;
+  S.run = {groupId:g.id, groupName:g.nombre, codes:g.codes.slice(), cut:cut, user:cur().nombre, step:0, timer:null};
+  render();
+  S.run.timer = setInterval(tick, 650);
+}
+function tick(){
+  if(!S.run) return;
+  S.run.step++;
+  if(S.run.step >= STEPS.length) finishExtraction(); else paintRun();
+}
+function paintRun(){
+  if(!S.run || S.route !== 'extraccion') return;
+  const pct = Math.round(S.run.step / STEPS.length * 100);
+  const bar = $('#run-bar'); if(bar){ bar.style.width = pct + '%'; bar.parentNode.setAttribute('aria-valuenow', pct); }
+  $$('[data-step]').forEach(function(li){
+    const st = stepState(+li.getAttribute('data-step'), S.run.step);
+    li.className = 'step ' + st;
+    li.querySelector('.sic').innerHTML = stepIcon(st);
+  });
+}
+function finishExtraction(){
+  const r = S.run; clearInterval(r.timer); S.run = null;
+  const q = runQuery(r.codes);
+  const ext = {id:'x' + Date.now(), ts:new Date(), user:r.user, cut:r.cut, groupId:r.groupId, groupName:r.groupName, codes:r.codes, count:q.count, total:q.total};
+  S.extractions.unshift(ext); S.flashId = ext.id;
+  S.lastResult = {ext:ext, rows:q.rows};
+  S.audit.unshift({ts:ext.ts, user:r.user, rol:isAdminName(r.user) ? 'Administrador' : 'Analista', action:'Extracción de cartera ejecutada', module:'Extracción', detail:'Corte ' + fmtISO(r.cut) + ' · Grupo: ' + r.groupName});
+  if(S.route === 'extraccion') render();
+  toast('Extracción completada con el grupo «' + r.groupName + '»: ' + plural(q.count, 'obligación', 'obligaciones') + '.');
+}
+function isAdminName(n){ const u = S.users.find(x => x.nombre === n); return !!u && u.rol === 'Administrador'; }
+
+
+/* =====================================================================
+   Iteración 2 · reglas de pagos y estados (HU-B)
+   ===================================================================== */
+/* Aplica un pago extraído del SAC: de la cuota vencida más antigua a la más reciente [orden por confirmar con CENS, RF17]. */
+function aplicarPago(o, monto, cut, nota){
+  const pend = o.venc.filter(x => x.v > 0).sort((a, b) => a.f < b.f ? -1 : 1);
+  let resto = monto; const cubre = [];
+  pend.forEach(x => { if(resto <= 0) return; const p = Math.min(resto, x.v); x.v -= p; resto -= p; cubre.push((x.v === 0 ? 'cuota del ' : 'parte de la cuota del ') + fmtISO(x.f)); });
+  o.saldo = Math.max(0, o.saldo - monto);
+  o.pagos.push({cut:cut, monto:monto, nota:nota || '', aplica:cubre.length ? cubre.join(', ') : 'cuota del mes'});
+}
+function cerrar(o, cut, fecha, modo, tipo){
+  const a = (o.est === '03' || o.est === '06') ? '07' : '02';
+  o.cuotaOrig = o.cuotaOrig || o.cuota;
+  o.est = a; o.saldo = 0; o.cuota = 0; o.venc.forEach(x => { x.v = 0; }); recalc(o, cut);
+  o.cierre = {cut:cut, fecha:fecha, modo:modo, tipo:tipo};
+  return a;
+}
+function nuevaNum(pre){ let n = 6100 + S.refis.length; while(getO(pre + '-' + n) || S.elims.some(e => e.num === pre + '-' + n)) n++; return pre + '-' + n; }
+
+/* ---- Detalle de la obligación (panel lateral) ---- */
+function modalObl(num){
+  const o = getO(num);
+  if(!o) return;
+  S.ui.detNum = num;
+  const closed = isClosed(o), e = edadCod(o.dias);
+  const pc = '<span class="pc-tag">por confirmar</span>';
+  const pos = o.eliminada ? ['Eliminada en TransUnion: no se vuelve a reportar y su número no se reutiliza' + rfTag('RF50')]
+    : closed ? ['Se reporta una sola vez, en el corte en que cerró (' + fmtISO(o.cierre ? o.cierre.cut : o.ingreso) + '), y después ya no' + rfTag(o.est === '02' ? 'RF13' : 'RF16')]
+    : o.est === '01' ? [
+        'Pago total → ' + estBd('02') + rfTag('RF12'),
+        'Crédito caducado en el SAC y con mora → ' + estBd('03') + rfTag('RF14') + pc,
+        'Castigo contable de CENS y con mora → ' + estBd('06') + rfTag('RF45'),
+        'Refinanciación → ' + estBd('02') + ' con modo de extinción 16' + rfTag('RF18')]
+    : [
+        'Pago total → ' + estBd('07') + rfTag('RF15'),
+        'Paga la mora sin cancelar el saldo → ' + estBd('01') + rfTag('RF46') + pc,
+        (o.est === '03' ? 'Castigo contable de CENS → ' + estBd('06') + rfTag('RF45') : 'Sigue en Castigada mientras tenga mora'),
+        'Refinanciación → ' + estBd('07') + ' con modo de extinción 16' + rfTag('RF18')];
+  const tl = o.ev.slice().reverse().map(x =>
+    '<li' + (EST[x.est].closed ? ' class="closed"' : '') + '><i></i><div class="t-d">' + fmtISO(x.f) + ' ' + estBd(x.est) + '<span>Edad de mora ' + x.edad + '</span></div><div class="t-n">' + esc(x.t) + '</div></li>').join('');
+  const pend = o.venc.filter(x => x.v > 0).sort((a, b) => a.f < b.f ? -1 : 1);
+  const tVenc = pend.length
+    ? '<table class="vt"><thead><tr><th>Vencimiento</th><th class="num">Pendiente</th><th class="num">Días</th></tr></thead><tbody>' +
+        pend.map(x => '<tr><td>' + fmtISO(x.f) + '</td><td class="num">' + fmtCOP(x.v) + '</td><td class="num">' + diasEntre(x.f, S.cycles[0].cut) + '</td></tr>').join('') + '</tbody></table>'
+    : '<p class="mut">No tiene cuotas vencidas sin pagar.</p>';
+  const tPag = o.pagos.length
+    ? '<table class="vt"><thead><tr><th>Corte</th><th class="num">Valor</th><th>Se aplicó a</th></tr></thead><tbody>' +
+        o.pagos.slice().reverse().map(p => '<tr><td>' + fmtISO(p.cut) + '</td><td class="num">' + fmtCOP(p.monto) + '</td><td>' + esc(p.aplica) + (p.nota ? '<div class="sub">' + esc(p.nota) + '</div>' : '') + '</td></tr>').join('') + '</tbody></table>'
+    : '<p class="mut">La última extracción no trajo pagos de esta obligación.</p>';
+  const pay = '<h3 class="h3">Cuotas vencidas sin pagar</h3>' + tVenc +
+    '<h3 class="h3" style="margin-top:16px">Pagos extraídos del sistema comercial</h3>' + tPag +
+    '<p class="mut" style="margin-top:8px">Los pagos vienen de la extracción del SAC; aquí no se registran a mano. Se aplican de la cuota más antigua a la más reciente ' + pc + ' y los días de mora se cuentan desde la cuota más antigua que siga sin pagar completa.</p>';
+  const acts = (o.reclamo ? '<span class="bd bd-warn">En reclamo Habeas Data</span>' : '<button type="button" class="btn btn-g btn-sm" data-act="claim-from" data-num="' + o.num + '">' + ic('flag', 14) + 'Registrar reclamo</button>') +
+    (!closed && !o.eliminada ? '<button type="button" class="btn btn-g btn-sm" data-act="refi-from" data-num="' + o.num + '">' + ic('link', 14) + 'Registrar refinanciación</button>' : '');
+  const dg = [
+    ['Concepto de la cuota', esc(o.concepto) + ' · ' + esc(descOf(o.concepto))],
+    ['Saldo', fmtCOP(o.saldo)],
+    ['Valor en mora', fmtCOP(o.mora)],
+    ['Días de mora', String(o.dias)],
+    ['Edad de mora (Tabla 9)', edadTxt(o.dias) + (e === 14 ? '<div class="sub">Años en mora: ' + Math.floor(o.dias / 365) + ' (RF49)</div>' : '')],
+    ['Fecha de exigibilidad', o.exig ? fmtISO(o.exig) + '<div class="sub">Cuota más antigua sin pagar (RF49)</div>' : '—'],
+    ['Cuotas en mora', cuotasBd(o.cuotasAtr)],
+    ['Valor de la cuota', fmtCOP(o.cuota) + (closed && o.cuotaOrig ? '<div class="sub">Antes ' + fmtCOP(o.cuotaOrig) + ': al cerrar se reporta en $0</div>' : '')],
+    ['Primer reporte', o.primer ? 'Sí: aún no se ha incluido en ningún archivo' : 'No'],
+    ['En el SAC', (o.caducado ? 'Crédito caducado' : 'No caducado') + '<div class="sub">Caduca a las ' + o.atrPerm + ' cuotas atrasadas</div>'],
+    ['Ingreso al sistema', fmtISO(o.ingreso)]
+  ].concat(o.reestr ? [['Obligación reestructurada', '01 · Sí (' + o.nRestr + ')<div class="sub">Naturaleza ' + esc(o.nat) + ' · viene de ' + o.refOrig + '</div>']] : [])
+   .concat(o.cierre ? [['Cierre', 'Pago el ' + fmtISO(o.cierre.fecha) + '<div class="sub">Modo ' + esc(o.cierre.modo) + ' · Tipo de pago ' + esc(o.cierre.tipo) + '</div>']] : [])
+   .concat(o.pagoMora ? [['Pago de la mora (RF47)', fmtISO(o.pagoMora.fecha) + '<div class="sub">Modo ' + esc(o.pagoMora.modo) + ' · Tipo de pago ' + esc(o.pagoMora.tipo) + '</div>']] : [])
+   .map(x => '<div><div class="k">' + x[0] + '</div><b>' + x[1] + '</b></div>').join('');
+  openModal(
+    '<div>' +
+      '<div class="dlg-h"><h2 id="m-title">Obligación ' + o.num + '</h2><p class="m-sub">' + esc(o.nombre) + ' · ' + estBd(o.est) + (closed ? ' <span class="lk">' + ic('lock', 14, 2.2) + '</span>' : '') + (o.primer ? ' <span class="pc-tag">Primer reporte</span>' : '') + '</p></div>' +
+      '<div class="dlg-b">' +
+        '<div class="dg">' + dg + '</div>' +
+        '<div class="dsec"><h3 class="h3">Qué puede pasar con esta obligación</h3><ul class="pos">' + pos.map(p => '<li>' + p + '</li>').join('') + '</ul></div>' +
+        '<div class="dsec">' + pay + '</div>' +
+        '<div class="dsec"><h3 class="h3">Línea de tiempo de estados</h3><ul class="tl">' + tl + '</ul></div>' +
+      '</div>' +
+      '<div class="dlg-f" style="justify-content:space-between;align-items:center"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + acts + '</div><button type="button" class="btn btn-g" data-act="modal-close">Cerrar</button></div>' +
+    '</div>', {side:true, wide:true});
+}
+
+/* ---- Registrar refinanciación (RF18) ---- */
+function refiNota(num){
+  const o = getO(num);
+  if(!o) return 'Elige la obligación original para ver cómo se cierra.';
+  const a = (o.est === '03' || o.est === '06') ? '07' : '02';
+  return 'La obligación original pasa de ' + estBd(o.est) + ' a ' + estBd(a) + ' con modo de extinción <b>16 · Refinanciación</b> y tipo de pago <b>02 · No voluntario</b>. ' +
+    'La nueva entra en <b>primer reporte</b> en Vigente (01), marcada como reestructurada.';
+}
+function modalRefi(num){
+  const elig = S.obls.filter(o => !isClosed(o) && !o.eliminada);
+  const opts = '<option value="">Selecciona una obligación…</option>' + elig.map(o => '<option value="' + o.num + '"' + (o.num === num ? ' selected' : '') + '>' + o.num + ' · ' + esc(o.nombre) + ' · ' + EST[o.est].n + ' · ' + fmtCOP(o.saldo) + '</option>').join('');
+  const nats = '<option value="">Selecciona la naturaleza…</option>' + NATURALEZAS.map(n => '<option>' + n + '</option>').join('');
+  openModal(
+    '<form data-form="refi" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Registrar refinanciación</h2><p class="m-sub">Respaldo manual: normalmente el sistema la detecta en el SAC al hacer la extracción.</p></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="rf-obl">Obligación original</label><select class="inp sel" id="rf-obl">' + opts + '</select><div class="err" id="rf-obl-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="rf-nat">Naturaleza de la reestructuración (Tabla 11) <span class="pc-tag">código por confirmar con CENS</span></label><select class="inp sel" id="rf-nat">' + nats + '</select><div class="err" id="rf-nat-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="rf-cuotas">Número de cuotas de la nueva obligación</label><input class="inp" id="rf-cuotas" type="number" min="1" max="120" step="1" placeholder="Ej.: 24"><div class="err" id="rf-cuotas-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="rf-fecha">Fecha de la refinanciación</label><input class="inp" id="rf-fecha" type="date" value="' + todayISO() + '"><div class="err" id="rf-fecha-err" hidden role="alert"></div>' +
+        '<div class="ro"><span>Número de la nueva obligación</span><b>Se asigna automáticamente</b></div>' +
+        '<div style="margin-top:14px" class="note" id="rf-note">' + ic('info', 18) + '<div id="rf-note-t">' + refiNota(num) + '</div></div>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Registrar refinanciación</button></div>' +
+    '</form>');
+}
+function submitRefi(){
+  const num = $('#rf-obl').value, nat = $('#rf-nat').value, cu = Math.round(+$('#rf-cuotas').value), fecha = $('#rf-fecha').value;
+  let first = null;
+  const bad = (id, msg) => { showErr($('#' + id + '-err'), msg); $('#' + id).setAttribute('aria-invalid', 'true'); if(!first) first = $('#' + id); };
+  ['rf-obl', 'rf-nat', 'rf-cuotas', 'rf-fecha'].forEach(id => { hideErr($('#' + id + '-err')); $('#' + id).removeAttribute('aria-invalid'); });
+  if(!num) bad('rf-obl', 'Selecciona la obligación original.');
+  if(!nat) bad('rf-nat', 'Selecciona la naturaleza de la reestructuración.');
+  if(!(cu >= 1 && cu <= 120)) bad('rf-cuotas', 'Ingresa un número de cuotas entre 1 y 120.');
+  if(!fecha) bad('rf-fecha', 'Selecciona la fecha de la refinanciación.');
+  const o = num ? getO(num) : null;
+  if(o && !first){
+    const a = (o.est === '03' || o.est === '06') ? '07' : '02';
+    if(!mxOK(o.est, o.mora > 0, a, false)) bad('rf-obl', 'TransUnion no acepta pasar de ' + EST[o.est].n + ' a ' + EST[a].n + ' (error 713).');
+  }
+  if(first){ first.focus(); return; }
+  const nn = nuevaNum('2272'), saldo = o.saldo, de = o.est;
+  const a = cerrar(o, finMes(fecha), fecha, '16 · Refinanciación', '02 · No voluntario');
+  o.refDest = nn;
+  o.ev.push(ev(fecha, a, 'Refinanciada: se cierra en ' + EST[a].n + ' (' + a + ') con modo de extinción 16 Refinanciación (antes ' + EST[de].n + ')'));
+  const nueva = mkO({num:nn, nombre:o.nombre, concepto:o.concepto, est:'01', saldo:saldo, cuota:Math.ceil(saldo / cu / 1000) * 1000, ingreso:fecha, refOrig:o.num,
+    nuevo:true, primer:true, reestr:true, nRestr:(o.nRestr || 0) + 1, nat:nat, atrPerm:o.atrPerm,
+    ev:[ev(fecha, '01', 'Nueva obligación por la refinanciación de ' + o.num + ': primer reporte en Vigente (01), marcada como reestructurada')]});
+  recalc(nueva, finMes(fecha));
+  S.obls.push(nueva);
+  const r = {id:'rf' + Date.now(), ts:new Date(), user:cur().nombre, orig:o.num, nueva:nn, saldo:saldo, nat:nat, cierre:a, cuotas:cu};
+  S.refis.unshift(r); S.flashRow = r.id; S.chg[o.num] = true; S.chg[nn] = true;
+  logAudit('Refinanciación registrada', 'Ciclo de vida', o.num + ' → ' + nn + ' · original en ' + EST[a].n + ' (' + a + '), modo de extinción 16 · ' + nat);
+  closeModal(true); render();
+  toast('Refinanciación registrada: ' + o.num + ' pasa a ' + EST[a].n + ' y nace ' + nn + ' en Vigente (01).');
+}
+
+/* ---- Reclamos Habeas Data (RF23) ---- */
+const RESOLUCIONES = ['Procedente','No procedente','Desistido por el titular'];
+function modalClaim(num){
+  const elig = S.obls.filter(o => !o.reclamo && !o.eliminada);
+  const oo = '<option value="">Selecciona una obligación…</option>' + elig.map(o => '<option value="' + o.num + '"' + (o.num === num ? ' selected' : '') + '>' + o.num + ' · ' + esc(o.nombre) + '</option>').join('');
+  const tt = '<option value="">Selecciona la tipología…</option>' + TIPOS_RECLAMO.map(t => '<option>' + t + '</option>').join('');
+  openModal(
+    '<form data-form="claim" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Registrar reclamo</h2><p class="m-sub">La obligación se sigue reportando; queda pendiente el archivo de marcación para TransUnion.</p></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="cl-obl">Obligación</label><select class="inp sel" id="cl-obl">' + oo + '</select><div class="err" id="cl-obl-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="cl-tip">Tipología del reclamo <span class="pc-tag">usar la lista de TransUnion</span></label><select class="inp sel" id="cl-tip">' + tt + '</select><div class="err" id="cl-tip-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="cl-fecha">Fecha del reclamo</label><input class="inp" id="cl-fecha" type="date" value="' + todayISO() + '"><div class="err" id="cl-fecha-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="cl-obs">Observación (opcional)</label><textarea class="ta" id="cl-obs" maxlength="200" placeholder="Describe brevemente el reclamo del titular"></textarea>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Registrar reclamo</button></div>' +
+    '</form>');
+}
+function submitClaim(){
+  const num = $('#cl-obl').value, tip = $('#cl-tip').value, fecha = $('#cl-fecha').value, obs = $('#cl-obs').value.trim();
+  let first = null;
+  const bad = (id, msg) => { showErr($('#' + id + '-err'), msg); $('#' + id).setAttribute('aria-invalid', 'true'); if(!first) first = $('#' + id); };
+  ['cl-obl', 'cl-tip', 'cl-fecha'].forEach(id => { hideErr($('#' + id + '-err')); $('#' + id).removeAttribute('aria-invalid'); });
+  if(!num) bad('cl-obl', 'Selecciona la obligación en reclamo.');
+  if(!tip) bad('cl-tip', 'Selecciona la tipología del reclamo.');
+  if(!fecha) bad('cl-fecha', 'Selecciona la fecha del reclamo.');
+  if(first){ first.focus(); return; }
+  const o = getO(num);
+  o.reclamo = true;
+  o.ev.push(ev(fecha, o.est, 'Reclamo Habeas Data registrado (' + tip + '). Se sigue reportando', pad(edadCod(o.dias))));
+  const c = {id:'r' + Date.now(), num:num, nombre:o.nombre, tip:tip, fecha:fecha, estado:'En reclamo', radicado:false, obs:obs};
+  S.claims.unshift(c); S.flashRow = c.id; S.chg[num] = true;
+  logAudit('Reclamo registrado', 'Reclamos', num + ' · ' + tip);
+  closeModal(true); render();
+  toast('Reclamo registrado para ' + num + ': queda pendiente el archivo de marcación.');
+}
+function modalUnclaim(id){
+  const c = S.claims.find(x => x.id === id);
+  if(!c) return;
+  S.ui.unId = id;
+  openModal(
+    '<form data-form="unclaim" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Cerrar reclamo</h2><p class="m-sub">' + c.num + ' · ' + esc(c.nombre) + ' · ' + esc(c.tip) + '</p></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="uc-res">Resultado del reclamo</label><select class="inp sel" id="uc-res"><option value="">Selecciona el resultado…</option>' + RESOLUCIONES.map(r => '<option>' + r + '</option>').join('') + '</select><div class="err" id="uc-res-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="uc-fecha">Fecha de cierre</label><input class="inp" id="uc-fecha" type="date" value="' + todayISO() + '"><div class="err" id="uc-fecha-err" hidden role="alert"></div>' +
+        '<label class="lbl lbl2" for="uc-obs">Observación (opcional)</label><textarea class="ta" id="uc-obs" maxlength="200" placeholder="Anota cómo se resolvió el reclamo"></textarea>' +
+        '<div style="margin-top:14px">' + noteBox('', 'info', 'Al cerrarlo queda pendiente el archivo de desmarcación. Si el reclamo fue procedente, corrige el dato con una novedad de «Corrección».') + '</div>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Cerrar reclamo</button></div>' +
+    '</form>');
+}
+function submitUnclaim(){
+  const c = S.claims.find(x => x.id === S.ui.unId);
+  if(!c) return;
+  const res = $('#uc-res').value, fecha = $('#uc-fecha').value, obs = $('#uc-obs').value.trim();
+  let first = null;
+  const bad = (id, msg) => { showErr($('#' + id + '-err'), msg); $('#' + id).setAttribute('aria-invalid', 'true'); if(!first) first = $('#' + id); };
+  ['uc-res', 'uc-fecha'].forEach(id => { hideErr($('#' + id + '-err')); $('#' + id).removeAttribute('aria-invalid'); });
+  if(!res) bad('uc-res', 'Selecciona el resultado del reclamo.');
+  if(!fecha) bad('uc-fecha', 'Selecciona la fecha de cierre.');
+  else if(fecha < c.fecha) bad('uc-fecha', 'La fecha de cierre no puede ser anterior al reclamo (' + fmtISO(c.fecha) + ').');
+  if(first){ first.focus(); return; }
+  c.estado = 'Cerrado'; c.res = res; c.cierre = fecha; c.cerradoArchivo = false; if(obs) c.obs = obs;
+  const o = getO(c.num);
+  if(o){ o.reclamo = false; o.ev.push(ev(fecha, o.est, 'Reclamo Habeas Data cerrado: ' + res, pad(edadCod(o.dias)))); S.chg[o.num] = true; }
+  S.flashRow = c.id;
+  logAudit('Reclamo cerrado', 'Reclamos', c.num + ' · ' + res);
+  closeModal(true); render();
+  toast('Reclamo cerrado: queda pendiente el archivo de desmarcación.');
+}
+function genClaims(kind){
+  const list = kind === 'rad' ? S.claims.filter(c => c.estado === 'En reclamo' && !c.radicado) : S.claims.filter(c => c.estado === 'Cerrado' && !c.cerradoArchivo);
+  if(!list.length) return;
+  list.forEach(c => { if(kind === 'rad') c.radicado = true; else c.cerradoArchivo = true; });
+  S.flashRow = list[0].id;
+  logAudit(kind === 'rad' ? 'Archivo de marcación de reclamos generado' : 'Archivo de desmarcación de reclamos generado', 'Reclamos', plural(list.length, 'reclamo', 'reclamos') + ': ' + list.map(c => c.num).join(', '));
+  render();
+  toast('Archivo de ' + (kind === 'rad' ? 'marcación' : 'desmarcación') + ' generado con ' + plural(list.length, 'reclamo', 'reclamos') + '.');
+}
+
+/* ---- Novedades urgentes (RF24, RF50, RF55) ---- */
+function modalNov(){
+  const cortes = S.files.map(f => '<option value="' + f.cut + '">' + fmtISO(f.cut) + '</option>').join('');
+  openModal(
+    '<form data-form="nov" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Registrar novedad urgente</h2><p class="m-sub">Queda registrada para hacerla de inmediato en Actualización en Línea y se tiene en cuenta en el próximo reporte.</p></div>' +
+      '<div class="dlg-b">' +
+        '<label class="lbl" for="nv-tipo">Tipo de novedad</label><select class="inp sel" id="nv-tipo">' + TIPOS_NOV.map(t => '<option>' + t + '</option>').join('') + '</select>' +
+        '<label class="lbl lbl2" for="nv-suj">Sujeto de la novedad</label><select class="inp sel" id="nv-suj"><option>Obligación</option><option>Titular</option></select>' +
+        '<label class="lbl lbl2" for="nv-ref">Número de obligación o identificación del titular</label><input class="inp" id="nv-ref" type="text" placeholder="Ej.: 2257-4156" autocomplete="off"><div class="err" id="nv-ref-err" hidden role="alert"></div>' +
+        '<div id="nv-corr" hidden>' +
+          '<label class="lbl lbl2" for="nv-corte">Corte que se rectifica (RF55)</label><select class="inp sel" id="nv-corte">' + cortes + '</select>' +
+          '<label class="lbl lbl2" for="nv-medio">Medio</label><select class="inp sel" id="nv-medio"><option>Actualización en Línea</option><option>Proceso especial masivo</option></select>' +
+        '</div>' +
+        '<div id="nv-elim" hidden style="margin-top:14px">' + noteBox('warn', 'warn', 'Al gestionarla, la obligación <b>deja de reportarse</b> en los cortes siguientes y su número <b>no se puede reutilizar</b> (RF50).') + '</div>' +
+        '<label class="lbl lbl2" for="nv-motivo">Motivo</label><textarea class="ta" id="nv-motivo" maxlength="200" placeholder="Explica por qué no puede esperar al corte mensual"></textarea><div class="err" id="nv-motivo-err" hidden role="alert"></div>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Registrar novedad</button></div>' +
+    '</form>');
+}
+function novTipoChange(){
+  const t = $('#nv-tipo') && $('#nv-tipo').value;
+  const c = $('#nv-corr'), e = $('#nv-elim');
+  if(c) c.hidden = t !== 'Corrección';
+  if(e) e.hidden = t !== 'Eliminación';
+}
+function submitNov(){
+  const tipo = $('#nv-tipo').value, suj = $('#nv-suj').value, ref = $('#nv-ref').value.trim(), motivo = $('#nv-motivo').value.trim();
+  let first = null;
+  const bad = (id, msg) => { showErr($('#' + id + '-err'), msg); $('#' + id).setAttribute('aria-invalid', 'true'); if(!first) first = $('#' + id); };
+  ['nv-ref', 'nv-motivo'].forEach(id => { hideErr($('#' + id + '-err')); $('#' + id).removeAttribute('aria-invalid'); });
+  if(!ref) bad('nv-ref', 'Ingresa el número de la obligación o la identificación del titular.');
+  else if(suj === 'Obligación' && !getO(ref) && tipo !== 'Inclusión') bad('nv-ref', 'No existe una obligación con ese número.');
+  if(!motivo) bad('nv-motivo', 'Describe el motivo de la novedad.');
+  if(first){ first.focus(); return; }
+  const n = {id:'n' + Date.now(), tipo:tipo, suj:suj, ref:ref, motivo:motivo, det:todayISO(), estado:'Pendiente', origen:'Manual'};
+  if(tipo === 'Corrección' && $('#nv-corte') && $('#nv-corte').value){ n.corte = $('#nv-corte').value; n.medio = $('#nv-medio').value; }
+  S.novs.unshift(n); S.flashRow = n.id; S.ui.nvTab = 'pendientes';
+  logAudit('Novedad urgente registrada', 'Novedades urgentes', tipo + ' · ' + ref);
+  closeModal(true); render();
+  toast('Novedad registrada: queda pendiente de gestionar en línea.');
+}
+function modalGestion(id){
+  const n = S.novs.find(x => x.id === id);
+  if(!n) return;
+  S.ui.gsId = id;
+  openModal(
+    '<form data-form="gestion" novalidate>' +
+      '<div class="dlg-h"><h2 id="m-title">Gestionar en Actualización en Línea</h2><p class="m-sub">' + esc(n.tipo) + ' · ' + esc(n.suj) + ' · ' + esc(n.ref) + '</p></div>' +
+      '<div class="dlg-b">' +
+        '<div class="ro" style="margin-top:0"><span>Motivo</span><b style="text-align:right;max-width:60%">' + esc(n.motivo) + '</b></div>' +
+        '<ol class="steps2">' +
+          '<li><span class="fl-n">1</span><div>Abre el módulo web <b>Actualización en Línea</b> de TransUnion.<div style="margin-top:8px"><button type="button" class="btn btn-o btn-sm" data-act="nov-open-tu">' + ic('ext', 14) + 'Abrir Actualización en Línea</button></div></div></li>' +
+          '<li><span class="fl-n">2</span><div>Registra la novedad con el tipo, el sujeto y los datos indicados.</div></li>' +
+          '<li><span class="fl-n">3</span><div>Copia el número de confirmación y regístralo aquí.</div></li>' +
+        '</ol>' +
+        (n.tipo === 'Eliminación' ? noteBox('warn', 'warn', 'La obligación dejará de reportarse en los cortes siguientes y su número no se podrá reutilizar (RF50).') : '') +
+        '<label class="lbl lbl2" for="gs-conf">Número de confirmación de TransUnion</label><input class="inp" id="gs-conf" type="text" placeholder="Ej.: TU-AL-001600" autocomplete="off"><div class="err" id="gs-conf-err" hidden role="alert"></div>' +
+      '</div>' +
+      '<div class="dlg-f"><button type="button" class="btn btn-g" data-act="modal-close">Cancelar</button><button type="submit" class="btn btn-p">Marcar como gestionada</button></div>' +
+    '</form>');
+}
+function submitGestion(){
+  const n = S.novs.find(x => x.id === S.ui.gsId);
+  if(!n) return;
+  const conf = $('#gs-conf').value.trim();
+  if(!conf){ showErr($('#gs-conf-err'), 'Ingresa el número de confirmación que entregó TransUnion.'); $('#gs-conf').setAttribute('aria-invalid', 'true'); $('#gs-conf').focus(); return; }
+  n.estado = 'Gestionada'; n.conf = conf; n.gest = todayISO(); S.flashRow = n.id;
+  if(n.tipo === 'Eliminación' && n.suj === 'Obligación'){
+    const o = getO(n.ref);
+    if(o){ o.eliminada = true; o.ev.push(ev(n.gest, o.est, 'Eliminada en TransUnion (' + conf + '): no se vuelve a reportar')); S.chg[o.num] = true; }
+    if(!S.elims.some(e => e.num === n.ref)) S.elims.unshift({num:n.ref, fecha:n.gest, conf:conf, motivo:n.motivo});
+  }
+  logAudit('Novedad gestionada en línea', 'Novedades urgentes', n.tipo + ' · ' + n.ref + ' · ' + conf);
+  closeModal(true); render();
+  toast('Novedad gestionada: confirmación ' + conf + '.' + (n.tipo === 'Eliminación' ? ' La obligación ya no se reportará.' : ''));
+}
+
+/* ---- Datos de la entidad (RF57) ---- */
+function submitEntidad(){
+  const spec = [['en-tipo', 'tipo', 3, 'El tipo de entidad'], ['en-cod', 'cod', 3, 'El código de entidad'], ['en-suc', 'suc', 6, 'El código de sucursal']];
+  let first = null; const val = {};
+  spec.forEach(s => {
+    const inp = $('#' + s[0]), err = $('#' + s[0] + '-err'), x = inp.value.trim().toUpperCase();
+    const ok = s[1] === 'suc' ? new RegExp('^[A-Z0-9]{' + s[2] + '}$').test(x) : new RegExp('^(\\d{' + s[2] + '}|X{' + s[2] + '})$').test(x);
+    if(!ok){ showErr(err, s[3] + ' debe tener ' + s[2] + (s[1] === 'suc' ? ' caracteres' : ' dígitos') + ' (o ' + 'X'.repeat(s[2]) + ' mientras TransUnion no los asigne).'); inp.setAttribute('aria-invalid', 'true'); if(!first) first = inp; }
+    else { hideErr(err); inp.removeAttribute('aria-invalid'); val[s[1]] = x; }
+  });
+  if(first){ first.focus(); return; }
+  Object.assign(S.ent, val);
+  logAudit('Datos de la entidad actualizados', 'Parametrización', 'Tipo ' + S.ent.tipo + ' · Código ' + S.ent.cod + ' · Sucursal ' + S.ent.suc);
+  render();
+  toast(entOK() ? 'Datos guardados: los archivos nuevos saldrán aptos para envío.' : 'Datos guardados: todavía hay relleno, los archivos saldrán no aptos para envío.');
+}
+function entReset(){
+  S.ent = {tipo:'XXX', cod:'XXX', suc:'XXXXXX'};
+  logAudit('Datos de la entidad restaurados al relleno', 'Parametrización', 'XXX · XXX · XXXXXX');
+  render(); toast('Datos de la entidad con relleno: los archivos saldrán no aptos para envío.');
+}
+
+/* ---- Envío y resultados del cargue (RF54) ---- */
+function marcarEnvio(id){
+  const f = S.files.find(x => x.id === id);
+  if(!f || !f.apto) return;
+  f.enviado = true; f.envTs = new Date(); S.flashRow = f.id;
+  logAudit('Envío a TransUnion registrado', 'Reporte TransUnion', f.name + ' · por STRANSFER');
+  render(); toast('Envío registrado. Cuando TransUnion responda, carga aquí sus archivos de resultados.');
+}
+function cargarRes(id){
+  const f = S.files.find(x => x.id === id);
+  if(!f || !f.enviado) return;
+  const incl = S.obls.filter(o => inclCorte(o, f.cut));
+  const ej = incl.find(o => !isClosed(o)) || incl[0];
+  f.res = {ts:new Date(), recibidos:f.n, cargados:f.n, noRep:0,
+    inc: ej ? [{num:ej.num, tipo:'Informativa', desc:'Ejemplo: dato de contacto del titular incompleto. No impide el cargue.'}] : []};
+  S.ui.resFile = f.id; S.flashRow = f.id;
+  logAudit('Resultados del cargue registrados', 'Reporte TransUnion', f.name + ' · ' + plural(f.res.inc.length, 'inconsistencia', 'inconsistencias'));
+  render();
+  const el = $('#rs-t'); if(el) el.scrollIntoView({block:'start', behavior:'smooth'});
+  toast('Resultados cargados: ' + f.res.cargados + ' registros cargados, ' + plural(f.res.inc.length, 'inconsistencia', 'inconsistencias') + '.');
+}
+
+/* =====================================================================
+   Actualización mensual: simulación del proceso (HU-B)
+   ===================================================================== */
+/* Lo que trae la extracción del SAC para cada corte (todo ficticio). Las obligaciones al día que no aparecen aquí pagan su cuota del mes. */
+const CY_SAC = {
+  '2026-10-31':{
+    pagos:[
+      {num:'2257-4156', monto:196000,  nota:'Pagó las dos cuotas pendientes'},
+      {num:'2258-7731', monto:50000,   nota:'Abono parcial'},
+      {num:'2261-8820', total:true,    nota:'Pagó todo el saldo'},
+      {num:'2262-3318', monto:160000,  nota:'Pagó una cuota'},
+      {num:'2244-6410', monto:1710000, nota:'Pagó toda la mora sin cancelar el saldo'}
+    ],
+    castigos:['2250-0987']
+  }
+};
+function startCycle(){
+  if(S.cy) return;
+  const inp = $('#c-cut'), err = $('#c-cut-err'), cut = inp.value, last = S.cycles[0].cut;
+  let msg = '';
+  if(!cut) msg = 'Selecciona una fecha de corte.';
+  else if(!esFinMes(cut)) msg = 'El corte es el último día del mes. Para ese mes sería el ' + fmtISO(finMes(cut)) + '.';
+  else if(cut <= last) msg = 'La fecha de corte debe ser posterior a la última actualización (' + fmtISO(last) + ').';
+  if(msg){ showErr(err, msg); inp.setAttribute('aria-invalid', 'true'); inp.focus(); return; }
+  hideErr(err); inp.removeAttribute('aria-invalid');
+  S.ui.cCut = cut; S.cyRes = null;
+  S.cy = {cut:cut, user:cur().nombre, step:0, timer:null};
+  render();
+  S.cy.timer = setInterval(tickCycle, 650);
+}
+function tickCycle(){
+  if(!S.cy) return;
+  S.cy.step++;
+  if(S.cy.step >= CY_STEPS.length) finishCycle();
+  else if(S.route === 'ciclo') paint2('cy', CY_STEPS, S.cy.step);
+}
+function applyCycle(cut, user){
+  const T = [], rech = [], sac = CY_SAC[cut] || {pagos:[], castigos:[]};
+  const cnt = {primer:0, pagos:0, cierres:0, dudoso:0, castigo:0, normal:0, cambios:0};
+  const fechaPago = enMes(cut, 20);
+  const pagoDe = num => sac.pagos.find(p => p.num === num);
+
+  // RF10 · Primer reporte: las financiaciones nuevas entran con su estado y su mora reales
+  S.nuevas.splice(0).forEach(n => {
+    const o = mkO(Object.assign({}, n, {est:'01', ingreso:cut, nuevo:true, primer:true, ev:[]}));
+    recalc(o, cut);
+    if(o.cuotasAtr >= o.atrPerm) o.caducado = true;
+    const a = (o.caducado && o.mora > 0) ? '03' : '01', e = edadCod(o.dias);
+    if(!primerOK(a, o.mora > 0, e)){
+      rech.push({num:o.num, nombre:o.nombre, de:'—', a:a, motivo:'Error 881: estado no permitido en primer reporte'});
+    }
+    o.est = a;
+    o.ev.push(ev(cut, a, 'Primer reporte en ' + EST[a].n + ' (' + a + ')' + (o.mora > 0 ? ' con ' + plural(o.dias, 'día', 'días') + ' de mora' + (a === '03' ? ' (crédito caducado en el SAC)' : '') : ', al día'), pad(e)));
+    S.obls.push(o); S.chg[o.num] = true; cnt.primer++;
+    T.push({num:o.num, nombre:o.nombre, de:'—', a:a, edad:pad(e), regla:'RF10 · Entra con su estado y su mora reales' + (a === '03' ? ' · caducado en el SAC' + rfTag('RF14') : '')});
+  });
+
+  S.obls.filter(o => !isClosed(o) && !o.eliminada && !(o.nuevo && o.ingreso === cut)).forEach(o => {
+    const prev = {est:o.est, m:o.mora > 0, e:edadCod(o.dias), d:o.dias};
+    const reglas = [];
+    // nueva cuota del mes, si queda saldo por facturar
+    const pendiente = o.venc.reduce((a, x) => a + x.v, 0);
+    if(o.saldo > pendiente) o.venc.push(v(enMes(cut, o.dia), Math.min(o.cuota, o.saldo - pendiente)));
+    // pagos extraídos del SAC (RF17)
+    const p = pagoDe(o.num);
+    if(p && p.total){
+      aplicarPago(o, o.saldo, cut, p.nota); cnt.pagos++;
+    } else if(p){
+      aplicarPago(o, p.monto, cut, p.nota); recalc(o, cut); cnt.pagos++;
+      reglas.push('RF17 · Pago de ' + fmtCOP(p.monto) + ' aplicado a: ' + esc(o.pagos[o.pagos.length - 1].aplica));
+    } else if(!prev.m){
+      aplicarPago(o, o.venc.filter(x => x.v > 0).reduce((a, x) => a + x.v, 0), cut, 'Pagó la cuota del mes');
+    }
+    recalc(o, cut);
+    // estado nuevo
+    if(sac.castigos.indexOf(o.num) > -1) o.castigo = true;
+    if(o.cuotasAtr >= o.atrPerm) o.caducado = true;
+    let a;
+    if(o.saldo <= 0) a = (o.est === '03' || o.est === '06') ? '07' : '02';
+    else if(o.castigo && o.mora > 0) a = '06';
+    else if((o.est === '03' || o.est === '06') && o.mora === 0) a = '01';
+    else if(o.est === '06') a = '06';
+    else a = (o.caducado && o.mora > 0) ? '03' : '01';
+    const e = edadCod(o.dias);
+    // validación contra la matriz (el estado anterior es el del corte anterior)
+    if(!mxOK(prev.est, prev.m, a, o.mora > 0)){
+      rech.push({num:o.num, nombre:o.nombre, de:prev.est, a:a, motivo:'Error 713: la matriz no permite pasar de ' + EST[prev.est].n + (prev.m ? ' con mora' : ' sin mora') + ' a ' + EST[a].n});
+      a = prev.est;
+    }
+    if(a === '02' || a === '07'){
+      const de = o.est; o.est = de; cerrar(o, cut, fechaPago, '01 · Voluntario', '01 · Voluntario'); o.est = a; cnt.cierres++;
+      reglas.push((a === '02' ? 'RF12 · Pago total: Saldada' : 'RF15 · Pago total: Cartera Recuperada') + ' · fecha de pago ' + fmtISO(fechaPago) + ', modo 01, tipo de pago 01' + rfTag('RF22'));
+      o.ev.push(ev(cut, a, 'Pago total: pasa a ' + EST[a].n + ' (' + a + '). Se reporta en este corte, una sola vez'));
+    } else {
+      if(a === '01' && (prev.est === '03' || prev.est === '06')){ o.caducado = false; o.castigo = false; cnt.normal++;
+        reglas.push('RF46 · Pagó la mora sin cancelar el saldo: vuelve a Vigente' + '<span class="pc-tag">por confirmar</span>'); }
+      if(a === '03' && prev.est !== '03'){ cnt.dudoso++; reglas.push('RF14 · Crédito caducado en el SAC (' + o.cuotasAtr + ' cuotas en mora): Dudoso Recaudo' + '<span class="pc-tag">por confirmar</span>'); }
+      if(a === '06' && prev.est !== '06'){ cnt.castigo++; reglas.push('RF45 · CENS la castigó contablemente: Castigada'); }
+      if(prev.m && o.mora === 0){ o.pagoMora = {fecha:fechaPago, modo:'01 · Voluntario', tipo:'01 · Voluntario'}; if(a === '01' && prev.est === '01') cnt.normal++;
+        reglas.push('RF47 · Quedó al día: se reportan fecha de pago, modo de extinción y tipo de pago'); }
+      if(e !== prev.e) reglas.push('RF11 · ' + plural(o.dias, 'día', 'días') + ' desde la cuota más antigua sin pagar' + (o.exig ? ' (' + fmtISO(o.exig) + ')' : '') + ': edad ' + pad(prev.e) + ' → ' + pad(e));
+      if(o.mora > 0 && !o.caducado && o.cuotasAtr >= 3 && a === '01') reglas.push('Sigue en Vigente: su crédito caduca a las ' + o.atrPerm + ' cuotas (lleva ' + o.cuotasAtr + ')');
+      o.est = a;
+      if(reglas.length) o.ev.push(ev(cut, a, reglas.map(r => r.replace(/<[^>]+>/g, '')).join('. '), pad(e)));
+    }
+    if(a !== prev.est) cnt.cambios++;
+    if(reglas.length){ T.push({num:o.num, nombre:o.nombre, de:prev.est, a:a, edad:pad(prev.e) + ' → ' + pad(edadCod(o.dias)), regla:reglas.join('<br>')}); S.chg[o.num] = true; }
+  });
+
+  const ts = new Date();
+  S.cycles.unshift({id:'c' + Date.now(), ts:ts, user:user, cut:cut, primer:cnt.primer, cambios:cnt.cambios, cierres:cnt.cierres, rech:rech.length});
+  if(S.cuts.indexOf(cut) < 0) S.cuts.unshift(cut);
+  S.audit.unshift({ts:ts, user:user, rol:isAdminName(user) ? 'Administrador' : 'Analista', action:'Actualización mensual de estados ejecutada', module:'Ciclo de vida',
+    detail:'Corte ' + fmtISO(cut) + ' · ' + cnt.primer + ' en primer reporte · ' + plural(cnt.cierres, 'cierre', 'cierres') + ' · ' + rech.length + ' rechazados'});
+  return Object.assign({cut:cut, trans:T, rechazos:rech}, cnt);
+}
+function finishCycle(){
+  const r = S.cy; clearInterval(r.timer); S.cy = null;
+  S.cyRes = applyCycle(r.cut, r.user);
+  if(S.route === 'ciclo') render();
+  toast('Actualización mensual completada: ' + plural(S.cyRes.trans.length, 'obligación actualizada', 'obligaciones actualizadas') + ' en el corte ' + fmtISO(r.cut) + '.');
+}
+
+/* =====================================================================
+   Reporte a TransUnion: simulación de la generación del archivo (HU-C)
+   ===================================================================== */
+function startReport(){
+  if(S.rp) return;
+  const cut = S.cuts[0];
+  if(validaciones(cut).some(x => x.lvl === 'bad')) return;
+  S.ui.rCut = cut; S.rpRes = null;
+  S.rp = {cut:cut, user:cur().nombre, step:0, timer:null};
+  render();
+  S.rp.timer = setInterval(tickReport, 650);
+}
+function tickReport(){
+  if(!S.rp) return;
+  S.rp.step++;
+  if(S.rp.step >= RP_STEPS.length) finishReport();
+  else if(S.route === 'reporte') paint2('rp', RP_STEPS, S.rp.step);
+}
+function finishReport(){
+  const r = S.rp; clearInterval(r.timer); S.rp = null;
+  const st = repStats(r.cut);
+  const f = {id:'f' + Date.now(), ts:new Date(), user:r.user, cut:r.cut, tipo:'TOTAL', n:st.n, saldo:st.total, excl:st.excl, name:fileName(r.cut), apto:entOK(), enviado:false, res:null};
+  st.incl.forEach(o => { o.primer = false; });
+  S.files.unshift(f); S.rpRes = {file:f}; S.flashRow = f.id;
+  S.audit.unshift({ts:f.ts, user:r.user, rol:isAdminName(r.user) ? 'Administrador' : 'Analista', action:'Archivo plano generado', module:'Reporte TransUnion',
+    detail:'Corte ' + fmtISO(r.cut) + ' · TOTAL · ' + plural(f.n, 'obligación', 'obligaciones') + (f.apto ? '' : ' · NO APTO PARA ENVÍO (entidad con relleno)')});
+  if(S.route === 'reporte') render();
+  toast('Archivo generado: ' + plural(f.n, 'obligación', 'obligaciones') + ' del corte ' + fmtISO(r.cut) + (f.apto ? '.' : ' · no apto para envío.'));
+}
+
+/* =====================================================================
+   Eventos
+   ===================================================================== */
+const ACTIONS = {
+  'profile-toggle': function(){ menuOpen($('#pmenu').hidden); },
+  'edit-profile':   function(){ menuOpen(false); modalPerfil(); },
+  'switch-profile': function(){ menuOpen(false); modalSwitch(); },
+  'logout': function(){
+    menuOpen(false);
+    logAudit('Cierre de sesión', 'Seguridad', 'Sesión cerrada por el usuario');
+    go('login');
+    toast('Sesión cerrada correctamente.');
+  },
+  'toggle-pw': function(el){
+    const inp = document.getElementById(el.getAttribute('data-target'));
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    el.innerHTML = ic(show ? 'eyeOff' : 'eye', +el.firstChild.getAttribute('width'));
+    el.setAttribute('aria-label', (show ? 'Ocultar' : 'Mostrar') + el.getAttribute('aria-label').replace(/^(Mostrar u ocultar|Mostrar|Ocultar)/, ''));
+  },
+  'recover-send':  function(){ S.ui.recoverSent = true; render(); },
+  'cambio-save':   function(){ S.userId = 'u1'; go('panel'); },
+  'new-group':     function(){ modalGrupo(); },
+  'new-user':      function(){ modalUsuario(); },
+  'modal-close':   function(){ closeModal(); },
+  'run-extraction':function(){ startExtraction(); },
+  'snav-toggle':   function(){ snavOpen($('#snav-l').hidden); },
+  'f-est':         function(el){ S.ui.oEst = el.getAttribute('data-v'); render(); },
+  'ver-obl':       function(el){ modalObl(el.getAttribute('data-num')); },
+  'refi-new':      function(){ modalRefi(); },
+  'refi-from':     function(el){ modalRefi(el.getAttribute('data-num')); },
+  'ent-reset':     function(){ entReset(); },
+  'marcar-env':    function(el){ marcarEnvio(el.getAttribute('data-id')); },
+  'cargar-res':    function(el){ cargarRes(el.getAttribute('data-id')); },
+  'ver-res':       function(el){ S.ui.resFile = el.getAttribute('data-id'); render(); const r = $('#rs-t'); if(r) r.scrollIntoView({block:'start', behavior:'smooth'}); },
+  'claim-new':     function(){ modalClaim(); },
+  'claim-from':    function(el){ modalClaim(el.getAttribute('data-num')); },
+  'claim-close':   function(el){ modalUnclaim(el.getAttribute('data-id')); },
+  'gen-rad':       function(){ genClaims('rad'); },
+  'gen-cierre':    function(){ genClaims('cierre'); },
+  'nov-new':       function(){ modalNov(); },
+  'nov-manage':    function(el){ modalGestion(el.getAttribute('data-id')); },
+  'nv-tab':        function(el){ S.ui.nvTab = el.getAttribute('data-v'); render(); },
+  'nov-open-tu':   function(){ toast('Se abriría el módulo web Actualización en Línea de TransUnion en una pestaña nueva.'); },
+  'run-cycle':     function(){ startCycle(); },
+  'run-report':    function(){ startReport(); },
+  'download-file': function(){ toast('Descarga simulada del archivo plano.'); }
+};
+document.addEventListener('click', function(e){
+  const t = e.target;
+  if(!t.closest('.profile')) menuOpen(false);
+  if(!t.closest('#snav')) snavOpen(false);
+  if(t.classList && t.classList.contains('ov')){ closeModal(); return; }
+  const el = t.closest('[data-act]');
+  if(!el) return;
+  const fn = ACTIONS[el.getAttribute('data-act')];
+  if(fn) fn(el, e);
+});
+document.addEventListener('submit', function(e){
+  e.preventDefault();
+  const k = e.target.getAttribute('data-form');
+  if(k === 'login'){ S.userId = 'u1'; logAudit('Inicio de sesión', 'Seguridad', 'Inicio de sesión exitoso'); go('panel'); }
+  else if(k === 'profile') submitPerfil();
+  else if(k === 'switch')  submitSwitch();
+  else if(k === 'group')   submitGrupo();
+  else if(k === 'user')    closeModal();
+  else if(k === 'entidad') submitEntidad();
+  else if(k === 'refi')    submitRefi();
+  else if(k === 'claim')   submitClaim();
+  else if(k === 'unclaim') submitUnclaim();
+  else if(k === 'nov')     submitNov();
+  else if(k === 'gestion') submitGestion();
+});
+document.addEventListener('change', function(e){
+  const t = e.target;
+  if(t.id === 'x-group'){ S.ui.xGroup = t.value; const h = $('#x-group-help'); if(h) h.innerHTML = groupHelp(S.groups.find(g => g.id === t.value)); if(t.value){ hideErr($('#x-group-err')); t.removeAttribute('aria-invalid'); } }
+  else if(t.id === 'x-cut'){ S.ui.xCut = t.value; if(t.value){ hideErr($('#x-cut-err')); t.removeAttribute('aria-invalid'); } }
+  else if(t.id === 'g-all'){ $$('input[name=gc]:not([disabled])').forEach(i => { i.checked = t.checked; }); updatePick(); }
+  else if(t.name === 'gc'){ updatePick(); }
+  else if(t.name === 'perfil'){ const b = $('#sw-ok'); if(b) b.disabled = (t.value === S.userId); }
+  else if(t.id === 'rf-obl'){ const n = $('#rf-note-t'); if(n) n.innerHTML = refiNota(t.value); if(t.value){ hideErr($('#rf-obl-err')); t.removeAttribute('aria-invalid'); } }
+  else if(t.id === 'nv-tipo'){ novTipoChange(); }
+  else if(t.id === 'c-cut'){ S.ui.cCut = t.value; hideErr($('#c-cut-err')); t.removeAttribute('aria-invalid'); }
+});
+document.addEventListener('input', function(e){
+  const t = e.target;
+  if(t.id === 'o-q'){
+    S.ui.oQ = t.value;
+    const b = $('#o-tbody'); if(b) b.innerHTML = oblRows();
+    const c = $('#o-count'); if(c) c.textContent = plural(filtObls().length, 'obligación', 'obligaciones');
+  }
+  if(t.getAttribute && t.getAttribute('aria-invalid') === 'true'){
+    t.removeAttribute('aria-invalid');
+    hideErr(document.getElementById(t.id + '-err'));
+  }
+});
+document.addEventListener('keydown', function(e){
+  const modal = $('#modal-root .dlg');
+  if(e.key === 'Escape'){
+    if(modal){ closeModal(); return; }
+    const m = $('#pmenu');
+    if(m && !m.hidden){ menuOpen(false); const b = $('#pbtn'); if(b) b.focus(); return; }
+    snavOpen(false);
+    return;
+  }
+  if(e.key === 'Tab' && modal){
+    const f = $$('input:not([disabled]), button:not([disabled]), select:not([disabled]), a[href]', modal).filter(x => x.offsetParent !== null);
+    if(!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+    return;
+  }
+  const m = $('#pmenu');
+  if(m && !m.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End')){
+    e.preventDefault();
+    const it = $$('.mi', m), i = it.indexOf(document.activeElement);
+    const n = e.key === 'Home' ? 0 : e.key === 'End' ? it.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + it.length) % it.length;
+    it[n].focus();
+  }
+});
+
+/* ---- arranque ---- */
+if(/limpio/.test(location.search)) document.documentElement.classList.add('limpio');
+onEnter(parseRoute());
+render(true);
+})();
+</script>
+</body>
+</html>
