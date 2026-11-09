@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from config.auditoria import AuditoriaView
 from config.views import SaludView
-from parametros.views import ConceptoViewSet, GrupoConceptoViewSet
+from parametros.views import ConceptoViewSet, EntidadView, GrupoConceptoViewSet
 from cartera.views import ExtraccionViewSet
 from ciclo.views import CicloViewSet, MatrizEstadosView, ObligacionesViewSet
 from novedades.views import NovedadesViewSet
@@ -43,4 +43,5 @@ urlpatterns = [
     path("users/<int:pk>/", GestionUsuarioDetalleView.as_view(), name="users-detail"),
     path("auditoria/", AuditoriaView.as_view(), name="auditoria"),
     path("matriz-estados/", MatrizEstadosView.as_view(), name="matriz-estados"),
+    path("entidad/", EntidadView.as_view(), name="entidad"),
 ] + router.urls

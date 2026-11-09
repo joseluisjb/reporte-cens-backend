@@ -44,6 +44,7 @@ EVENTOS = {
     "GRUPO_EDITADO": ("Grupo de conceptos editado", "edicion", "Parametrización"),
     "GRUPO_DESACTIVADO": ("Grupo de conceptos desactivado", "desactivacion", "Parametrización"),
     "GRUPO_ELIMINADO": ("Grupo de conceptos eliminado", "eliminacion", "Parametrización"),
+    "ENTIDAD_ACTUALIZADA": ("Datos de la entidad actualizados", "edicion", "Parametrización"),
     "CORTE_GENERADO": ("Corte generado", "calculo", "Extracción"),
     "CORTE_VALIDADO": ("Corte validado", "modificacion", "Extracción"),
     "ENVIO_REGISTRADO": ("Envío registrado", "modificacion", "Extracción"),

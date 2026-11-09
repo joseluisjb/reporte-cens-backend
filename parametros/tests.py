@@ -788,3 +788,183 @@ def test_grupo_destroy_analista_403():
     force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
     response = GrupoConceptoViewSet.as_view({"delete": "destroy"})(request, pk="1")
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Datos de la entidad ante TransUnion (RF57)
+# ---------------------------------------------------------------------------
+
+from parametros.serializers import EntidadActualizarSerializer
+from parametros.views import EntidadView
+
+_ENTIDAD_REAL = {
+    "tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "A1B2C3",
+    "con_marcador": False, "prefijo_archivo": "SSR001123",
+    "actualizado_por": "Rosa Martínez", "fecha_actualizacion": datetime(2026, 11, 7, 10, 0),
+}
+
+
+def _cursor_entidad(filas_parametro, fila_bitacora=None):
+    mock_conn = MagicMock()
+    cursor = mock_conn.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = filas_parametro
+    cursor.fetchone.return_value = fila_bitacora
+    return mock_conn, cursor
+
+
+@contextmanager
+def _guardado_simulado(conn):
+    with patch("parametros.servicios.connection", conn), \
+         patch("parametros.servicios.transaction.atomic", _noop_atomic), \
+         patch("parametros.servicios.tolerar_fallo_bitacora", lambda accion: _noop_atomic()), \
+         patch("parametros.servicios.registrar_bitacora") as bitacora:
+        yield bitacora
+
+
+@pytest.mark.parametrize("valor, esperado", [
+    ("XXX", True), ("XXXXXX", True), ("001", False), ("A1B2C3", False), ("XA1B2C", False), ("", False),
+])
+def test_es_marcador(valor, esperado):
+    assert servicios.es_marcador(valor) is esperado
+
+
+def test_datos_entidad_con_codigos_asignados():
+    conn, _ = _cursor_entidad([
+        ("TIPO_ENTIDAD", "001"), ("CODIGO_ENTIDAD", "123"), ("CODIGO_SUCURSAL", "A1B2C3"),
+    ])
+    with patch("parametros.servicios.connection", conn):
+        entidad = servicios.datos_entidad()
+    assert entidad["con_marcador"] is False
+    assert entidad["prefijo_archivo"] == "SSR001123"
+    assert entidad["codigo_sucursal"] == "A1B2C3"
+
+
+def test_datos_entidad_valores_viejos_o_ausentes_salen_como_marcador():
+    # PENDIENTE/PEND (antes del script 10) o una clave que no existe nunca dan un archivo apto.
+    conn, _ = _cursor_entidad([("TIPO_ENTIDAD", "PENDIENTE"), ("CODIGO_SUCURSAL", "PEND")])
+    with patch("parametros.servicios.connection", conn):
+        entidad = servicios.datos_entidad()
+    assert entidad["tipo_entidad"] == "XXX"
+    assert entidad["codigo_entidad"] == "XXX"
+    assert entidad["codigo_sucursal"] == "XXXXXX"
+    assert entidad["con_marcador"] is True
+    assert entidad["prefijo_archivo"] == "SSRXXXXXX"
+
+
+def test_obtener_entidad_toma_quien_y_cuando_de_la_bitacora():
+    fecha = datetime(2026, 11, 7, 10, 0)
+    conn, _ = _cursor_entidad(
+        [("TIPO_ENTIDAD", "001"), ("CODIGO_ENTIDAD", "123"), ("CODIGO_SUCURSAL", "A1B2C3")],
+        ("Rosa Martínez", fecha),
+    )
+    with patch("parametros.servicios.connection", conn):
+        entidad = servicios.obtener_entidad()
+    assert entidad["actualizado_por"] == "Rosa Martínez"
+    assert entidad["fecha_actualizacion"] == fecha
+
+
+def test_obtener_entidad_sin_cambios_registrados():
+    conn, _ = _cursor_entidad([], None)
+    with patch("parametros.servicios.connection", conn):
+        entidad = servicios.obtener_entidad()
+    assert entidad["actualizado_por"] is None
+    assert entidad["fecha_actualizacion"] is None
+
+
+def test_guardar_entidad_confirma_solo_los_valores_sin_marcador():
+    conn, cursor = _cursor_entidad([])
+    usuario = MagicMock(nombre="Rosa Martínez", pk=1)
+    datos = {"tipo_entidad": "001", "codigo_entidad": "XXX", "codigo_sucursal": "A1B2C3"}
+    with _guardado_simulado(conn) as bitacora:
+        entidad = servicios.guardar_entidad(datos, usuario=usuario)
+    params = [c.args[1] for c in cursor.execute.call_args_list]
+    assert params == [
+        ["TIPO_ENTIDAD", "001", "S"],
+        ["CODIGO_ENTIDAD", "XXX", "N"],
+        ["CODIGO_SUCURSAL", "A1B2C3", "S"],
+    ]
+    bitacora.assert_called_once()
+    assert bitacora.call_args.args[0] == "ENTIDAD_ACTUALIZADA"
+    assert entidad["con_marcador"] is True
+    assert entidad["actualizado_por"] == "Rosa Martínez"
+
+
+def test_serializer_entidad_pasa_sucursal_a_mayusculas():
+    s = EntidadActualizarSerializer(
+        data={"tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "a1b2c3"}
+    )
+    assert s.is_valid(), s.errors
+    assert s.validated_data["codigo_sucursal"] == "A1B2C3"
+
+
+@pytest.mark.parametrize("datos, campo", [
+    ({"tipo_entidad": "12", "codigo_entidad": "123", "codigo_sucursal": "A1B2C3"}, "tipo_entidad"),
+    ({"tipo_entidad": "001", "codigo_entidad": "12A", "codigo_sucursal": "A1B2C3"}, "codigo_entidad"),
+    ({"tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "A1B2"}, "codigo_sucursal"),
+    ({"tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "A1B2-3"}, "codigo_sucursal"),
+])
+def test_serializer_entidad_rechaza_largo_o_tipo(datos, campo):
+    s = EntidadActualizarSerializer(data=datos)
+    assert not s.is_valid()
+    assert list(s.errors) == [campo]
+
+
+def test_serializer_entidad_campo_faltante():
+    s = EntidadActualizarSerializer(data={"tipo_entidad": "001", "codigo_entidad": "123"})
+    assert not s.is_valid()
+    assert s.errors["codigo_sucursal"] == ["Este campo es requerido."]
+
+
+def _peticion_entidad(metodo, rol, datos=None):
+    factory = APIRequestFactory()
+    request = getattr(factory, metodo)("/api/entidad/", datos or {}, format="json")
+    usuario = usuario_con_rol(rol)
+    usuario.nombre = "Rosa Martínez"
+    force_authenticate(request, user=usuario)
+    return EntidadView.as_view()(request)
+
+
+@pytest.mark.parametrize("rol", ["ANALISTA_CARTERA", "ADMINISTRADOR"])
+def test_get_entidad_ambos_roles_200(rol):
+    with patch("parametros.views.servicios.obtener_entidad", return_value=_ENTIDAD_REAL):
+        response = _peticion_entidad("get", rol)
+    assert response.status_code == 200
+    assert response.data["prefijo_archivo"] == "SSR001123"
+    assert response.data["fecha_actualizacion"] == "2026-11-07T10:00:00-05:00"
+
+
+def test_put_entidad_admin_guarda_codigos_reales():
+    datos = {"tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "A1B2C3"}
+    with patch("parametros.views.servicios.guardar_entidad", return_value=_ENTIDAD_REAL) as guardar:
+        response = _peticion_entidad("put", "ADMINISTRADOR", datos)
+    assert response.status_code == 200
+    assert response.data["con_marcador"] is False
+    assert guardar.call_args.args[0] == datos
+
+
+def test_put_entidad_tipo_de_dos_digitos_400():
+    datos = {"tipo_entidad": "12", "codigo_entidad": "123", "codigo_sucursal": "A1B2C3"}
+    with patch("parametros.views.servicios.guardar_entidad") as guardar:
+        response = _peticion_entidad("put", "ADMINISTRADOR", datos)
+    assert response.status_code == 400
+    assert "tipo_entidad" in response.data
+    guardar.assert_not_called()
+
+
+def test_put_entidad_analista_403():
+    datos = {"tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "A1B2C3"}
+    with patch("parametros.views.servicios.guardar_entidad") as guardar:
+        response = _peticion_entidad("put", "ANALISTA_CARTERA", datos)
+    assert response.status_code == 403
+    guardar.assert_not_called()
+
+
+def test_put_entidad_volver_al_relleno():
+    datos = {"tipo_entidad": "XXX", "codigo_entidad": "XXX", "codigo_sucursal": "XXXXXX"}
+    conn, _ = _cursor_entidad([])
+    with _guardado_simulado(conn):
+        response = _peticion_entidad("put", "ADMINISTRADOR", datos)
+    assert response.status_code == 200
+    assert response.data["con_marcador"] is True
+    assert response.data["prefijo_archivo"] == "SSRXXXXXX"
+    assert response.data["actualizado_por"] == "Rosa Martínez"

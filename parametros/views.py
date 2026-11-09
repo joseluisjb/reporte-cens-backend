@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from usuarios.permisos import EsAdministrador, EsAnalistaOAdministrador
@@ -9,6 +10,8 @@ from parametros.serializers import (
     GrupoConceptoSerializer,
     GrupoConceptoCrearSerializer,
     GrupoConceptoActualizarSerializer,
+    EntidadActualizarSerializer,
+    EntidadSerializer,
 )
 
 
@@ -155,3 +158,21 @@ class GrupoConceptoViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class EntidadView(APIView):
+    """Datos de la entidad ante TransUnion (RF57): lectura para los dos roles, escritura del Administrador."""
+
+    def get_permissions(self):
+        if self.request.method == "PUT":
+            return [EsAdministrador()]
+        return [EsAnalistaOAdministrador()]
+
+    def get(self, request):
+        return Response(EntidadSerializer(servicios.obtener_entidad()).data)
+
+    def put(self, request):
+        serializer = EntidadActualizarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        entidad = servicios.guardar_entidad(serializer.validated_data, usuario=request.user)
+        return Response(EntidadSerializer(entidad).data)

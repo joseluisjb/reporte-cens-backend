@@ -480,6 +480,53 @@ Elimina el grupo.
 
 ---
 
+### Datos de la entidad ante TransUnion (RF57)
+
+Tipo de entidad (Tabla 29), código de entidad (Tabla 30) y código de sucursal. Se guardan en `NV_PARAMETRO` (`TIPO_ENTIDAD`, `CODIGO_ENTIDAD`, `CODIGO_SUCURSAL`). Mientras TransUnion no los asigne llevan el **marcador** del mismo largo del campo (`XXX`, `XXX`, `XXXXXX`) y los archivos salen no aptos para envío. Un valor guardado que no cumple el formato (por ejemplo `PENDIENTE` o `PEND`, de antes del script 10) se devuelve como marcador. El generador del archivo plano (RF20) lee estos datos con `parametros.servicios.datos_entidad()`.
+
+#### GET /api/entidad/
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 200**
+
+```json
+{
+  "tipo_entidad": "XXX",
+  "codigo_entidad": "XXX",
+  "codigo_sucursal": "XXXXXX",
+  "con_marcador": true,
+  "prefijo_archivo": "SSRXXXXXX",
+  "actualizado_por": null,
+  "fecha_actualizacion": null
+}
+```
+
+`actualizado_por` y `fecha_actualizacion` salen del último evento `ENTIDAD_ACTUALIZADA` de la bitácora (`NV_PARAMETRO` no guarda el usuario); son `null` si nunca se ha guardado.
+
+#### PUT /api/entidad/
+
+Reemplaza los tres datos. Para «volver al relleno» se envían los tres marcadores. Cada valor con marcador queda con `CONFIRMADO = 'N'`; los asignados, con `'S'`. Queda en la bitácora («Datos de la entidad actualizados», módulo Parametrización).
+
+**Rol requerido**: `ADMINISTRADOR`
+
+**Cuerpo**
+
+```json
+{"tipo_entidad": "001", "codigo_entidad": "123", "codigo_sucursal": "A1B2C3"}
+```
+
+`tipo_entidad` y `codigo_entidad`: 3 dígitos o `XXX`. `codigo_sucursal`: 6 letras o dígitos (se pasa a mayúsculas) o `XXXXXX`.
+
+**Respuesta 200**: igual que GET, con `con_marcador: false` y `prefijo_archivo: "SSR001123"` en el ejemplo.
+
+**Errores**
+
+- `400 Bad Request` — por campo, por ejemplo `{"tipo_entidad": ["El tipo de entidad debe tener 3 dígitos (o XXX mientras TransUnion no los asigne)."]}`
+- `403 Forbidden` — el usuario no es Administrador
+
+---
+
 ### Extracción de cartera (RF44)
 
 #### POST /api/extracciones/
