@@ -77,6 +77,7 @@ class ObligacionesViewSet(viewsets.ViewSet):
 
         estado_tu = request.query_params.get("estado_tu")
         eliminada = request.query_params.get("eliminada", "false").lower() == "true"
+        abierta = request.query_params.get("abierta", "false").lower() == "true"
         q = request.query_params.get("q")
 
         if q is not None and len(q) > 60:
@@ -102,7 +103,7 @@ class ObligacionesViewSet(viewsets.ViewSet):
             resultado = servicios.listar_obligaciones(
                 limite, desplazamiento,
                 estado_tu=estado_tu, eliminada=eliminada,
-                cuotas_mora_min=cuotas_mora_min, q=q,
+                cuotas_mora_min=cuotas_mora_min, q=q, abierta=abierta,
             )
         except ValueError:
             return Response(

@@ -411,6 +411,12 @@ def validar_corte(corte_id):
 
     with connection.cursor() as cursor:
         cursor.execute(
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_CICLO WHERE CORTE_ID = %s", [corte_id]
+        )
+        tiene_ciclo = cursor.fetchone()[0] > 0
+
+    with connection.cursor() as cursor:
+        cursor.execute(
             "SELECT REGLA, SEVERIDAD, MENSAJE FROM NEXOVOLT.V_VALIDACION_CORTE "
             "WHERE CORTE_ID = %s",
             [corte_id],
@@ -420,6 +426,11 @@ def validar_corte(corte_id):
     correctivos = [
         {"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "CORRECTIVA"
     ]
+    if not tiene_ciclo:
+        correctivos.insert(0, {
+            "regla": "ACTUALIZACION_MENSUAL",
+            "mensaje": "Falta ejecutar la actualización mensual de este corte.",
+        })
     if correctivos:
         raise CorteConErroresCorrectivos(correctivos)
 
