@@ -30,6 +30,7 @@ RUTAS = {
     ("POST", "extraccion-list"): ("CORTE_GENERADO", "NV_CORTE"),
     ("POST", "extraccion-validar"): ("CORTE_VALIDADO", "NV_CORTE"),
     ("POST", "extraccion-registrar-envio"): ("ENVIO_REGISTRADO", "NV_CORTE"),
+    ("POST", "extraccion-archivo"): ("ARCHIVO_GENERADO", "NV_ARCHIVO"),
     ("GET", "extraccion-obligaciones"): ("CONSULTA_OBLIGACIONES", "NV_CORTE"),
     ("GET", "historial-reporte-detalle"): ("CONSULTA_REPORTE", "NV_CORTE"),
     ("GET", "historial-deudor-list"): ("CONSULTA_DEUDORES", "NV_OBLIGACION"),
