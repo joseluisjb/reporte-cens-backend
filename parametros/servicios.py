@@ -516,14 +516,33 @@ _CATALOGOS_BD = {
         "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_TIPOLOGIA_RECLAMO ORDER BY CODIGO"
     ),
 }
+# Tablas del Manual Sector Real v34: los códigos los fija TransUnion, así que van confirmados.
+# Qué modos usa CENS en la práctica es otra pregunta (hoy 01 en los pagos y 16 en las refinanciaciones).
+_MODOS_EXTINCION = (  # Tabla 10, Modo de extinción
+    ("01", "Voluntario"),
+    ("02", "Proceso ejecutivo"),
+    ("03", "Mandatoria de pago"),
+    ("04", "Proceso ejecutivo con excepción"),
+    ("05", "Prescripción"),
+    ("07", "Dación en pago (solo aplica para créditos de vivienda)"),
+    ("11", "Novación"),
+    ("12", "Transacción"),
+    ("13", "Compensación"),
+    ("14", "Confusión"),
+    ("15", "Remisión"),
+    ("16", "Refinanciación"),
+    ("17", "Dada en cesión"),
+)
+_TIPOS_PAGO = (  # Tabla 15, Tipo de pago
+    ("01", "Voluntario"),
+    ("02", "No voluntario"),
+)
 _CATALOGOS_FIJOS = {
     "modos-extincion": [
-        {"codigo": "01", "descripcion": "Voluntario", "confirmado": False},
-        {"codigo": "16", "descripcion": "Refinanciación", "confirmado": False},
+        {"codigo": c, "descripcion": d, "confirmado": True} for c, d in _MODOS_EXTINCION
     ],
     "tipos-pago": [
-        {"codigo": "01", "descripcion": "Voluntario", "confirmado": False},
-        {"codigo": "02", "descripcion": "No voluntario", "confirmado": False},
+        {"codigo": c, "descripcion": d, "confirmado": True} for c, d in _TIPOS_PAGO
     ],
 }
 
