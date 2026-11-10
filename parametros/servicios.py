@@ -505,6 +505,41 @@ def validar_homologacion(accion, estado_tu, estados):
     return {}
 
 
+_CATALOGOS_BD = {
+    "naturalezas-reestructuracion": (
+        "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_NATURALEZA_REESTR ORDER BY CODIGO"
+    ),
+    "motivos-eliminacion": (
+        "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_MOTIVO_ELIMINACION ORDER BY CODIGO"
+    ),
+    "tipologias-reclamo": (
+        "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_TIPOLOGIA_RECLAMO ORDER BY CODIGO"
+    ),
+}
+_CATALOGOS_FIJOS = {
+    "modos-extincion": [
+        {"codigo": "01", "descripcion": "Voluntario", "confirmado": False},
+        {"codigo": "16", "descripcion": "Refinanciación", "confirmado": False},
+    ],
+    "tipos-pago": [
+        {"codigo": "01", "descripcion": "Voluntario", "confirmado": False},
+        {"codigo": "02", "descripcion": "No voluntario", "confirmado": False},
+    ],
+}
+
+
+def listar_catalogo(nombre):
+    """Items de un catálogo por nombre. None si el nombre no existe."""
+    if nombre in _CATALOGOS_FIJOS:
+        return _CATALOGOS_FIJOS[nombre]
+    sql = _CATALOGOS_BD.get(nombre)
+    if sql is None:
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        return [{"codigo": r[0], "descripcion": r[1], "confirmado": r[2] == "S"} for r in cursor.fetchall()]
+
+
 def actualizar_homologacion(estado_sac, accion, estado_tu, confirmado=False, usuario=None):
     """Reemplaza la acción, el estado y si CENS lo confirmó. La prioridad no se cambia aquí."""
     if not _leer_homologaciones(estado_sac):
