@@ -573,7 +573,7 @@ def test_validar_corte_con_correctivas_lanza_excepcion():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [("BORRADOR",), (1,)]
     mock_cursor.fetchall.return_value = [
-        ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación"),
+        ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación", 7, "2259-1092"),
     ]
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
@@ -590,7 +590,8 @@ def test_validar_corte_sin_errores_actualiza_estado():
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),  # obtener_corte
     ]
     mock_cursor.fetchall.return_value = []   # V_VALIDACION_CORTE → sin errores
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.validar_corte(1)
     sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
     assert any("ESTADO = 'VALIDADO'" in s for s in sqls)
@@ -604,9 +605,10 @@ def test_validar_corte_devuelve_advertencias():
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = [
-        ("SIN_FECHA_LIMITE_PAGO", "INFORMATIVA", "No se encontró una factura"),
+        ("SIN_FECHA_LIMITE_PAGO", "INFORMATIVA", "No se encontró una factura", 7, "2259-1092"),
     ]
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
         resultado = servicios.validar_corte(1)
     assert len(resultado["advertencias"]) == 1
     assert resultado["advertencias"][0]["regla"] == "SIN_FECHA_LIMITE_PAGO"
@@ -622,6 +624,8 @@ def test_rf49_validar_corte_bloquea_exigibilidad_futura():
             "FECHA_EXIGIBILIDAD_FUTURA",
             "CORRECTIVA",
             "La fecha de exigibilidad es posterior a la fecha del sistema (RF49).",
+            7,
+            "2259-1092",
         ),
     ]
     with patch("cartera.servicios.connection", mock_conn):
@@ -661,9 +665,10 @@ def test_registrar_envio_usa_hoy_sin_fecha():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1)
     sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
     assert any("ESTADO = 'ENVIADO'" in s for s in sqls)
@@ -849,12 +854,13 @@ def test_validar_corte_filtra_por_corte_id():
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = []
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.validar_corte(42)
     sqls_con_params = [c for c in mock_cursor.execute.call_args_list if len(c[0]) > 1]
     validacion_calls = [c for c in sqls_con_params if "V_VALIDACION_CORTE" in c[0][0]]
     assert validacion_calls
-    assert validacion_calls[0][0][1] == [42]
+    assert validacion_calls[0][0][1] == [42, 42]
 
 
 # ── C4 — eliminar_borrador ────────────────────────────────────────────────────
@@ -1016,13 +1022,14 @@ def test_rf13_registrar_envio_marca_cierre_definitivo_en_02():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     sqls = []
     orig_execute = mock_cursor.execute.side_effect
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
 
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
 
     cierre_def_update = any(
@@ -1078,12 +1085,13 @@ def test_rf16_registrar_envio_marca_cierre_definitivo_en_07():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     sqls = []
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
 
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
 
     cierre_def_sql, _ = next(
@@ -1099,12 +1107,13 @@ def test_rf16_registrar_envio_cubre_02_y_07_en_una_sola_sentencia():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     sqls = []
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
 
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
 
     cierre_sqls = [s for s, _ in sqls if s and "CIERRE_DEFINITIVO" in s]
@@ -1121,7 +1130,7 @@ def test_rf19_validar_corte_707_bloquea_edad_sin_valor_mora():
     mock_cursor.fetchone.side_effect = [("BORRADOR",), (1,)]
     mock_cursor.fetchall.return_value = [
         ("EDAD_SIN_VALOR_MORA", "CORRECTIVA",
-         "Obligación 2258-7731 tiene edad 01 con valor de mora 0 (regla 707)"),
+         "Obligación 2258-7731 tiene edad 01 con valor de mora 0 (regla 707)", 3, "2258-7731"),
     ]
     with patch("cartera.servicios.connection", mock_conn):
         with pytest.raises(servicios.CorteConErroresCorrectivos) as exc_info:
@@ -1142,9 +1151,10 @@ def test_rf19_validar_corte_cuotas_mora_incoherente_es_informativa():
     ]
     mock_cursor.fetchall.return_value = [
         ("CUOTAS_MORA_INCOHERENTE", "INFORMATIVA",
-         "Obligación 2263-9004 tiene cuotas_mora=2 con valor de mora 0"),
+         "Obligación 2263-9004 tiene cuotas_mora=2 con valor de mora 0", 4, "2263-9004"),
     ]
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("cartera.servicios.transaction.atomic", _noop_atomic):
         resultado = servicios.validar_corte(1)
     assert len(resultado["advertencias"]) == 1
     assert resultado["advertencias"][0]["regla"] == "CUOTAS_MORA_INCOHERENTE"

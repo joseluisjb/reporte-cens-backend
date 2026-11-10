@@ -49,6 +49,7 @@ EVENTOS = {
     "CORTE_GENERADO": ("Corte generado", "calculo", "Extracción"),
     "CORTE_VALIDADO": ("Corte validado", "modificacion", "Extracción"),
     "ENVIO_REGISTRADO": ("Envío registrado", "modificacion", "Extracción"),
+    "ARCHIVO_GENERADO": ("Archivo plano generado", "generacion", "Extracción"),
     "ELIMINACION_BORRADOR": ("Corte eliminado", "eliminacion", "Extracción"),
     "ACTUALIZACION_MENSUAL": ("Actualización mensual", "calculo", "Extracción"),
     "CONSULTA_OBLIGACIONES": ("Consulta de obligaciones", "consulta", "Extracción"),

@@ -690,11 +690,21 @@ Nota: `numero_identificacion` se devuelve enmascarado (últimos 4 dígitos visib
 
 ### Ciclo de corte
 
+#### GET /api/extracciones/{id}/validaciones/
+
+Validaciones del corte contra el Manual (RF19, RF21, RF22, RF49, RF51, RF52, RF53, RF57), sin cambiar el corte. Devuelve `{corte_id, fecha_corte, estado_corte, puede_generar, resultados}`; cada resultado es una regla con `regla`, `titulo`, `nivel` (`correctiva`, `advertencia`, `informativa` u `ok`), `detalle`, `rf`, `por_confirmar` y `obligaciones` (`obligacion_id`, `numero_obligacion`, `campo`, `mensaje`). `puede_generar` es `true` solo si el corte está `VALIDADO` y no hay correctivas.
+
+Reglas: las de `V_VALIDACION_CORTE`, los cambios de estado que la Matriz rechazó en el ciclo (`CAMBIO_ESTADO_INVALIDO` de `NV_INCONSISTENCIA`) y `ACTUALIZACION_MENSUAL`.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Errores**: `404` si el corte no existe.
+
 #### POST /api/extracciones/{id}/validar/
 
 Valida el corte en BORRADOR y lo pasa a VALIDADO. No requiere cuerpo.
 
-Si hay filas con `SEVERIDAD='CORRECTIVA'` en `V_VALIDACION_CORTE`, responde `409` sin cambiar el estado. Si no hay errores correctivos, cambia el estado a `VALIDADO` y devuelve el corte con advertencias informativas.
+Aplica las mismas reglas que `GET /validaciones/`. Si alguna es correctiva, responde `409` sin cambiar el estado. Si no hay errores correctivos, cambia el estado a `VALIDADO`, copia las informativas a `NV_INCONSISTENCIA` y devuelve el corte con `advertencias`. Cada elemento de `errores` y `advertencias` trae además `obligacion_id`, `numero_obligacion` y `campo` (pueden ser `null`).
 
 **Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
 
@@ -752,7 +762,40 @@ Registra el envío a TransUnion y pasa el corte a ENVIADO. El archivo se carga m
 
 - `400 Bad Request` — `fecha_envio` futura; o `fecha_envio` anterior a `fecha_corte`
 - `404 Not Found` — corte no encontrado
-- `409 Conflict` — corte no está en VALIDADO
+- `409 Conflict` — corte no está en VALIDADO; o no tiene archivo generado (`code: sin_archivo`); o su último archivo no es apto para envío (`code: archivo_no_apto`). Al registrar, ese archivo queda con `enviado: true` y su `fecha_envio`.
+
+---
+
+### Archivo plano del reporte total (RF20, RF51)
+
+#### POST /api/extracciones/{id}/archivo/
+
+Genera el archivo del corte `VALIDADO` con la estructura del Manual v34 (págs. 44-52): registro tipo 1 (29), un tipo 2 por obligación (longitud del parámetro `LONGITUD_REGISTRO_TIPO2`, 930 por defecto) y tipo 9 (33). Windows-1252 y CRLF. Valores en miles con `a_miles` (al millar más cercano; un valor mayor a cero nunca da 0). Excluye las obligaciones eliminadas (`n_excluidas`). Si la entidad lleva marcador (RF57) se genera con `apto_envio: false`. Cada llamada crea una versión nueva.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Respuesta 201**: objeto `Archivo` del contrato (`id`, `corte_id`, `fecha_corte`, `nombre`, `tipo_reporte`, `fecha_generacion`, `generado_por`, `n_registros`, `total_registros`, `n_excluidas`, `saldo_total`, `longitud_registro_tipo2`, `apto_envio`, `motivo_no_apto`, `enviado`, `fecha_envio`, `estado_corte`, `tiene_resultados`).
+
+**Errores**
+
+- `404 Not Found` — corte no encontrado
+- `409 Conflict` — corte no está en VALIDADO; o un campo no cabe en su posición o no es de su tipo (`errores: [{regla, mensaje, obligacion_id, numero_obligacion, campo}]`, regla `CAMPO_EXCEDE_LONGITUD` o `CAMPO_TIPO_INVALIDO`)
+
+#### GET /api/archivos/
+
+Archivos generados, más reciente primero. Filtro opcional `?corte_id=`.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Errores**: `400` si `corte_id` no es numérico.
+
+#### GET /api/archivos/{id}/descarga/
+
+El contenido tal cual se carga en STRANSFER (`text/plain; charset=windows-1252`, `Content-Disposition: attachment; filename="SSR….txt"`). Acepta `Accept: text/plain`.
+
+**Rol requerido**: `ANALISTA_CARTERA`, `ADMINISTRADOR`
+
+**Errores**: `404` si el archivo no existe.
 
 ---
 
