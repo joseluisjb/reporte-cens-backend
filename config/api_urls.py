@@ -17,6 +17,7 @@ from ciclo.views import CicloViewSet, MatrizEstadosView, ObligacionesViewSet, Pa
 from novedades.views import EliminacionesViewSet, NovedadesViewSet
 from novedades.rectificaciones_views import RectificacionesViewSet
 from novedades.reclamos_views import ReclamosViewSet
+from novedades.refinanciaciones_views import RefinanciacionesViewSet
 from historial.views import ReporteViewSet, DeudorViewSet
 from usuarios.views import (
     CambioContrasenaView,
@@ -43,6 +44,7 @@ router.register("novedades", NovedadesViewSet, basename="novedad")
 router.register("eliminaciones", EliminacionesViewSet, basename="eliminacion")
 router.register("rectificaciones", RectificacionesViewSet, basename="rectificacion")
 router.register("reclamos", ReclamosViewSet, basename="reclamo")
+router.register("refinanciaciones", RefinanciacionesViewSet, basename="refinanciacion")
 
 urlpatterns = [
     path("salud/", SaludView.as_view(), name="salud"),
