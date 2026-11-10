@@ -37,7 +37,8 @@ _RECLAMO = {
     "fecha_radicacion": "2026-09-22",
     "observacion": "Pago realizado.",
     "estado": "EN_RECLAMO",
-    "radicado_en_tu": False,
+    "marcacion_generada": False,
+    "desmarcacion_generada": False,
     "fecha_limite_respuesta": "2026-10-14",
     "vencido": False,
     "resultado": None,
@@ -47,9 +48,15 @@ _RECLAMO = {
     "fecha_registro": "2026-09-22T09:15:00-05:00",
 }
 
+# cols: 0=RECLAMO_ID, 1=OBLIGACION_ID, 2=NUMERO_OBLIGACION_TU, 3=NOMBRE_TITULAR,
+#       4=tip.CODIGO, 5=tip.DESCRIPCION, 6=tip.CONFIRMADO,
+#       7=FECHA_RADICACION, 8=OBSERVACION, 9=ESTADO,
+#       10=MARCACION_GENERADA, 11=DESMARCACION_GENERADA,
+#       12=FECHA_LIMITE_RESPUESTA, 13=RESULTADO, 14=FECHA_CIERRE,
+#       15=OBSERVACION_CIERRE, 16=u.NOMBRE, 17=FECHA_REGISTRO
 _FILA_RECLAMO = (
     1, 4, "2260-5543", "Diana Patricia Niño", "01", "PAGO NO REFLEJADO", "S",
-    date(2026, 9, 22), "Pago realizado.", "EN_RECLAMO", "N",
+    date(2026, 9, 22), "Pago realizado.", "EN_RECLAMO", "N", "N",
     date(2026, 10, 14), None, None, None, "Analista",
     datetime(2026, 9, 22, 9, 15),
 )
@@ -185,21 +192,27 @@ def test_cierre_anterior_a_radicacion_responde_400_por_campo():
     assert "fecha_cierre" in response.data
 
 
-def test_no_acepta_observacion_cierre_no_persistible():
-    request = APIRequestFactory().post(
-        "/api/reclamos/1/cerrar/",
-        {
-            "resultado": "Procedente",
-            "fecha_cierre": "2026-09-30",
-            "observacion_cierre": "Texto no almacenable en el esquema actual.",
-        },
-        format="json",
-    )
-    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
-    response = ReclamosViewSet.as_view({"post": "cerrar"})(request, pk="1")
+def test_acepta_y_persiste_observacion_cierre():
+    with patch(
+        "novedades.reclamos_views.reclamos.cerrar_reclamo",
+        return_value={**_RECLAMO, "estado": "CERRADO", "resultado": "Procedente",
+                      "fecha_cierre": "2026-09-30",
+                      "observacion_cierre": "El pago fue aplicado correctamente."},
+    ):
+        request = APIRequestFactory().post(
+            "/api/reclamos/1/cerrar/",
+            {
+                "resultado": "Procedente",
+                "fecha_cierre": "2026-09-30",
+                "observacion_cierre": "El pago fue aplicado correctamente.",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+        response = ReclamosViewSet.as_view({"post": "cerrar"})(request, pk="1")
 
-    assert response.status_code == 400
-    assert "observacion_cierre" in response.data
+    assert response.status_code == 200
+    assert response.data["observacion_cierre"] == "El pago fue aplicado correctamente."
 
 
 def test_insumo_marcacion_solo_incluye_pendientes_y_marca_generados():
@@ -238,7 +251,7 @@ def test_insumo_reclamos_vacio_queda_vacio():
 def test_listado_alerta_reclamo_vencido():
     conn, cursor = _mock_conn()
     cursor.fetchall.return_value = [
-        (*_FILA_RECLAMO[:11], date(2026, 10, 1), *_FILA_RECLAMO[12:])
+        (*_FILA_RECLAMO[:12], date(2026, 10, 1), *_FILA_RECLAMO[13:])
     ]
     with patch("novedades.reclamos.connection", conn), \
          patch("novedades.reclamos.hoy_bogota", return_value=date(2026, 10, 10)):
