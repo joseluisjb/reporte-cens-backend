@@ -16,6 +16,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 MATRIZ_MD = RAIZ / "docs" / "iteracion2" / "MATRIZ_ESTADOS_SERVICIOS.md"
 MOCKUP = RAIZ / "docs" / "iteracion2" / "NexoVolt_Mockups_Iteracion2_v3.html"
 SQL_VERIFICACION = RAIZ / "config" / "sql" / "verificacion_matriz_transiciones.sql"
+SQL_CARGA = RAIZ / "config" / "sql" / "12_matriz_transiciones_servicios.sql"
 
 # Orden de las columnas en la p. 40 (y en MX_ORDER del mockup).
 ORDEN = ["01", "02", "04", "08", "06", "07", "03", "10", "11", "12"]
@@ -60,6 +61,13 @@ def _matriz_del_sql():
     return {(d, dm == "S", h, hm == "S"): p for d, dm, h, hm, p in filas}
 
 
+def _matriz_del_script_12():
+    # La carga usa las columnas reales: la mora va como 'M' (con mora) o 'N' (sin mora).
+    texto = SQL_CARGA.read_text(encoding="utf-8")
+    filas = re.findall(r"SELECT '(\d\d)'(?: AS \w+)?, '([MN])'(?: AS \w+)?, '(\d\d)'(?: AS \w+)?, '([MN])'(?: AS \w+)?, '([SN])'", texto)
+    return {(d, dm == "M", h, hm == "M"): p for d, dm, h, hm, p in filas}
+
+
 MANUAL = _celdas(_matriz_del_manual())
 
 
@@ -79,6 +87,12 @@ def test_el_sql_de_verificacion_coincide_con_el_manual():
     sql = _matriz_del_sql()
     assert len(sql) == 400
     assert sql == MANUAL
+
+
+def test_el_script_12_carga_las_400_casillas_del_manual():
+    carga = _matriz_del_script_12()
+    assert len(carga) == 400
+    assert carga == MANUAL
 
 
 @pytest.mark.parametrize("estado", ["02", "07"])
