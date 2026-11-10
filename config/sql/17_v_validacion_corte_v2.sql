@@ -15,6 +15,16 @@
 
    Es seguro repetirlo: usa CREATE OR REPLACE VIEW.
 
+   Correcciones aplicadas respecto al diseno original (Jose Luis, 2026-11-10):
+     - NV_REPORTE_DETALLE no tiene CLIENTE_ID: los datos del titular ya estan
+       desnormalizados en TIPO_ID_TU, NUMERO_IDENTIFICACION y NOMBRE_TITULAR.
+       Se elimino el JOIN a NV_TITULAR.
+     - EDAD_MORA_TU -> EDAD_MORA (nombre real de la columna).
+     - FECHA_EXIGIBILIDAD -> FECHA_LIMITE_PAGO (nombre real de la columna).
+     - PRIMER_REPORTE no existe: se calcula como obligacion sin corte enviado previo.
+     - CUOTAS_PAGADAS no existe: condicion eliminada de CIERRE_INCOMPLETO.
+       Cuando se agregue la columna, restaurar la condicion de RF22.
+
    Reversa:
      DROP VIEW NEXOVOLT.V_VALIDACION_CORTE;
 
@@ -34,8 +44,7 @@ SELECT
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Titular sin numero o tipo de identificacion valido' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-LEFT JOIN NEXOVOLT.NV_TITULAR t ON t.CLIENTE_ID = rd.CLIENTE_ID
-WHERE t.NUMERO_IDENTIFICACION IS NULL OR t.TIPO_IDENTIFICACION IS NULL
+WHERE rd.NUMERO_IDENTIFICACION IS NULL OR rd.TIPO_ID_TU IS NULL
 
 UNION ALL
 
@@ -48,8 +57,7 @@ SELECT
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Titular sin nombre registrado' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-LEFT JOIN NEXOVOLT.NV_TITULAR t ON t.CLIENTE_ID = rd.CLIENTE_ID
-WHERE t.PRIMER_APELLIDO IS NULL OR t.NOMBRES IS NULL
+WHERE rd.NOMBRE_TITULAR IS NULL
 
 UNION ALL
 
@@ -105,7 +113,7 @@ SELECT
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Calidad del deudor no definida' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.CLIENTE_ID IS NULL
+WHERE rd.CALIDAD IS NULL
 
 UNION ALL
 
@@ -131,7 +139,7 @@ SELECT
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Edad de mora TransUnion no asignada' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.EDAD_MORA_TU IS NULL
+WHERE rd.EDAD_MORA IS NULL
 
 UNION ALL
 
@@ -145,7 +153,7 @@ SELECT
 FROM NEXOVOLT.NV_CORTE c
 WHERE EXISTS (
     SELECT 1 FROM NEXOVOLT.NV_CORTE ant
-    WHERE ant.ESTADO = 'ENVIADO'
+    WHERE ant.ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')
       AND c.FECHA_CORTE <= ant.FECHA_CORTE
       AND c.CORTE_ID != ant.CORTE_ID
 )
@@ -158,10 +166,10 @@ SELECT
     rd.OBLIGACION_ID,
     'FECHA_EXIGIBILIDAD_FUTURA' AS REGLA,
     'CORRECTIVA' AS SEVERIDAD,
-    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Fecha de exigibilidad (' || TO_CHAR(rd.FECHA_EXIGIBILIDAD, 'YYYY-MM-DD') || ') no puede ser mayor a la fecha del sistema' AS MENSAJE
+    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Fecha limite de pago (' || TO_CHAR(rd.FECHA_LIMITE_PAGO, 'YYYY-MM-DD') || ') no puede ser mayor a la fecha del sistema' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.FECHA_EXIGIBILIDAD > TRUNC(SYSDATE)
+WHERE rd.FECHA_LIMITE_PAGO > TRUNC(SYSDATE)
 
 UNION ALL
 
@@ -171,10 +179,10 @@ SELECT
     rd.OBLIGACION_ID,
     'EDAD_SIN_VALOR_MORA' AS REGLA,
     'CORRECTIVA' AS SEVERIDAD,
-    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' tiene edad ' || rd.EDAD_MORA_TU || ' con valor de mora 0 (regla 707)' AS MENSAJE
+    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' tiene edad ' || rd.EDAD_MORA || ' con valor de mora 0 (regla 707)' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.EDAD_MORA_TU > '00'
+WHERE rd.EDAD_MORA > '00'
   AND (rd.VALOR_MORA IS NULL OR rd.VALOR_MORA = 0)
 
 UNION ALL
@@ -189,12 +197,13 @@ SELECT
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
 WHERE rd.ESTADO_TU != '06'
-  AND rd.FECHA_EXIGIBILIDAD IS NULL
+  AND rd.FECHA_LIMITE_PAGO IS NULL
   AND rd.VALOR_MORA > 0
 
 UNION ALL
 
 -- 13. PRIMER_REPORTE_INVALIDO (CORRECTIVA, RF10)
+-- Primer reporte: obligacion que no aparece en ningun corte enviado previo.
 SELECT
     rd.CORTE_ID,
     rd.OBLIGACION_ID,
@@ -203,16 +212,24 @@ SELECT
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Estado ' || rd.ESTADO_TU || ' y comportamiento no permitido en primer reporte' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.PRIMER_REPORTE = 'S'
-  AND (
-      rd.ESTADO_TU NOT IN ('01', '03', '06')
-      OR (rd.ESTADO_TU = '03' AND rd.VALOR_MORA = 0)
-      OR (rd.ESTADO_TU = '06' AND (rd.EDAD_MORA_TU = '00' OR rd.VALOR_MORA = 0))
-  )
+WHERE NOT EXISTS (
+    SELECT 1 FROM NEXOVOLT.NV_REPORTE_DETALLE rd2
+    WHERE rd2.OBLIGACION_ID = rd.OBLIGACION_ID
+      AND rd2.CORTE_ID IN (
+          SELECT CORTE_ID FROM NEXOVOLT.NV_CORTE
+          WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')
+      )
+)
+AND (
+    rd.ESTADO_TU NOT IN ('01', '03', '06')
+    OR (rd.ESTADO_TU = '03' AND rd.VALOR_MORA = 0)
+    OR (rd.ESTADO_TU = '06' AND (rd.EDAD_MORA = '00' OR rd.VALOR_MORA = 0))
+)
 
 UNION ALL
 
 -- 14. CIERRE_INCOMPLETO (CORRECTIVA, RF22)
+-- Nota: falta la condicion de CUOTAS_PAGADAS (columna pendiente de agregar a NV_REPORTE_DETALLE).
 SELECT
     rd.CORTE_ID,
     rd.OBLIGACION_ID,
@@ -220,16 +237,15 @@ SELECT
     'CORRECTIVA' AS SEVERIDAD,
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' en cierre (' || rd.ESTADO_TU || ') presenta datos inconsistentes: ' ||
     CASE
-        WHEN rd.VALOR_SALDO > 0 THEN 'Saldo mayor a cero'
-        WHEN rd.VALOR_MORA > 0 THEN 'Valor de mora mayor a cero'
-        WHEN rd.CUOTAS_MORA > 0 THEN 'Cuotas en mora mayor a cero'
-        WHEN rd.VALOR_CUOTA > 0 THEN 'Valor de cuota mayor a cero'
-        WHEN rd.EDAD_MORA_TU != '00' THEN 'Edad de mora distinta de 00'
-        WHEN NVL(rd.CUOTAS_PAGADAS, 0) <= 0 THEN 'Sin cuotas pagadas'
-        WHEN rd.FECHA_PAGO IS NULL THEN 'Fecha de pago no registrada'
-        WHEN rd.FECHA_PAGO > c.FECHA_CORTE THEN 'Fecha de pago posterior al corte'
-        WHEN rd.FECHA_PAGO < o.FECHA_INICIO THEN 'Fecha de pago anterior al inicio'
-        WHEN rd.MODO_EXTINCION IS NULL OR rd.TIPO_PAGO IS NULL THEN 'Modo o tipo de extincion no diligenciados'
+        WHEN rd.VALOR_SALDO > 0                                        THEN 'Saldo mayor a cero'
+        WHEN rd.VALOR_MORA > 0                                         THEN 'Valor de mora mayor a cero'
+        WHEN rd.CUOTAS_MORA > 0                                        THEN 'Cuotas en mora mayor a cero'
+        WHEN rd.VALOR_CUOTA > 0                                        THEN 'Valor de cuota mayor a cero'
+        WHEN rd.EDAD_MORA != '00'                                      THEN 'Edad de mora distinta de 00'
+        WHEN rd.FECHA_PAGO IS NULL                                     THEN 'Fecha de pago no registrada'
+        WHEN rd.FECHA_PAGO > c.FECHA_CORTE                             THEN 'Fecha de pago posterior al corte'
+        WHEN rd.FECHA_PAGO < o.FECHA_INICIO                            THEN 'Fecha de pago anterior al inicio'
+        WHEN rd.MODO_EXTINCION IS NULL OR rd.TIPO_PAGO IS NULL         THEN 'Modo o tipo de extincion no diligenciados'
         WHEN rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION NOT IN ('01', '16') THEN 'Incoherencia entre tipo y modo de pago'
         ELSE 'Inconsistencia en cierre'
     END AS MENSAJE
@@ -242,8 +258,7 @@ WHERE rd.ESTADO_TU IN ('02', '07')
       OR rd.VALOR_MORA > 0
       OR rd.CUOTAS_MORA > 0
       OR rd.VALOR_CUOTA > 0
-      OR rd.EDAD_MORA_TU != '00'
-      OR NVL(rd.CUOTAS_PAGADAS, 0) <= 0
+      OR rd.EDAD_MORA != '00'
       OR rd.FECHA_PAGO IS NULL
       OR rd.FECHA_PAGO > c.FECHA_CORTE
       OR rd.FECHA_PAGO < o.FECHA_INICIO
@@ -265,7 +280,7 @@ FROM NEXOVOLT.NV_CORTE c
 CROSS JOIN (
     SELECT MAX(CORTE_ID) AS ULT_CORTE_ID
     FROM NEXOVOLT.NV_CORTE
-    WHERE ESTADO = 'ENVIADO'
+    WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')
 ) ult
 JOIN NEXOVOLT.NV_REPORTE_DETALLE ant_rd ON ant_rd.CORTE_ID = ult.ULT_CORTE_ID
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = ant_rd.OBLIGACION_ID
@@ -330,11 +345,11 @@ SELECT
     rd.OBLIGACION_ID,
     'EDAD_ALTA_SIN_EXIGIBILIDAD' AS REGLA,
     'INFORMATIVA' AS SEVERIDAD,
-    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Edad ' || rd.EDAD_MORA_TU || ' sin fecha de exigibilidad reportada' AS MENSAJE
+    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Edad ' || rd.EDAD_MORA || ' sin fecha limite de pago reportada' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.EDAD_MORA_TU IN ('12', '13', '14')
-  AND rd.FECHA_EXIGIBILIDAD IS NULL
+WHERE rd.EDAD_MORA IN ('12', '13', '14')
+  AND rd.FECHA_LIMITE_PAGO IS NULL
 
 UNION ALL
 
