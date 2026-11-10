@@ -527,6 +527,41 @@ Reemplaza los tres datos. Para «volver al relleno» se envían los tres marcado
 
 ---
 
+### Catálogo y homologación de estados (RF48)
+
+Los 10 estados de la Tabla 4b para servicios (`NV_ESTADO_TU`, tipo de cartera de `NV_PARAMETRO.TIPO_CARTERA`) y la homologación de cada estado del crédito en el SAC (`NV_HOMOLOGA_ESTADO`). Requieren el script `parametros/sql/12a_rf48_homologacion_estados.sql` (columnas `USADO`, `ACCION`, `USUARIO_ID`, `FECHA_ACTUALIZACION` y, si faltan, `CONFIRMADO`). Los tres son solo del Administrador; el Analista recibe 403.
+
+#### GET /api/estados/
+
+**Respuesta 200**: `[{"codigo": "01", "nombre": "Vigente", "usado": true, "es_cierre": false, "confirmado": true}, …]`, por código.
+
+#### GET /api/homologacion-estados/
+
+**Respuesta 200**, por `prioridad`:
+
+```json
+[
+  {"estado_sac": "A", "prioridad": 1, "descripcion": "Activo (propuesto)", "accion": "ESTADO", "estado_tu": "01", "confirmado": false, "actualizado_por": null, "fecha_actualizacion": null},
+  {"estado_sac": "F", "prioridad": 5, "descripcion": "Finalizado (propuesto)", "accion": "CIERRE", "estado_tu": null, "confirmado": false, "actualizado_por": null, "fecha_actualizacion": null}
+]
+```
+
+`accion` `null` = sin homologar: las obligaciones de ese estado se bloquean en la validación del corte (RF53). `prioridad` es de solo lectura.
+
+#### PUT /api/homologacion-estados/{estado_sac}/
+
+**Cuerpo**: `{"accion": "ESTADO", "estado_tu": "01", "confirmado": true}`. Con `CIERRE`, `estado_tu` va `null` (al cerrar, el estado sale de `CIERRE_AL_PAGAR`: 01 da 02; 03 y 06 dan 07). Guarda quién y cuándo y registra «Homologación de estados actualizada» en la bitácora.
+
+**Respuesta 200**: la homologación actualizada.
+
+**Errores** (por campo, mismos textos que la pantalla 16)
+
+- `400` — `accion` falta o no es `ESTADO`/`CIERRE`; `ESTADO` sin estado, con un estado que no existe, con 02 o 07 («se asignan con «Cierre»…») o con un estado que CENS no usa (04, 08); `CIERRE` con estado
+- `403` — el usuario no es Administrador
+- `404` — `{"detail": "Estado del SAC no encontrado."}`
+
+---
+
 ### Extracción de cartera (RF44)
 
 #### POST /api/extracciones/
