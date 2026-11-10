@@ -22,6 +22,9 @@
      - EDAD_MORA_TU -> EDAD_MORA (nombre real de la columna).
      - FECHA_EXIGIBILIDAD -> FECHA_LIMITE_PAGO (nombre real de la columna).
      - PRIMER_REPORTE no existe: se calcula como obligacion sin corte enviado previo.
+     - Regex de NUMERO_OBLIGACION_INVALIDO: '\-.' dentro de [] era un rango invalido
+       (ORA-12728 al consultar) y '¯·' eran caracteres danados. El guion va al final.
+       (Dilan, 2026-11-10; desbloquea RF21, RF22 y RF53.)
      - CUOTAS_PAGADAS no existe: condicion eliminada de CIERRE_INCOMPLETO.
        Cuando se agregue la columna, restaurar la condicion de RF22.
 
@@ -84,7 +87,7 @@ SELECT
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
 WHERE LENGTH(o.NUMERO_OBLIGACION_TU) > 20
-   OR REGEXP_LIKE(o.NUMERO_OBLIGACION_TU, '[^A-Za-z0-9()*,\-./_¯·]')
+   OR REGEXP_LIKE(o.NUMERO_OBLIGACION_TU, '[^A-Za-z0-9()*,./\_-]')
 
 UNION ALL
 
