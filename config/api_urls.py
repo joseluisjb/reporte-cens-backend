@@ -14,6 +14,7 @@ from parametros.views import (
 from cartera.views import ArchivoViewSet, ExtraccionViewSet
 from ciclo.views import CicloViewSet, MatrizEstadosView, ObligacionesViewSet
 from novedades.views import EliminacionesViewSet, NovedadesViewSet
+from novedades.rectificaciones_views import RectificacionesViewSet
 from novedades.reclamos_views import ReclamosViewSet
 from historial.views import ReporteViewSet, DeudorViewSet
 from usuarios.views import (
@@ -39,6 +40,7 @@ router.register("historial/reportes", ReporteViewSet, basename="historial-report
 router.register("historial/deudores", DeudorViewSet, basename="historial-deudor")
 router.register("novedades", NovedadesViewSet, basename="novedad")
 router.register("eliminaciones", EliminacionesViewSet, basename="eliminacion")
+router.register("rectificaciones", RectificacionesViewSet, basename="rectificacion")
 router.register("reclamos", ReclamosViewSet, basename="reclamo")
 
 urlpatterns = [
