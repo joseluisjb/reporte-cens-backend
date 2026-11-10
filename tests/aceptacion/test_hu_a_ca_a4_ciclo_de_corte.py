@@ -94,6 +94,7 @@ def test_cp_a_18_un_corte_validado_queda_enviado_con_su_fecha():
     oraculo = OraculoFalso(
         fetchone=[
             ("VALIDADO", FECHA_CORTE),  # estado y fecha del corte
+            (1, "S"),                   # último archivo del corte, apto para envío (0.9)
             _fila_resumen("ENVIADO"),   # resumen después de registrar el envío
         ],
     )
