@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
+from django.test import override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from novedades import reclamos
@@ -56,6 +57,13 @@ _FILA_RECLAMO = (
 
 def test_fecha_limite_cuenta_quince_dias_habiles_y_festivos_colombianos():
     assert reclamos.calcular_fecha_limite_respuesta(date(2026, 9, 22)) == date(2026, 10, 14)
+
+
+def test_fecha_limite_permite_parametrizar_si_se_cuenta_el_dia_de_radicacion():
+    with override_settings(RECLAMO_CONTAR_DIA_RADICACION=True):
+        assert reclamos.calcular_fecha_limite_respuesta(
+            date(2026, 9, 22)
+        ) == date(2026, 10, 13)
 
 
 def test_crear_reclamo_guarda_plazo_y_no_excluye_obligacion():
@@ -175,6 +183,23 @@ def test_cierre_anterior_a_radicacion_responde_400_por_campo():
 
     assert response.status_code == 400
     assert "fecha_cierre" in response.data
+
+
+def test_no_acepta_observacion_cierre_no_persistible():
+    request = APIRequestFactory().post(
+        "/api/reclamos/1/cerrar/",
+        {
+            "resultado": "Procedente",
+            "fecha_cierre": "2026-09-30",
+            "observacion_cierre": "Texto no almacenable en el esquema actual.",
+        },
+        format="json",
+    )
+    force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+    response = ReclamosViewSet.as_view({"post": "cerrar"})(request, pk="1")
+
+    assert response.status_code == 400
+    assert "observacion_cierre" in response.data
 
 
 def test_insumo_marcacion_solo_incluye_pendientes_y_marca_generados():

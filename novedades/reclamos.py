@@ -238,7 +238,7 @@ def crear_reclamo(data, usuario=None):
             "RECLAMO_REGISTRADO",
             "NV_RECLAMO",
             str(reclamo_id),
-            f"Obligación {obligacion[0]}, tipología {tipologia_codigo}",
+            f"Tipología {tipologia_codigo}",
             usuario=usuario,
         )
     return obtener_reclamo(reclamo_id)
