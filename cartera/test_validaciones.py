@@ -78,6 +78,11 @@ def test_sin_actualizacion_mensual_va_primero():
     assert [e["regla"] for e in errores] == ["ACTUALIZACION_MENSUAL", "SIN_NOMBRE"]
 
 
+def test_estado_sin_homologar_bloquea():
+    errores = _errores([("ESTADO_SIN_HOMOLOGAR", "CORRECTIVA", "Estado B no existe", 13, "2259-0013")])
+    assert (errores[0]["regla"], errores[0]["campo"]) == ("ESTADO_SIN_HOMOLOGAR", "estado")
+
+
 def test_entidad_con_marcadores_solo_advierte():
     resultado, _ = _validar([("ENTIDAD_CON_MARCADOR", "INFORMATIVA", "Marcadores XXX", None, None)])
     assert resultado["advertencias"][0]["regla"] == "ENTIDAD_CON_MARCADOR"

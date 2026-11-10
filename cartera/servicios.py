@@ -416,6 +416,7 @@ _REGLAS = {
     "FECHA_CORTE_NO_POSTERIOR": ("Fecha de corte posterior al último enviado", ["RF53"], None),
     "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha límite de pago no futura", ["RF49", "RF53"], "fecha_limite_pago"),
     "SIN_FECHA_LIMITE_PAGO": ("Fecha límite de pago", ["RF49", "RF53"], "fecha_limite_pago"),
+    "ESTADO_SIN_HOMOLOGAR": ("Estado homologado en el catálogo TransUnion", ["RF48", "RF53"], "estado"),
     "EDAD_SIN_VALOR_MORA": ("Edad de mora con valor de mora (regla 707)", ["RF19", "RF53"], "valor_mora"),
     "PRIMER_REPORTE_INVALIDO": ("Primer reporte (regla 881)", ["RF10"], "estado"),
     "CAMBIO_ESTADO_INVALIDO": ("Cambios de estado según la Matriz (regla 713)", ["RF53"], "estado"),
@@ -546,8 +547,9 @@ def _activas_del_ultimo_enviado():
         cursor.execute(
             "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
-            "WHERE rd.CORTE_ID = (SELECT MAX(CORTE_ID) FROM NEXOVOLT.NV_CORTE "
-            "WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')) "
+            "WHERE rd.CORTE_ID = (SELECT CORTE_ID FROM NEXOVOLT.NV_CORTE "
+            "WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS') "
+            "ORDER BY FECHA_CORTE DESC FETCH FIRST 1 ROW ONLY) "
             "AND rd.ESTADO_TU NOT IN ('02', '07') AND NVL(o.ELIMINADA, 'N') = 'N'"
         )
         return cursor.fetchone()[0]

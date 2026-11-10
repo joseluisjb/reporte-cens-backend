@@ -25,6 +25,9 @@
      - Regex de NUMERO_OBLIGACION_INVALIDO: '\-.' dentro de [] era un rango invalido
        (ORA-12728 al consultar) y '¯·' eran caracteres danados. El guion va al final.
        (Dilan, 2026-11-10; desbloquea RF21, RF22 y RF53.)
+     - OMISION_VS_ULTIMO_CORTE toma el ultimo corte enviado por FECHA_CORTE, no por MAX(CORTE_ID).
+     - ENTIDAD_CON_MARCADOR tambien dispara con 'PENDIENTE' o NULL.
+     - Nueva regla 21 ESTADO_SIN_HOMOLOGAR (CORRECTIVA, RF48/RF53) contra NV_ESTADO_TU.
      - CUOTAS_PAGADAS no existe: condicion eliminada de CIERRE_INCOMPLETO.
        Cuando se agregue la columna, restaurar la condicion de RF22.
 
@@ -281,9 +284,13 @@ SELECT
     'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' activa en corte anterior fue omitida en el corte actual sin registro de cierre ni eliminacion' AS MENSAJE
 FROM NEXOVOLT.NV_CORTE c
 CROSS JOIN (
-    SELECT MAX(CORTE_ID) AS ULT_CORTE_ID
+    -- Ultimo corte enviado por FECHA_CORTE (no por CORTE_ID: un corte de prueba puede
+    -- tener un id mayor y una fecha anterior).
+    SELECT CORTE_ID AS ULT_CORTE_ID
     FROM NEXOVOLT.NV_CORTE
     WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')
+    ORDER BY FECHA_CORTE DESC
+    FETCH FIRST 1 ROW ONLY
 ) ult
 JOIN NEXOVOLT.NV_REPORTE_DETALLE ant_rd ON ant_rd.CORTE_ID = ult.ULT_CORTE_ID
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = ant_rd.OBLIGACION_ID
@@ -367,8 +374,27 @@ FROM NEXOVOLT.NV_CORTE c
 WHERE EXISTS (
     SELECT 1 FROM NEXOVOLT.NV_PARAMETRO p
     WHERE p.CLAVE IN ('TIPO_ENTIDAD', 'CODIGO_ENTIDAD', 'CODIGO_SUCURSAL')
-      AND p.VALOR LIKE 'X%'
-);
+      AND (p.VALOR LIKE 'X%' OR p.VALOR = 'PENDIENTE' OR p.VALOR IS NULL)
+)
+
+UNION ALL
+
+-- 21. ESTADO_SIN_HOMOLOGAR (CORRECTIVA, RF48, RF53)
+-- Estado que no existe en el catalogo NV_ESTADO_TU para el tipo de cartera de CENS.
+SELECT
+    rd.CORTE_ID,
+    rd.OBLIGACION_ID,
+    'ESTADO_SIN_HOMOLOGAR' AS REGLA,
+    'CORRECTIVA' AS SEVERIDAD,
+    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Estado ' || rd.ESTADO_TU || ' no existe en el catalogo de estados TransUnion' AS MENSAJE
+FROM NEXOVOLT.NV_REPORTE_DETALLE rd
+JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
+WHERE rd.ESTADO_TU IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM NEXOVOLT.NV_ESTADO_TU e
+      WHERE e.CODIGO_ESTADO = rd.ESTADO_TU
+        AND e.TIPO_CARTERA = (SELECT TO_NUMBER(p.VALOR) FROM NEXOVOLT.NV_PARAMETRO p WHERE p.CLAVE = 'TIPO_CARTERA')
+  );
 /
 
 COMMENT ON TABLE NEXOVOLT.V_VALIDACION_CORTE IS 'Reglas de validacion correctivas e informativas del corte contra el Manual v34 de TransUnion (RF22, RF53).';
