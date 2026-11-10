@@ -1138,7 +1138,7 @@ def obtener_matriz():
 
 def listar_obligaciones(
     limite, desplazamiento,
-    estado_tu=None, eliminada=False, cuotas_mora_min=None, q=None
+    estado_tu=None, eliminada=False, cuotas_mora_min=None, q=None, abierta=False
 ):
     if estado_tu is not None and estado_tu not in _ESTADOS_VALIDOS:
         raise ValueError(f"Estado no válido: {estado_tu}")
@@ -1150,9 +1150,12 @@ def listar_obligaciones(
     where = "WHERE rd.CORTE_ID = %s"
     params = [ultimo_corte]
 
-    # RF50: filtrar por estado de eliminación
-    where += " AND NVL(o.ELIMINADA, 'N') = %s"
-    params.append("S" if eliminada else "N")
+    # RF50: filtrar por estado de eliminación; ?abierta=true lo sobreescribe (RF18)
+    if abierta:
+        where += " AND rd.ESTADO_TU NOT IN ('02', '07') AND NVL(o.ELIMINADA, 'N') = 'N'"
+    else:
+        where += " AND NVL(o.ELIMINADA, 'N') = %s"
+        params.append("S" if eliminada else "N")
 
     if estado_tu is not None:
         params.append(estado_tu)
@@ -1184,7 +1187,10 @@ def listar_obligaciones(
             "rd.VALOR_MORA, rd.VALOR_SALDO, "
             "CASE WHEN rd.ESTADO_TU IN ('02', '07') THEN 'S' ELSE 'N' END, "
             "rd.PRIMER_REPORTE, NVL(rd.REQUIERE_REVISION, 'N'), "
-            "NVL(rd.CADUCADO, 'N'), NVL(o.ELIMINADA, 'N') "
+            "NVL(rd.CADUCADO, 'N'), NVL(o.ELIMINADA, 'N'), "
+            "(SELECT CASE WHEN COUNT(*) > 0 THEN 'S' ELSE 'N' END "
+            " FROM NEXOVOLT.NV_RECLAMO r "
+            " WHERE r.OBLIGACION_ID = o.OBLIGACION_ID AND r.ESTADO = 'EN_RECLAMO') "
             + base +
             " ORDER BY o.NUMERO_OBLIGACION_TU "
             "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
@@ -1207,7 +1213,7 @@ def listar_obligaciones(
             "cerrada": r[10] == "S",
             "primer_reporte": r[11] == "S",
             "caducado": r[13] == "S",
-            "en_reclamo": False,
+            "en_reclamo": r[15] == "S",
             "eliminada": r[14] == "S",
             "requiere_revision": r[12] == "S",
         }
@@ -1234,7 +1240,10 @@ def obtener_obligacion(obligacion_id):
             "rd.FECHA_PAGO, rd.MODO_EXTINCION, rd.TIPO_PAGO, "
             "NVL(rd.MOVIMIENTO_POSTERIOR, 'N'), c.FECHA_CORTE, "
             "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), "
-            "NVL(rd.VALOR_REAL_PAGADO, 0), NVL(o.ELIMINADA, 'N') "
+            "NVL(rd.VALOR_REAL_PAGADO, 0), NVL(o.ELIMINADA, 'N'), "
+            "(SELECT CASE WHEN COUNT(*) > 0 THEN 'S' ELSE 'N' END "
+            " FROM NEXOVOLT.NV_RECLAMO r "
+            " WHERE r.OBLIGACION_ID = o.OBLIGACION_ID AND r.ESTADO = 'EN_RECLAMO') "
             "FROM NEXOVOLT.NV_OBLIGACION o "
             "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
             "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID "
@@ -1325,7 +1334,7 @@ def obtener_obligacion(obligacion_id):
         "cerrada": row[10] == "S",
         "primer_reporte": row[11] == "S",
         "caducado": caducado,
-        "en_reclamo": False,
+        "en_reclamo": row[27] == "S",
         "eliminada": row[26] == "S",
         "requiere_revision": row[12] == "S",
         "motivo_revision": row[13],
