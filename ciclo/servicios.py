@@ -1366,7 +1366,11 @@ def obtener_obligacion(obligacion_id):
         "cuotas_vencidas": cuotas_vencidas,
         "pagos": pagos,
         "posibles_transiciones": [],
-        "advertencias": [],
+        # RF52: alerta informativa del Manual (p. 18), no bloquea.
+        "advertencias": [{
+            "regla": "SALDO_MAYOR_VALOR_INICIAL",
+            "mensaje": "El saldo es mayor que el valor inicial de la obligación.",
+        }] if row[15] is not None and row[9] is not None and row[9] > row[15] else [],
     }
 
 

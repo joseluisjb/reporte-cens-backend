@@ -398,6 +398,103 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
     return {"total": total, "resultados": resultados}
 
 
+# ── RF21 / RF22 / RF52 / RF53 — Reglas del Manual sobre el corte ─────────────
+
+# regla: (título, RF, campo que falla). El orden es el de la lista de la pantalla 12.
+_REGLAS = {
+    "ACTUALIZACION_MENSUAL": ("Actualización mensual del corte", ["RF10", "RF11"], None),
+    "OMISION_VS_ULTIMO_CORTE": ("Obligaciones del último corte", ["RF21"], None),
+    "CIERRE_INCOMPLETO": ("Campos de cierre (RF22)", ["RF22"], None),
+    "SIN_IDENTIFICACION": ("Identificación del titular", ["RF53"], "numero_identificacion"),
+    "SIN_NOMBRE": ("Nombre del titular", ["RF53"], "nombre_titular"),
+    "SIN_NUMERO_OBLIGACION": ("Número de obligación asignado", ["RF53"], "numero_obligacion"),
+    "NUMERO_OBLIGACION_INVALIDO": ("Número de obligación (hasta 20 caracteres permitidos)", ["RF53"], "numero_obligacion"),
+    "SIN_SUCURSAL": ("Código de sucursal", ["RF53"], "codigo_sucursal"),
+    "SIN_CALIDAD": ("Calidad del titular", ["RF53"], "calidad"),
+    "SIN_ESTADO": ("Estado TransUnion", ["RF53"], "estado"),
+    "SIN_EDAD": ("Edad de mora", ["RF53"], "edad_mora"),
+    "FECHA_CORTE_NO_POSTERIOR": ("Fecha de corte posterior al último enviado", ["RF53"], None),
+    "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha límite de pago no futura", ["RF49", "RF53"], "fecha_limite_pago"),
+    "SIN_FECHA_LIMITE_PAGO": ("Fecha límite de pago", ["RF49", "RF53"], "fecha_limite_pago"),
+    "ESTADO_SIN_HOMOLOGAR": ("Estado homologado en el catálogo TransUnion", ["RF48", "RF53"], "estado"),
+    "EDAD_SIN_VALOR_MORA": ("Edad de mora con valor de mora (regla 707)", ["RF19", "RF53"], "valor_mora"),
+    "PRIMER_REPORTE_INVALIDO": ("Primer reporte (regla 881)", ["RF10"], "estado"),
+    "CAMBIO_ESTADO_INVALIDO": ("Cambios de estado según la Matriz (regla 713)", ["RF53"], "estado"),
+    "CUOTAS_MORA_INCOHERENTE": ("Cuotas en mora y valor de mora", ["RF19"], "cuotas_mora"),
+    "SALDO_MAYOR_VALOR_INICIAL": ("Saldo frente al valor inicial", ["RF52"], "valor_saldo"),
+    "VALOR_FUERA_DE_RANGO": ("Valores entre $10.000 y $99 millones", ["RF51"], "valor_saldo"),
+    "EDAD_ALTA_SIN_EXIGIBILIDAD": ("Edad 12 a 14 con fecha de exigibilidad", ["RF49"], "fecha_limite_pago"),
+    "VALORES_EN_MILES": ("Valores en miles de pesos (RF51)", ["RF51"], None),
+    "ENTIDAD_CON_MARCADOR": ("Datos de la entidad (RF57)", ["RF57"], None),
+}
+# CIERRE_INCOMPLETO dice en el mensaje qué falló (script 17, regla 14).
+_CAMPO_CIERRE = (
+    ("Saldo", "valor_saldo"), ("Valor de mora", "valor_mora"), ("Cuotas en mora", "cuotas_mora"),
+    ("Valor de cuota", "valor_cuota"), ("Edad de mora", "edad_mora"), ("Fecha de pago", "fecha_pago"),
+    ("Modo o tipo", "modo_extincion"), ("Incoherencia entre tipo y modo", "modo_extincion"),
+)
+_REGLAS_DEL_CICLO = ("PRIMER_REPORTE_INVALIDO", "CAMBIO_ESTADO_INVALIDO")
+_DETALLE_MILES = (
+    "Los valores se reportan en miles de pesos, como enteros. "
+    "Regla de redondeo por confirmar con TransUnion."
+)
+
+
+def _campo_de(regla, mensaje):
+    if regla == "CIERRE_INCOMPLETO":
+        motivo = (mensaje or "").rsplit(": ", 1)[-1]
+        return next((campo for prefijo, campo in _CAMPO_CIERRE if motivo.startswith(prefijo)), None)
+    return _REGLAS.get(regla, (None, None, None))[2]
+
+
+def _evaluar_reglas(corte_id):
+    """Resultados de las reglas del Manual para el corte, sin cambiar nada (RF53).
+
+    Une V_VALIDACION_CORTE, los cambios de estado que la Matriz rechazó en el ciclo (713)
+    y la actualización mensual pendiente.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_CICLO WHERE CORTE_ID = %s", [corte_id]
+        )
+        tiene_ciclo = cursor.fetchone()[0] > 0
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT v.REGLA, v.SEVERIDAD, v.MENSAJE, v.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU "
+            "FROM NEXOVOLT.V_VALIDACION_CORTE v "
+            "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = v.OBLIGACION_ID "
+            "WHERE v.CORTE_ID = %s "
+            "UNION ALL "
+            "SELECT i.REGLA, i.SEVERIDAD, i.MENSAJE, i.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU "
+            "FROM NEXOVOLT.NV_INCONSISTENCIA i "
+            "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = i.OBLIGACION_ID "
+            "WHERE i.CORTE_ID = %s AND i.REGLA = 'CAMBIO_ESTADO_INVALIDO'",
+            [corte_id, corte_id],
+        )
+        filas = cursor.fetchall()
+
+    resultados = [
+        {
+            "regla": regla, "severidad": severidad, "mensaje": mensaje,
+            "obligacion_id": obligacion_id, "numero_obligacion": numero,
+            "campo": _campo_de(regla, mensaje),
+        }
+        for regla, severidad, mensaje, obligacion_id, numero in filas
+    ]
+    if not tiene_ciclo:
+        resultados.insert(0, {
+            "regla": "ACTUALIZACION_MENSUAL", "severidad": "CORRECTIVA",
+            "mensaje": "Falta ejecutar la actualización mensual de este corte.",
+            "obligacion_id": None, "numero_obligacion": None, "campo": None,
+        })
+    return resultados
+
+
+def _sin_severidad(resultado):
+    return {k: v for k, v in resultado.items() if k != "severidad"}
+
+
 def validar_corte(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(
@@ -409,41 +506,118 @@ def validar_corte(corte_id):
     if row[0] != "BORRADOR":
         raise CorteNoEsBorrador()
 
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT COUNT(*) FROM NEXOVOLT.NV_CICLO WHERE CORTE_ID = %s", [corte_id]
-        )
-        tiene_ciclo = cursor.fetchone()[0] > 0
-
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT REGLA, SEVERIDAD, MENSAJE FROM NEXOVOLT.V_VALIDACION_CORTE "
-            "WHERE CORTE_ID = %s",
-            [corte_id],
-        )
-        filas = cursor.fetchall()
-
-    correctivos = [
-        {"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "CORRECTIVA"
-    ]
-    if not tiene_ciclo:
-        correctivos.insert(0, {
-            "regla": "ACTUALIZACION_MENSUAL",
-            "mensaje": "Falta ejecutar la actualización mensual de este corte.",
-        })
+    resultados = _evaluar_reglas(corte_id)
+    correctivos = [_sin_severidad(r) for r in resultados if r["severidad"] == "CORRECTIVA"]
     if correctivos:
         raise CorteConErroresCorrectivos(correctivos)
 
+    advertencias = [r for r in resultados if r["severidad"] == "INFORMATIVA"]
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'VALIDADO' WHERE CORTE_ID = %s",
+                [corte_id],
+            )
+            # RF53: el resultado de la validación queda en NV_INCONSISTENCIA. Las del ciclo
+            # (881, 713) las escribe y limpia el propio ciclo.
+            cursor.execute(
+                "DELETE FROM NEXOVOLT.NV_INCONSISTENCIA WHERE CORTE_ID = %s "
+                "AND REGLA NOT IN (%s, %s)",
+                [corte_id, *_REGLAS_DEL_CICLO],
+            )
+            if advertencias:
+                cursor.executemany(
+                    "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
+                    "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
+                    "VALUES (%s, %s, %s, 'INFORMATIVA', %s, %s)",
+                    [
+                        (corte_id, r["obligacion_id"], r["regla"], r["mensaje"], ahora_para_bd())
+                        for r in advertencias
+                    ],
+                )
+
+    return {
+        "corte": obtener_corte(corte_id),
+        "advertencias": [_sin_severidad(r) for r in advertencias],
+    }
+
+
+def _activas_del_ultimo_enviado():
     with connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'VALIDADO' WHERE CORTE_ID = %s",
-            [corte_id],
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
+            "WHERE rd.CORTE_ID = (SELECT CORTE_ID FROM NEXOVOLT.NV_CORTE "
+            "WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS') "
+            "ORDER BY FECHA_CORTE DESC FETCH FIRST 1 ROW ONLY) "
+            "AND rd.ESTADO_TU NOT IN ('02', '07') AND NVL(o.ELIMINADA, 'N') = 'N'"
         )
+        return cursor.fetchone()[0]
 
-    advertencias = [
-        {"regla": r[0], "mensaje": r[2]} for r in filas if r[1] == "INFORMATIVA"
-    ]
-    return {"corte": obtener_corte(corte_id), "advertencias": advertencias}
+
+def _detalle(regla, items):
+    if regla == "VALORES_EN_MILES":
+        return _DETALLE_MILES
+    if regla == "OMISION_VS_ULTIMO_CORTE":
+        activas = _activas_del_ultimo_enviado()
+        return f"{activas - len(items)} de {activas} obligaciones activas del último corte incluidas."
+    if not items:
+        return "Sin observaciones."
+    if all(i["obligacion_id"] is None for i in items):
+        return items[0]["mensaje"]
+    return f"{len(items)} obligación(es) con observaciones."
+
+
+def _nivel(regla, items):
+    if regla == "VALORES_EN_MILES":
+        return "informativa"
+    if not items:
+        return "ok"
+    if regla == "ENTIDAD_CON_MARCADOR":
+        return "advertencia"
+    return "correctiva" if items[0]["severidad"] == "CORRECTIVA" else "informativa"
+
+
+def validaciones_corte(corte_id):
+    """GET /extracciones/{id}/validaciones/: las reglas agrupadas, sin cambiar el corte."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ESTADO, FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise CorteNoEncontrado()
+    estado, fecha_corte = row
+
+    por_regla = {}
+    for r in _evaluar_reglas(corte_id):
+        por_regla.setdefault(r["regla"], []).append(r)
+    reglas = list(_REGLAS) + [r for r in por_regla if r not in _REGLAS]
+
+    resultados = []
+    for regla in reglas:
+        items = por_regla.get(regla, [])
+        titulo, rfs, _ = _REGLAS.get(regla, (regla, [], None))
+        resultados.append({
+            "regla": regla,
+            "titulo": titulo,
+            "nivel": _nivel(regla, items),
+            "detalle": _detalle(regla, items),
+            "rf": rfs,
+            "por_confirmar": regla == "VALORES_EN_MILES",
+            "obligaciones": [
+                {k: i[k] for k in ("obligacion_id", "numero_obligacion", "campo", "mensaje")}
+                for i in items if i["obligacion_id"] is not None or i["numero_obligacion"]
+            ],
+        })
+    hay_correctivas = any(r["nivel"] == "correctiva" for r in resultados)
+    return {
+        "corte_id": corte_id,
+        "fecha_corte": fecha_str(fecha_corte),
+        "estado_corte": estado,
+        "puede_generar": estado == "VALIDADO" and not hay_correctivas,
+        "resultados": resultados,
+    }
 
 
 def registrar_envio(corte_id, fecha_envio=None):
