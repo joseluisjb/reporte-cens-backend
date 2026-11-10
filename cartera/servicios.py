@@ -3,7 +3,7 @@ from datetime import date
 from django.db import connection, transaction, IntegrityError
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
-from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota
+from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota, timestamp_str
 from usuarios.models import Usuario
 
 
@@ -42,6 +42,14 @@ class CorteNoEsBorrador(Exception):
 
 class CorteNoEsValidado(Exception):
     pass
+
+
+class SinArchivo(Exception):
+    """El corte no tiene archivo plano generado (0.9)."""
+
+
+class ArchivoNoApto(Exception):
+    """El último archivo del corte no es apto para envío (RF57)."""
 
 
 class CorteConErroresCorrectivos(Exception):
@@ -645,7 +653,24 @@ def registrar_envio(corte_id, fecha_envio=None):
     if estado != "VALIDADO":
         raise CorteNoEsValidado()
 
+    # 0.9 (RF20, RF57): se envía el último archivo generado y debe ser apto.
     with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ARCHIVO_ID, APTO_ENVIO FROM NEXOVOLT.NV_ARCHIVO WHERE CORTE_ID = %s "
+            "ORDER BY ARCHIVO_ID DESC FETCH FIRST 1 ROWS ONLY",
+            [corte_id],
+        )
+        archivo = cursor.fetchone()
+    if archivo is None:
+        raise SinArchivo()
+    if archivo[1] != "S":
+        raise ArchivoNoApto()
+
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_ARCHIVO SET ENVIADO = 'S', FECHA_ENVIO = %s WHERE ARCHIVO_ID = %s",
+            [fecha_envio, archivo[0]],
+        )
         cursor.execute(
             "UPDATE NEXOVOLT.NV_CORTE SET ESTADO = 'ENVIADO', FECHA_ENVIO = %s "
             "WHERE CORTE_ID = %s",
@@ -1077,3 +1102,185 @@ def obtener_resultados(archivo_id):
         archivo_id, corte_id, fecha_corte, estado_corte, usuario_id,
         fecha_carga, archivos_cargados, all_inconsistencias, recibidos,
     )
+
+
+# ── RF20 / RF51 — Archivo plano del reporte total ─────────────────────────────
+
+class CamposInvalidos(Exception):
+    """Algún campo no cabe en su posición o no es de su tipo: no se genera el archivo."""
+    def __init__(self, errores):
+        super().__init__("Campos inválidos en el archivo plano")
+        self.errores = errores
+
+
+# Longitud declarada por el Manual v34 para el registro tipo 2; sus campos suman 929.
+# Por confirmar con TransUnion: se toma de NV_PARAMETRO si existe la clave.
+LONGITUD_TIPO2_MANUAL = 930
+MOTIVO_NO_APTO = "La entidad tiene datos con relleno (XXX): TransUnion lo rechazaría."
+
+_COLUMNAS_TIPO2 = (
+    "OBLIGACION_ID", "NUMERO_OBLIGACION_TU", "TIPO_ID_TU", "NUMERO_IDENTIFICACION",
+    "NOMBRE_TITULAR", "FECHA_LIMITE_PAGO", "CALIDAD", "ESTADO_TU", "EDAD_MORA", "ANIOS_MORA",
+    "FECHA_INICIO", "FECHA_PAGO", "MODO_EXTINCION", "TIPO_PAGO", "PERIODICIDAD", "CUOTAS_MORA",
+    "VALOR_INICIAL", "VALOR_MORA", "VALOR_SALDO", "VALOR_CUOTA", "OBLIGACION_REFINANCIADA",
+    "CORREO", "CELULAR", "VALOR_REAL_PAGADO", "ELIMINADA",
+)
+# Los datos del titular se toman de NV_REPORTE_DETALLE (V_REPORTE_TU v2 aún no los expone).
+_SQL_OBLIGACIONES_ARCHIVO = (
+    "SELECT rd.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, rd.TIPO_ID_TU, rd.NUMERO_IDENTIFICACION, "
+    "rd.NOMBRE_TITULAR, rd.FECHA_LIMITE_PAGO, rd.CALIDAD, rd.ESTADO_TU, rd.EDAD_MORA, "
+    "TRUNC(NVL(rd.DIAS_MORA, 0) / 365), rd.FECHA_INICIO, rd.FECHA_PAGO, rd.MODO_EXTINCION, "
+    "rd.TIPO_PAGO, rd.PERIODICIDAD, rd.CUOTAS_MORA, rd.VALOR_INICIAL, rd.VALOR_MORA, "
+    "rd.VALOR_SALDO, rd.VALOR_CUOTA, rd.OBLIGACION_REFINANCIADA, rd.CORREO, rd.CELULAR, "
+    "rd.VALOR_REAL_PAGADO, NVL(o.ELIMINADA, 'N') "
+    "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+    "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
+    "WHERE rd.CORTE_ID = %s ORDER BY o.NUMERO_OBLIGACION_TU"
+)
+_SQL_ARCHIVO = (
+    "SELECT a.ARCHIVO_ID, a.CORTE_ID, c.FECHA_CORTE, a.NOMBRE, a.TIPO_REPORTE, "
+    "a.FECHA_GENERACION, a.USUARIO_ID, a.N_REGISTROS, a.N_EXCLUIDAS, a.SALDO_TOTAL, "
+    "a.APTO_ENVIO, a.ENVIADO, a.FECHA_ENVIO, c.ESTADO, "
+    "(SELECT COUNT(*) FROM NEXOVOLT.NV_CARGUE_RESULTADO r WHERE r.ARCHIVO_ID = a.ARCHIVO_ID) "
+    "FROM NEXOVOLT.NV_ARCHIVO a JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = a.CORTE_ID "
+)
+
+
+class _Blob:
+    """Bytes como BLOB temporal: Oracle rechaza binds RAW de más de 32 KB (ORA-01460)."""
+    def __init__(self, datos):
+        self.datos = datos
+
+    def bind_parameter(self, cursor):
+        import oracledb
+        return connection.connection.createlob(oracledb.DB_TYPE_BLOB, self.datos)
+
+
+def _parametros(claves):
+    marcadores = ", ".join(["%s"] * len(claves))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT CLAVE, VALOR FROM NEXOVOLT.NV_PARAMETRO WHERE CLAVE IN ({marcadores})",
+            list(claves),
+        )
+        return dict(cursor.fetchall())
+
+
+def _leer_obligaciones_archivo(corte_id):
+    with connection.cursor() as cursor:
+        cursor.execute(_SQL_OBLIGACIONES_ARCHIVO, [corte_id])
+        return [dict(zip(_COLUMNAS_TIPO2, fila)) for fila in cursor.fetchall()]
+
+
+def _fila_a_archivo(fila, nombres, longitud_tipo2):
+    (archivo_id, corte_id, fecha_corte, nombre, tipo_reporte, fecha_gen, usuario_id,
+     n_registros, n_excluidas, saldo, apto, enviado, fecha_envio, estado, n_cargues) = fila
+    return {
+        "id": archivo_id,
+        "corte_id": corte_id,
+        "fecha_corte": fecha_str(fecha_corte),
+        "nombre": nombre,
+        "tipo_reporte": tipo_reporte,
+        "fecha_generacion": timestamp_str(fecha_gen),
+        "generado_por": nombres.get(usuario_id),
+        "n_registros": n_registros,
+        "total_registros": n_registros + 2,
+        "n_excluidas": n_excluidas,
+        "saldo_total": int(saldo),
+        "longitud_registro_tipo2": longitud_tipo2,
+        "apto_envio": apto == "S",
+        "motivo_no_apto": None if apto == "S" else MOTIVO_NO_APTO,
+        "enviado": enviado == "S",
+        "fecha_envio": fecha_str(fecha_envio),
+        "estado_corte": estado,
+        "tiene_resultados": n_cargues > 0,
+    }
+
+
+def _longitud_tipo2():
+    valor = _parametros(["LONGITUD_REGISTRO_TIPO2"]).get("LONGITUD_REGISTRO_TIPO2")
+    return int(valor) if valor else LONGITUD_TIPO2_MANUAL
+
+
+def listar_archivos(corte_id=None, archivo_id=None):
+    donde, params = "", []
+    if archivo_id is not None:
+        donde, params = "WHERE a.ARCHIVO_ID = %s ", [archivo_id]
+    elif corte_id is not None:
+        donde, params = "WHERE a.CORTE_ID = %s ", [corte_id]
+    with connection.cursor() as cursor:
+        cursor.execute(_SQL_ARCHIVO + donde + "ORDER BY a.ARCHIVO_ID DESC", params)
+        filas = cursor.fetchall()
+    ids = {f[6] for f in filas if f[6] is not None}
+    nombres = dict(Usuario.objects.filter(pk__in=ids).values_list("pk", "nombre")) if ids else {}
+    longitud = _longitud_tipo2()
+    return [_fila_a_archivo(f, nombres, longitud) for f in filas]
+
+
+def generar_archivo(corte_id, usuario=None):
+    from cartera.archivo_plano import armar_archivo
+    from parametros.servicios import datos_entidad
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ESTADO, FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s", [corte_id]
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise CorteNoEncontrado()
+    estado, fecha_corte = row
+    if estado != "VALIDADO":
+        raise CorteNoEsValidado()
+    if hasattr(fecha_corte, "date"):
+        fecha_corte = fecha_corte.date()
+
+    params = _parametros(["CODIGO_PAQUETE", "TIPO_REPORTE", "CATEGORIA_SERVICIO", "DIVISOR_VALORES"])
+    entidad = datos_entidad()
+    cabecera = {
+        "codigo_paquete": params.get("CODIGO_PAQUETE"),
+        "tipo_reporte": params.get("TIPO_REPORTE"),
+        "categoria_servicios": params.get("CATEGORIA_SERVICIO"),
+        "tipo_entidad": entidad["tipo_entidad"],
+        "codigo_entidad": entidad["codigo_entidad"],
+        "codigo_sucursal": entidad["codigo_sucursal"],
+        "fecha_corte": fecha_corte,
+    }
+    filas = _leer_obligaciones_archivo(corte_id)
+    reportadas = [f for f in filas if f["ELIMINADA"] != "S"]
+    contenido, errores = armar_archivo(
+        cabecera, reportadas, int(params.get("DIVISOR_VALORES") or 1000), _longitud_tipo2()
+    )
+    if errores:
+        raise CamposInvalidos(errores)
+
+    nombre = f"{entidad['prefijo_archivo']}{fecha_corte:%Y%m%d}"
+    apto = "N" if entidad["con_marcador"] else "S"
+    saldo = sum(int(f["VALOR_SALDO"] or 0) for f in reportadas)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT NEXOVOLT.SEQ_NV_ARCHIVO.NEXTVAL FROM DUAL")
+            archivo_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO NEXOVOLT.NV_ARCHIVO (ARCHIVO_ID, CORTE_ID, NOMBRE, FECHA_GENERACION, "
+                "USUARIO_ID, TIPO_REPORTE, N_REGISTROS, N_EXCLUIDAS, SALDO_TOTAL, APTO_ENVIO, "
+                "ENVIADO, CONTENIDO) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'N', %s)",
+                [archivo_id, corte_id, nombre, ahora_para_bd(), getattr(usuario, "pk", None),
+                 cabecera["tipo_reporte"], len(reportadas), len(filas) - len(reportadas), saldo,
+                 apto, _Blob(contenido)],
+            )
+    return listar_archivos(archivo_id=archivo_id)[0]
+
+
+def contenido_archivo(archivo_id):
+    """(nombre, bytes) del archivo tal cual se carga en STRANSFER."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT NOMBRE, CONTENIDO FROM NEXOVOLT.NV_ARCHIVO WHERE ARCHIVO_ID = %s", [archivo_id]
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise ArchivoNoEncontrado()
+    nombre, contenido = row
+    if hasattr(contenido, "read"):
+        contenido = contenido.read()
+    return nombre, bytes(contenido or b"")

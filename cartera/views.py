@@ -1,5 +1,7 @@
+from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
 
 from config.paginacion import parsear_paginacion
@@ -133,9 +135,43 @@ class ExtraccionViewSet(viewsets.ViewSet):
                 {"detail": "El corte no está en estado VALIDADO."},
                 status=status.HTTP_409_CONFLICT,
             )
+        except servicios.SinArchivo:
+            return Response(
+                {"detail": "Primero genera el archivo plano del corte.", "code": "sin_archivo"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except servicios.ArchivoNoApto:
+            return Response(
+                {
+                    "detail": "El archivo no es apto para envío: faltan los datos de la entidad ante TransUnion.",
+                    "code": "archivo_no_apto",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         except servicios.FechaInvalida as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(CorteResumenSerializer(corte).data)
+
+    @action(detail=True, methods=["post"], url_path="archivo")
+    def archivo(self, request, pk=None):
+        try:
+            archivo = servicios.generar_archivo(int(pk), usuario=request.user)
+        except servicios.CorteNoEncontrado:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except servicios.CorteNoEsValidado:
+            return Response(
+                {"detail": "Valida el corte antes de generar el archivo."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except servicios.CamposInvalidos as exc:
+            return Response(
+                {
+                    "detail": "No se generó el archivo: hay campos que no caben en su posición.",
+                    "errores": exc.errores,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(archivo, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, pk=None):
         try:
@@ -167,9 +203,43 @@ class ExtraccionViewSet(viewsets.ViewSet):
         return Response(resultado)
 
 
+class TextoPlanoRenderer(BaseRenderer):
+    """Deja pasar `Accept: text/plain` en la descarga; los errores salen como JSON."""
+    media_type = "text/plain"
+    format = "txt"
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return JSONRenderer().render(data)
+
+
 class ArchivoViewSet(viewsets.ViewSet):
-    permission_classes = [EsAnalista]
     lookup_value_regex = r"\d+"
+
+    def get_permissions(self):
+        # Resultados del cargue: solo Analista (RF54). Lista y descarga: los dos roles (RF20).
+        if self.action == "resultados":
+            return [EsAnalista()]
+        return [EsAnalistaOAdministrador()]
+
+    def list(self, request):
+        corte_id = request.query_params.get("corte_id")
+        if corte_id is not None and not corte_id.isdigit():
+            return Response(
+                {"corte_id": ["Indica el id numérico del corte."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(servicios.listar_archivos(corte_id=int(corte_id) if corte_id else None))
+
+    @action(detail=True, methods=["get"], url_path="descarga",
+            renderer_classes=[JSONRenderer, TextoPlanoRenderer])
+    def descarga(self, request, pk=None):
+        try:
+            nombre, contenido = servicios.contenido_archivo(int(pk))
+        except servicios.ArchivoNoEncontrado:
+            return Response({"detail": "Archivo no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        respuesta = HttpResponse(contenido, content_type="text/plain; charset=windows-1252")
+        respuesta["Content-Disposition"] = f'attachment; filename="{nombre}.txt"'
+        return respuesta
 
     @action(detail=True, methods=["get", "post"], url_path="resultados")
     def resultados(self, request, pk=None):

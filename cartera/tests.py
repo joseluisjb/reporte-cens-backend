@@ -665,9 +665,10 @@ def test_registrar_envio_usa_hoy_sin_fecha():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1)
     sqls = [c.args[0] for c in mock_cursor.execute.call_args_list]
     assert any("ESTADO = 'ENVIADO'" in s for s in sqls)
@@ -1021,13 +1022,14 @@ def test_rf13_registrar_envio_marca_cierre_definitivo_en_02():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     sqls = []
     orig_execute = mock_cursor.execute.side_effect
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
 
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
 
     cierre_def_update = any(
@@ -1083,12 +1085,13 @@ def test_rf16_registrar_envio_marca_cierre_definitivo_en_07():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     sqls = []
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
 
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
 
     cierre_def_sql, _ = next(
@@ -1104,12 +1107,13 @@ def test_rf16_registrar_envio_cubre_02_y_07_en_una_sola_sentencia():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("VALIDADO", date(2026, 9, 30)),
+        (7, "S"),  # último archivo del corte, apto para envío (0.9)
         (1, "2026-09-30", "ENVIADO", None, 5, None, None, 0, None),
     ]
     sqls = []
     mock_cursor.execute.side_effect = lambda sql, params=None: sqls.append((sql, params))
 
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn),          patch("cartera.servicios.transaction.atomic", _noop_atomic):
         servicios.registrar_envio(1, fecha_envio=date(2026, 9, 30))
 
     cierre_sqls = [s for s, _ in sqls if s and "CIERRE_DEFINITIVO" in s]
