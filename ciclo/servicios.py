@@ -196,14 +196,20 @@ def _marcar_primer_reporte(corte_id, obligacion_id):
         )
 
 
+# NV_TRANSICION_ESTADO (script base 01, sección 3.6): TIPO_CARTERA, ESTADO_ORIGEN, MORA_ORIGEN,
+# ESTADO_DESTINO, MORA_DESTINO y PERMITIDO, con la mora como 'M' (con mora) o 'N' (sin mora).
+# Se devuelve con la mora en 'S'/'N', que es lo que usa el resto del ciclo. Servicios = TIPO_CARTERA 2.
+_SQL_MATRIZ = (
+    "SELECT ESTADO_ORIGEN, CASE MORA_ORIGEN WHEN 'M' THEN 'S' ELSE 'N' END, "
+    "ESTADO_DESTINO, CASE MORA_DESTINO WHEN 'M' THEN 'S' ELSE 'N' END, PERMITIDO "
+    "FROM NEXOVOLT.NV_TRANSICION_ESTADO WHERE TIPO_CARTERA = 2"
+)
+
+
 def _cargar_transiciones_permitidas():
     """Devuelve el conjunto de transiciones S de NV_TRANSICION_ESTADO para validar la Matriz."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT ESTADO_DESDE, CON_MORA_DESDE, ESTADO_HACIA, CON_MORA_HACIA "
-            "FROM NEXOVOLT.NV_TRANSICION_ESTADO "
-            "WHERE PERMITIDA = 'S'"
-        )
+        cursor.execute(_SQL_MATRIZ + " AND PERMITIDO = 'S'")
         rows = cursor.fetchall()
     return {(r[0], r[1], r[2], r[3]) for r in rows}
 
@@ -1113,11 +1119,7 @@ def obtener_ciclo(corte_id):
 
 def obtener_matriz():
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT ESTADO_DESDE, CON_MORA_DESDE, ESTADO_HACIA, CON_MORA_HACIA, PERMITIDA "
-            "FROM NEXOVOLT.NV_TRANSICION_ESTADO "
-            "ORDER BY ESTADO_DESDE, CON_MORA_DESDE, ESTADO_HACIA, CON_MORA_HACIA"
-        )
+        cursor.execute(_SQL_MATRIZ + " ORDER BY 1, 2, 3, 4")
         rows = cursor.fetchall()
     transiciones = [
         {
