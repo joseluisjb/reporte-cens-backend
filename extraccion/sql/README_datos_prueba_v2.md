@@ -52,13 +52,13 @@ Cubre exhaustivamente los **18 escenarios de prueba (E1 a E18)** contemplados en
 | **E7** | 900107 | 100107 (`2244-6410`) | Crédito con marca de castigo en `NV_MARCA_CASTIGO` y mora. | **Estado 06 (Castigada)**, mantiene 06 mientras exista mora | RF45 |
 | **E8** | 900108 | 100108 (`2241-3302`) | Estaba en 03 en corte 901; realiza pago total de su saldo ($600.000) el 20/10/2026. | **Estado 07 (Cartera Recuperada)**, `FECHA_PAGO` = 20/10/2026 | RF15, RF22 |
 | **E9** | 900109 | 100109 (`2248-8819`) | Estaba en 03 en corte 901; paga toda la mora ($200.000) pero conserva saldo ($600.000). | **Vuelve a Estado 01 (Vigente)**, reporta pago de mora (`VALOR_REAL_PAGADO`, fecha) | RF46, RF47 |
-| **E10** | 900110 | Orig: 100110<br>Nueva: 100111 | Proceso 100110 refinanciado por nuevo crédito 100111 (`PROCESO_REFINANCIACION`). | Original: **02 Saldada**, modo 16 (Refinanciación). Nueva: **01 Vigente reestructurada** | RF18 |
+| **E10** | 900110 | Orig: 100110<br>Nueva: 100119 | Proceso 100110 refinanciado por nuevo crédito 100119 (`PROCESO_REFINANCIACION`). | Original: **02 Saldada**, modo 16 (Refinanciación). Nueva: **01 Vigente reestructurada** | RF18 |
 | **E11** | 900111 | 100111 | Crédito nuevo con `CONTATRASOS` > tope pero sin facturas vencidas (mora = 0). | Entra en **01 (no en 03 por no tener mora)** y con marca `REQUIERE_REVISION = 'S'` | RF10, RF14 |
 | **E12** | 900112 | 100112 (`2239-1122`) | Obligación cerrada definitivamente en corte 901; se detecta movimiento/factura posterior. | **No se reporta en archivo TU**, genera alerta `MOVIMIENTO_POSTERIOR` | RF13, RF16 |
 | **E13** | 900113 | 100113 | Crédito con estado `B` en SAC (no homologado en catálogo). | Bloqueo por regla `ESTADO_SIN_HOMOLOGAR` | RF48, RF53 |
 | **E14** | 900114 | 100114 | Titular sin tipo o número de identificación en `NV_TITULAR`. | Falla validación correctiva `SIN_IDENTIFICACION` | RF53 |
 | **E15** | 900115 | -9876543210 | Proceso negativo con número de obligación TU superior a 20 caracteres. | Falla validación correctiva `NUMERO_OBLIGACION_INVALIDO` | RF53 |
-| **E16** | 900116 | 100116 / 100117 | Crédito 1 con saldo $9.000 (< $10.000); Crédito 2 con saldo $120.000.000 (> $100M). | Genera advertencias informativas `VALOR_FUERA_DE_RANGO` | RF51, RF53 |
+| **E16** | 900116 | 100116 / 100120 | Crédito 1 con saldo $9.000 (< $10.000); Crédito 2 con saldo $120.000.000 (> $100M). | Genera advertencias informativas `VALOR_FUERA_DE_RANGO` | RF51, RF53 |
 | **E17** | 900117 | 100117 | Crédito con factura vencida hace 800 días (> 730 días de atraso). | Reporta **Edad 14**, y cálculo de años en mora = 2 | RF11, RF49 |
 | **E18** | 900118 | 100118 (`2249-1180`) | Obligación con novedad de eliminación ante TransUnion (`NV_ELIMINACION`). | **Excluida del corte**, no cuenta como omitida ni se transmite en el archivo TU | RF50, RF21 |
 
