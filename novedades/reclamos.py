@@ -53,9 +53,9 @@ _SELECT_RECLAMO = (
     "TRIM(tit.NOMBRES || ' ' || tit.PRIMER_APELLIDO || ' ' || "
     "NVL(tit.SEGUNDO_APELLIDO, '')) NOMBRE_TITULAR, "
     "tip.CODIGO, tip.DESCRIPCION, tip.CONFIRMADO, r.FECHA_RADICACION, "
-    "r.OBSERVACION, r.ESTADO, r.MARCACION_GENERADA, "
+    "r.OBSERVACION, r.ESTADO, r.MARCACION_GENERADA, r.DESMARCACION_GENERADA, "
     "r.FECHA_LIMITE_RESPUESTA, r.RESULTADO, r.FECHA_CIERRE, "
-    "CAST(NULL AS VARCHAR2(500)) OBSERVACION_CIERRE, u.NOMBRE, r.FECHA_REGISTRO"
+    "r.OBSERVACION_CIERRE, u.NOMBRE, r.FECHA_REGISTRO"
 )
 _FROM_RECLAMO = (
     "FROM NEXOVOLT.NV_RECLAMO r "
@@ -121,7 +121,13 @@ def calcular_fecha_limite_respuesta(fecha_radicacion, dias_habiles=_DIAS_PLAZO_R
 
 
 def _fila_a_reclamo(row):
-    fecha_limite = row[11]
+    # cols: 0=RECLAMO_ID, 1=OBLIGACION_ID, 2=NUMERO_OBLIGACION_TU, 3=NOMBRE_TITULAR,
+    #       4=tip.CODIGO, 5=tip.DESCRIPCION, 6=tip.CONFIRMADO,
+    #       7=FECHA_RADICACION, 8=OBSERVACION, 9=ESTADO,
+    #       10=MARCACION_GENERADA, 11=DESMARCACION_GENERADA,
+    #       12=FECHA_LIMITE_RESPUESTA, 13=RESULTADO, 14=FECHA_CIERRE,
+    #       15=OBSERVACION_CIERRE, 16=u.NOMBRE, 17=FECHA_REGISTRO
+    fecha_limite = row[12]
     if hasattr(fecha_limite, "date"):
         fecha_limite = fecha_limite.date()
     return {
@@ -137,18 +143,19 @@ def _fila_a_reclamo(row):
         "fecha_radicacion": fecha_str(row[7]),
         "observacion": row[8],
         "estado": row[9],
-        "radicado_en_tu": row[10] == "S",
-        "fecha_limite_respuesta": fecha_str(row[11]),
+        "marcacion_generada": row[10] == "S",
+        "desmarcacion_generada": row[11] == "S",
+        "fecha_limite_respuesta": fecha_str(row[12]),
         "vencido": (
             row[9] == "EN_RECLAMO"
             and fecha_limite is not None
             and fecha_limite < hoy_bogota()
         ),
-        "resultado": row[12],
-        "fecha_cierre": fecha_str(row[13]),
-        "observacion_cierre": row[14],
-        "registrado_por": row[15],
-        "fecha_registro": timestamp_str(row[16]),
+        "resultado": row[13],
+        "fecha_cierre": fecha_str(row[14]),
+        "observacion_cierre": row[15],
+        "registrado_por": row[16],
+        "fecha_registro": timestamp_str(row[17]),
     }
 
 
@@ -265,9 +272,9 @@ def cerrar_reclamo(reclamo_id, data, usuario=None):
 
             cursor.execute(
                 "UPDATE NEXOVOLT.NV_RECLAMO SET ESTADO = 'CERRADO', RESULTADO = %s, "
-                "FECHA_CIERRE = %s, DESMARCACION_GENERADA = 'N' "
+                "FECHA_CIERRE = %s, OBSERVACION_CIERRE = %s, DESMARCACION_GENERADA = 'N' "
                 "WHERE RECLAMO_ID = %s",
-                [data["resultado"], data["fecha_cierre"], reclamo_id],
+                [data["resultado"], data["fecha_cierre"], data.get("observacion_cierre"), reclamo_id],
             )
 
     with tolerar_fallo_bitacora("RECLAMO_CERRADO"):
