@@ -112,6 +112,33 @@ def test_formato_de_los_campos_del_registro_tipo_2():
     assert _campo(linea, "correo_electronico") == "titular@ejemplo.com".ljust(60)
 
 
+# ── RF49 · fecha de exigibilidad y años en mora ───────────────────────────────
+
+def _linea(**cambios):
+    contenido, errores = armar_archivo(CABECERA, [_obligacion(**cambios)], 1000, 930)
+    assert errores == []
+    return _lineas(contenido)[1]
+
+
+def test_en_mora_reporta_la_fecha_de_exigibilidad():
+    linea = _linea(VALOR_MORA=170_000, EDAD_MORA="02", FECHA_LIMITE_PAGO=date(2026, 8, 12))
+    assert _campo(linea, "fecha_exigibilidad") == "20260812"
+
+
+@pytest.mark.parametrize("cambios", [
+    {"VALOR_MORA": 0, "EDAD_MORA": "00"},      # al día
+    {"VALOR_MORA": 0, "EDAD_MORA": "02"},      # pagó la mora
+    {"VALOR_MORA": 5_000, "EDAD_MORA": "00"},  # edad normal: TransUnion no la tendría en cuenta
+])
+def test_sin_mora_la_fecha_de_exigibilidad_va_vacia(cambios):
+    assert _campo(_linea(**cambios), "fecha_exigibilidad") == " " * 8
+
+
+def test_anios_en_mora_solo_con_edad_14():
+    assert _campo(_linea(VALOR_MORA=900_000, EDAD_MORA="14", ANIOS_MORA=2), "anios_mora") == "02"
+    assert _campo(_linea(VALOR_MORA=900_000, EDAD_MORA="12", ANIOS_MORA=1), "anios_mora") == "  "
+
+
 def test_nombre_con_tildes_se_codifica_en_cp1252_sin_romper_el_largo():
     contenido, errores = armar_archivo(
         CABECERA, [_obligacion(NOMBRE_TITULAR="Ana Peña Álvarez")], 1000, 930

@@ -47,7 +47,7 @@ REGISTRO_2 = (
     ("15", "fecha_corte", 126, 8, "FEC", "fecha_corte"),
     ("16", "fecha_inicial", 134, 8, "FEC", "FECHA_INICIO"),
     ("17", "fecha_terminacion", 142, 8, "FEC", None),
-    ("18", "fecha_exigibilidad", 150, 8, "FEC", None),
+    ("18", "fecha_exigibilidad", 150, 8, "FEC", "FECHA_EXIGIBILIDAD"),  # RF49: ver _datos_rf49
     ("19", "fecha_prescripcion", 158, 8, "FEC", None),
     ("20", "fecha_pago", 166, 8, "FEC", "FECHA_PAGO"),
     ("21", "modo_extincion", 174, 2, "NUM", "MODO_EXTINCION"),
@@ -203,6 +203,22 @@ def _formatear(campo, longitud, formato, valor, divisor):
     return texto.ljust(longitud)
 
 
+def _datos_rf49(obligacion):
+    """Fecha de exigibilidad y años en mora del registro tipo 2 (RF49).
+
+    - Fecha de exigibilidad (campo 18): la fecha límite de pago de la cuota impaga más antigua, solo si
+      la obligación tiene valor de mora y edad de mora mayores a cero; al día va vacía (Manual p. 20:
+      con edad 00 TransUnion no la tiene en cuenta y genera una alerta).
+    - Años en mora (campo 14): solo para la edad de mora 14 (Manual p. 13).
+    """
+    edad = str(obligacion.get("EDAD_MORA") or "").strip().zfill(2)
+    en_mora = (obligacion.get("VALOR_MORA") or 0) > 0 and edad != "00"
+    return {
+        "FECHA_EXIGIBILIDAD": obligacion.get("FECHA_LIMITE_PAGO") if en_mora else None,
+        "ANIOS_MORA": obligacion.get("ANIOS_MORA") if edad == "14" else None,
+    }
+
+
 def armar_registro(layout, datos, divisor=1000, longitud_total=None):
     """Una línea de longitud fija (sin CRLF). Rellena con espacios hasta `longitud_total`."""
     partes = [
@@ -224,7 +240,7 @@ def armar_archivo(cabecera, obligaciones, divisor, longitud_tipo2):
     errores = []
     lineas = [armar_registro(REGISTRO_1, {**cabecera, "tipo_registro": 1})]
     for obligacion in obligaciones:
-        datos = {**cabecera, **obligacion, "tipo_registro": 2}
+        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion), "tipo_registro": 2}
         try:
             lineas.append(armar_registro(REGISTRO_2, datos, divisor, longitud_tipo2))
         except CampoInvalido as exc:
