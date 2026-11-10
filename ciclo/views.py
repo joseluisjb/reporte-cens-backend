@@ -18,22 +18,9 @@ from ciclo.serializers import (
 )
 
 
-_NOMBRES_ESTADO_TU = {
-    "01": "Vigente",
-    "02": "Saldada",
-    "03": "Dudoso Recaudo",
-    "04": "Cartera Especial",
-    "06": "Castigada",
-    "07": "Cartera Recuperada",
-    "08": "Inactivo",
-    "10": "Estado 10",
-    "11": "Estado 11",
-    "12": "Estado 12",
-}
-
-
-def _descripcion_evento(evento):
-    nombre = _NOMBRES_ESTADO_TU.get(evento["estado_tu"], evento["estado_tu"])
+def _descripcion_evento(evento, nombres):
+    """Nombre del estado (Tabla 4b, leído de NV_ESTADO_TU) y, si hay mora, días y cuotas."""
+    nombre = nombres.get(evento["estado_tu"], evento["estado_tu"])
     dias = evento.get("dias_mora")
     if dias and int(dias) > 0:
         cuotas = evento.get("cuotas_mora") or 0
@@ -150,6 +137,7 @@ class ObligacionesViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["get"], url_path="linea-tiempo")
     def linea_tiempo(self, request, pk=None):
         from historial.servicios import linea_tiempo_deudor, ObligacionNoEncontrada
+        from parametros.servicios import listar_estados_tu
         try:
             eventos = linea_tiempo_deudor(int(pk))
         except ObligacionNoEncontrada:
@@ -157,12 +145,13 @@ class ObligacionesViewSet(viewsets.ViewSet):
                 {"detail": "Obligación no encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        nombres = {e["codigo"]: e["nombre"] for e in listar_estados_tu()}
         return Response([
             {
                 "fecha": fecha_str(e["fecha_corte"]),
                 "estado_tu": e["estado_tu"],
                 "edad_mora": e["edad_mora"] or "00",
-                "descripcion": _descripcion_evento(e),
+                "descripcion": _descripcion_evento(e, nombres),
             }
             for e in eventos
         ])
