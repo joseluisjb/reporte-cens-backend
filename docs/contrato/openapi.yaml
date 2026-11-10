@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: NexoVolt — API REST (Iteraciones 1 y 2)
-  version: 0.9.3-borrador
+  version: 0.9.5-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
@@ -2581,9 +2581,11 @@ paths:
       summary: Cargar los archivos de respuesta de TransUnion (RF54, RF23)
       description: |
         Uno o varios archivos delimitados por pipes que devuelve TransUnion después del cargue:
-        estadísticos, detalle de correctivas y de alertas, Especiales, 953_Detalle, no reportados
-        (norep), y radicación o cierre de reclamos (RF23). Su estructura exacta sale del Manual v34
-        (págs. 42-43 y 52-54). El sistema asocia cada inconsistencia a la obligación del corte y deja
+        estadísticos, detalle de correctivas y de alertas, Especiales, 953_Detalle y no reportados
+        (norep). Su estructura exacta sale del Manual v34 (págs. 42-43 y 52-54). **0.9.4:** los archivos
+        de radicación y de cierre de reclamos ya no entran aquí: según el Manual (p. 57) los devuelve el
+        proceso «Marcación de obligaciones (Reclamos Batch)», que es aparte del reporte mensual y no
+        depende del archivo de un corte (ver `GET /reclamos/insumo/`). El sistema asocia cada inconsistencia a la obligación del corte y deja
         el corte en `ENVIADO` o, si hay correctivas, en `ENVIADO_CON_INCONSISTENCIAS`. Si un archivo no
         corresponde al corte o no tiene la estructura esperada responde `422` y **no guarda nada**.
         Solo para archivos ya enviados. *Propuesta.*
@@ -2703,7 +2705,8 @@ paths:
                   fecha_radicacion: '2026-09-22'
                   observacion: El titular indica un pago realizado el 15/09.
                   estado: EN_RECLAMO
-                  radicado_en_tu: false
+                  marcacion_generada: false
+                  desmarcacion_generada: false
                   fecha_limite_respuesta: '2026-10-14'
                   vencido: false
                   resultado: null
@@ -2746,7 +2749,8 @@ paths:
                 fecha_radicacion: '2026-09-22'
                 observacion: El titular indica un pago realizado el 15/09.
                 estado: EN_RECLAMO
-                radicado_en_tu: false
+                marcacion_generada: false
+                desmarcacion_generada: false
                 fecha_limite_respuesta: '2026-10-14'
                 vencido: false
                 resultado: null
@@ -2773,7 +2777,9 @@ paths:
     post:
       tags: [Reclamos]
       summary: Registrar la respuesta y el cierre de un reclamo (RF23)
-      description: Deja el reclamo en `CERRADO` y prepara el insumo de desmarcación. *Propuesta; pantalla de Omar.*
+      description: |
+        Deja el reclamo en `CERRADO` con `desmarcacion_generada: false`: entra en el siguiente archivo
+        de desmarcación (Reclamos Batch, Manual p. 57). *Propuesta; pantalla de Omar.*
       operationId: reclamosCerrar
       x-roles: [Analista de Cartera]
       parameters:
@@ -2783,7 +2789,7 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ReclamoCerrarRequest' }
-            example: { resultado: Procedente, fecha_cierre: '2026-09-17' }
+            example: { resultado: Procedente, fecha_cierre: '2026-09-17', observacion_cierre: Se corrigió el titular de la obligación. }
       responses:
         '200':
           description: Reclamo cerrado.
@@ -2799,12 +2805,13 @@ paths:
                 fecha_radicacion: '2026-08-30'
                 observacion: El titular no reconoce la obligación.
                 estado: CERRADO
-                radicado_en_tu: true
+                marcacion_generada: true
+                desmarcacion_generada: false
                 fecha_limite_respuesta: '2026-09-18'
                 vencido: false
                 resultado: Procedente
                 fecha_cierre: '2026-09-17'
-                observacion_cierre: null
+                observacion_cierre: Se corrigió el titular de la obligación.
                 registrado_por: Juan Pérez
                 fecha_registro: '2026-08-30T10:00:00-05:00'
         '400':
@@ -2833,8 +2840,21 @@ paths:
       tags: [Reclamos]
       summary: Insumo para la marcación o desmarcación batch de TransUnion (RF23)
       description: |
-        Archivo para el proceso «Marcación de obligaciones (Reclamos Batch)» de TransUnion. Su
-        estructura sale del Manual (p. 57) y está **por confirmar**. *Propuesta; pantalla de Omar.*
+        Archivo para el proceso «Marcación de obligaciones (Reclamos Batch)» de TransUnion (Manual,
+        p. 57): un proceso masivo para marcar o desmarcar obligaciones según las tipologías de reclamo
+        de la Ley de Habeas Data. Se sube por stransfer con el perfil de marcación de obligaciones.
+
+        - `tipo=marcacion`: los reclamos `EN_RECLAMO` con `marcacion_generada: false`.
+        - `tipo=desmarcacion`: los reclamos `CERRADO` con `desmarcacion_generada: false`.
+
+        **Cambia el estado (0.9.4):** los reclamos incluidos quedan con `marcacion_generada` o
+        `desmarcacion_generada` en `true`, así que una segunda llamada ya no los trae. Generar el
+        archivo **no** quiere decir que TransUnion lo aplicó: según el Manual, TransUnion devuelve un
+        archivo de radicación (las marcaciones efectivas), uno de cierre (las desmarcadas) y uno de
+        inconsistencias. Cargar esos archivos no tiene endpoint todavía.
+
+        El Manual describe el proceso pero **no la estructura del archivo**: la del ejemplo
+        (`número|tipología|fecha`) está **por confirmar con TransUnion**. *Propuesta; pantalla de Omar.*
       operationId: reclamosInsumo
       x-roles: [Analista de Cartera]
       parameters:
@@ -2857,6 +2877,12 @@ paths:
               example: { tipo: ['Usa marcacion o desmarcacion.'] }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Otro usuario cambió los reclamos mientras se generaba el archivo (0.9.4). Se puede reintentar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El insumo cambió mientras se generaba. Intenta de nuevo.' }
 
   # ───────────────────────── Novedades, eliminaciones y rectificaciones (pantalla 14 · propuesta, dueño Angel) ─────────────────────────
   /novedades/:
@@ -3209,8 +3235,11 @@ paths:
       summary: Registrar una rectificación de un corte enviado (RF55)
       description: |
         Guarda la corrección **sin borrar** el valor original (`valor_anterior` lo toma el sistema del
-        corte afectado), devuelve el insumo delimitado por `|` y actualiza el detalle histórico. Solo
-        sobre cortes enviados.
+        corte afectado) y prepara el insumo para TransUnion. Solo sobre cortes enviados.
+        **0.9.5:** la respuesta del `201` trae `insumo`, como ya lo hace el backend. Su formato
+        (`número|campo|valor corregido`) está **por confirmar con TransUnion**: el Manual (p. 57,
+        «Novedades Batch») dice que las correcciones masivas usan archivos de estructura fija, pero no
+        la da.
         **0.9.2:** acepta `novedad_id` (opcional) para enlazarla con la novedad de tipo `CORRECCION`
         que la originó; la pantalla 14 crea primero la novedad y después la rectificación. `400` en
         `novedad_id` si la novedad no existe. *Propuesta; pantalla de Angel.*
@@ -4508,7 +4537,8 @@ components:
         tiene_resultados: { type: boolean, description: Si ya se cargaron los archivos de respuesta de TransUnion (RF54). }
     TipoArchivoResultado:
       type: string
-      enum: [ESTADISTICOS, CORRECTIVAS, ALERTAS, ESPECIALES, DETALLE_953, NOREP, RADICACION, CIERRE_RECLAMO]
+      description: Archivos de respuesta del reporte mensual (Manual, p. 43). Desde la 0.9.4 no incluye los de reclamos (Reclamos Batch, p. 57).
+      enum: [ESTADISTICOS, CORRECTIVAS, ALERTAS, ESPECIALES, DETALLE_953, NOREP]
     Inconsistencia:
       type: object
       required: [obligacion_id, numero_obligacion, tipo, codigo, descripcion]
@@ -4546,7 +4576,11 @@ components:
     # ── Reclamos (pantalla 13, propuesta para Omar) ──
     Reclamo:
       type: object
-      required: [id, obligacion_id, numero_obligacion, nombre_titular, tipologia, fecha_radicacion, observacion, estado, radicado_en_tu, fecha_limite_respuesta, vencido, resultado, fecha_cierre, observacion_cierre, registrado_por, fecha_registro]
+      description: |
+        Reclamo de Habeas Data (RF23). La obligación se sigue reportando en el archivo mensual. Ante
+        TransUnion, la marca se pide con el proceso «Marcación de obligaciones (Reclamos Batch)»
+        (Manual, p. 57).
+      required: [id, obligacion_id, numero_obligacion, nombre_titular, tipologia, fecha_radicacion, observacion, estado, marcacion_generada, desmarcacion_generada, fecha_limite_respuesta, vencido, resultado, fecha_cierre, observacion_cierre, registrado_por, fecha_registro]
       properties:
         id: { type: integer }
         obligacion_id: { type: integer }
@@ -4556,12 +4590,13 @@ components:
         fecha_radicacion: { type: string, format: date }
         observacion: { type: string, maxLength: 500, nullable: true, description: Lo que dice el titular al radicar. No cambia al cerrar. }
         estado: { type: string, enum: [EN_RECLAMO, CERRADO] }
-        radicado_en_tu: { type: boolean, description: "Indica si el insumo de marcación ya se generó. No confirma la respuesta de TransUnion, que aún no puede asociarse a cada reclamo con el esquema actual." }
+        marcacion_generada: { type: boolean, description: '0.9.4. Ya salió en un archivo de marcación (`GET /reclamos/insumo/?tipo=marcacion`). No quiere decir que TransUnion lo radicó: eso lo dice su archivo de radicación (Manual, p. 57), que todavía no se carga. Reemplaza a `radicado_en_tu`.' }
+        desmarcacion_generada: { type: boolean, description: '0.9.4. Ya salió en un archivo de desmarcación (`tipo=desmarcacion`). Solo puede ser `true` en un reclamo `CERRADO`.' }
         fecha_limite_respuesta: { type: string, format: date, description: '15 días hábiles desde la radicación (prorrogables 8), sin contar fines de semana ni festivos de Colombia. La regla exacta de conteo (desde qué día se cuenta) está por confirmar con jurídica.' }
         vencido: { type: boolean, description: "`true` si sigue `EN_RECLAMO` después de la fecha límite." }
         resultado: { type: string, maxLength: 30, nullable: true }
         fecha_cierre: { type: string, format: date, nullable: true }
-        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'No se persiste con el esquema actual; envía null u omite el campo. El resultado sí queda registrado.' }
+        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'La respuesta al titular, registrada al cerrar.' }
         registrado_por: { type: string, nullable: true }
         fecha_registro: { type: string, format: date-time }
     ReclamoCreateRequest:
@@ -4578,7 +4613,7 @@ components:
       properties:
         resultado: { type: string, maxLength: 30 }
         fecha_cierre: { type: string, format: date }
-        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'Debe omitirse o ser null hasta que el esquema incluya una columna para persistir la respuesta.' }
+        observacion_cierre: { type: string, maxLength: 500, nullable: true }
 
     # ── Novedades, eliminaciones y rectificaciones (pantalla 14, propuesta para Angel) ──
     TipoNovedad:
@@ -4668,7 +4703,7 @@ components:
         fecha_registro: { type: string, format: date-time }
         insumo:
           type: string
-          description: "Solo se devuelve al crear: numero_obligacion|campo|valor_corregido, con CRLF final."
+          description: '0.9.5. Solo en la respuesta de `POST /rectificaciones/`: una línea `numero_obligacion|campo|valor_corregido` con CRLF final. Formato **por confirmar con TransUnion** (Manual, p. 57, «Novedades Batch»).'
     RectificacionCreateRequest:
       type: object
       required: [obligacion_id, corte_id, campo, valor_corregido, justificacion, medio]
