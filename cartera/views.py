@@ -84,6 +84,13 @@ class ExtraccionViewSet(viewsets.ViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(CorteResumenSerializer(corte).data)
 
+    @action(detail=True, methods=["get"], url_path="validaciones")
+    def validaciones(self, request, pk=None):
+        try:
+            return Response(servicios.validaciones_corte(int(pk)))
+        except servicios.CorteNoEncontrado:
+            return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
     @action(detail=True, methods=["post"], url_path="validar")
     def validar(self, request, pk=None):
         try:
