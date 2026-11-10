@@ -26,7 +26,7 @@ TIPOS_ACCION = (
     "desactivacion",
 )
 
-MODULOS = ("Seguridad", "Usuarios", "Parametrización", "Extracción")
+MODULOS = ("Seguridad", "Usuarios", "Parametrización", "Extracción", "Novedades en Línea")
 
 EVENTOS = {
     "INICIO_SESION": ("Inicio de sesión", "inicio_sesion", "Seguridad"),
@@ -44,6 +44,8 @@ EVENTOS = {
     "GRUPO_EDITADO": ("Grupo de conceptos editado", "edicion", "Parametrización"),
     "GRUPO_DESACTIVADO": ("Grupo de conceptos desactivado", "desactivacion", "Parametrización"),
     "GRUPO_ELIMINADO": ("Grupo de conceptos eliminado", "eliminacion", "Parametrización"),
+    "ENTIDAD_ACTUALIZADA": ("Datos de la entidad actualizados", "edicion", "Parametrización"),
+    "HOMOLOGACION_ACTUALIZADA": ("Homologación de estados actualizada", "edicion", "Parametrización"),
     "CORTE_GENERADO": ("Corte generado", "calculo", "Extracción"),
     "CORTE_VALIDADO": ("Corte validado", "modificacion", "Extracción"),
     "ENVIO_REGISTRADO": ("Envío registrado", "modificacion", "Extracción"),
@@ -53,6 +55,14 @@ EVENTOS = {
     "CONSULTA_REPORTE": ("Consulta de reporte enviado", "consulta", "Extracción"),
     "CONSULTA_DEUDORES": ("Consulta de deudores", "consulta", "Extracción"),
     "CONSULTA_DEUDOR": ("Consulta de historial de deudor", "consulta", "Extracción"),
+    "NOVEDAD_REGISTRADA": ("Novedad registrada", "creacion", "Novedades en Línea"),
+    "NOVEDAD_GESTIONADA": ("Novedad gestionada", "modificacion", "Novedades en Línea"),
+    "NOVEDAD_RECHAZADA": ("Novedad rechazada", "modificacion", "Novedades en Línea"),
+    "RECTIFICACION_REGISTRADA": ("Rectificación registrada", "correccion", "Novedades en Línea"),
+    "RECTIFICACION_CONFIRMADA": ("Rectificación confirmada", "edicion", "Novedades en Línea"),
+    "RECLAMO_REGISTRADO": ("Reclamo registrado", "creacion", "Novedades en Línea"),
+    "RECLAMO_CERRADO": ("Reclamo cerrado", "edicion", "Novedades en Línea"),
+    "RECLAMO_INSUMO_GENERADO": ("Insumo de reclamos generado", "exportacion", "Novedades en Línea"),
 }
 
 _COLUMNAS = (

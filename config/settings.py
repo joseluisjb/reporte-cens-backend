@@ -54,6 +54,8 @@ INSTALLED_APPS = [
     "parametros",
     "cartera",
     "historial",
+    "ciclo",
+    "novedades",
 ]
 
 MIDDLEWARE = [
@@ -182,6 +184,9 @@ TIME_ZONE = "America/Bogota"
 USE_I18N = True
 
 USE_TZ = True
+RECLAMO_CONTAR_DIA_RADICACION = (
+    os.getenv("RECLAMO_CONTAR_DIA_RADICACION", "False").lower() == "true"
+)
 
 
 # Static files (CSS, JavaScript, Images)

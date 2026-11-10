@@ -1,12 +1,13 @@
 openapi: 3.0.3
 
 info:
-  title: NexoVolt — API REST (Iteración 1)
-  version: 0.8.0-borrador
+  title: NexoVolt — API REST (Iteraciones 1 y 2)
+  version: 0.9.5-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
-    usuarios y auditoría). RF1–RF9, RF35 y RF25–RF31.
+    usuarios y auditoría). RF1–RF9, RF35 y RF25–RF31. Desde la 0.9 cubre también la **Iteración 2**
+    (HU-B y HU-C), como propuesta.
 
     **Estado: BORRADOR para revisión** de José Luis (usuarios, parámetros, extracción, historial) y
     Dilan (autenticación, roles, auditoría, validaciones). La versión 0.2 se alineó con lo ya
@@ -44,6 +45,24 @@ info:
     La **versión 0.8** (14/10/2026) documenta `ejecutada_por` con el nombre de quien generó el corte
     (fila 42, diferencia Y), en la misma rama del backend. Necesita aplicar antes en Oracle
     `config/sql/09_fila42_nv_corte_usuario.sql`. No cambia la forma de la respuesta.
+
+    La **versión 0.9** (07/11/2026) agrega la **Iteración 2**: HU-B (ciclo de vida y estados: RF10–RF19,
+    RF45–RF49) y HU-C (generación y transmisión del reporte: RF20–RF24, RF50–RF55, RF57). Todo lo nuevo
+    es **propuesta**: el backend todavía no lo implementa y el frontend lo construye contra mocks con
+    los ejemplos de este archivo (las 12 obligaciones ficticias del mockup v3). Lo aprueba José Luis
+    antes de que el equipo programe contra él; si una ruta cambia, se cambia primero aquí. Decisiones
+    (fila 27 del README): nombres en snake_case completos (como las columnas de la base); el ciclo
+    mensual (`POST /ciclos/`) trabaja sobre el corte en `BORRADOR` que crea la extracción, con el orden
+    extracción → ciclo → validar → archivo → envío; `validar` y `registrar-envio` siguen para los dos
+    roles y solo cambian su respuesta (por eso las validaciones, la generación, la lista y la descarga del
+    archivo también son de los dos roles; la pantalla 12 es del Analista); los demás endpoints nuevos son
+    del **Analista de Cartera**, salvo RF48
+    y RF57 (Administrador) y las lecturas de `/entidad/` y `/catalogos/`, que son de los dos roles.
+    `EstadoCorte` suma `ENVIADO_CON_INCONSISTENCIAS` (RF54). Los reclamos (pantalla 13) y las
+    novedades (pantalla 14) son una propuesta para que Omar y Angel la revisen. Lo que depende de CENS
+    o de TransUnion llega marcado con `confirmado: false` o `por_confirmar: true`: nunca se inventa.
+    En la Iteración 2 se paginan `/obligaciones/` y `/eliminaciones/`; los demás listados nuevos son
+    arreglos planos.
 
     ## Reglas generales
 
@@ -128,6 +147,26 @@ tags:
     description: RF6, RF8 (RF9 es un comando mensual, sin endpoint) · José Luis y Clara · implementado en el backend · Analista y Administrador
   - name: Auditoría
     description: RF30, RF31 · Dilan · implementado en el backend · solo Administrador
+  - name: Obligaciones
+    description: RF10–RF19, RF45–RF50, RF52 · José Luis · propuesta (0.9) · solo Analista de Cartera
+  - name: Ciclo mensual
+    description: RF10–RF17, RF19, RF45–RF49 · José Luis · propuesta (0.9) · solo Analista de Cartera
+  - name: Refinanciaciones
+    description: RF18 · Santiago · propuesta (0.9) · solo Analista de Cartera
+  - name: Catálogos
+    description: Tablas 10, 11, 28 y 31 del Manual y tipologías de reclamo · propuesta (0.9) · Analista y Administrador (lectura)
+  - name: Estados y homologación
+    description: RF48 · Santiago · propuesta (0.9) · solo Administrador
+  - name: Reporte a TransUnion
+    description: RF20–RF22, RF51, RF53, RF54 · Dilan y José Luis · propuesta (0.9) · validaciones, archivo y descarga para los dos roles (como validar y registrar-envio); resultados del cargue solo Analista de Cartera
+  - name: Reclamos
+    description: RF23 · Clara (API) y Omar (pantalla) · propuesta (0.9) · solo Analista de Cartera
+  - name: Novedades
+    description: RF24, RF50, RF55 · José Luis y Clara (API) y Angel (pantalla) · propuesta (0.9) · solo Analista de Cartera
+  - name: Entidad
+    description: RF57 · Santiago · propuesta (0.9) · lectura Analista y Administrador, escritura Administrador
+  - name: Panel
+    description: RF6, RF19, RF23, RF24, RF57 · José Luis · propuesta (0.9) · solo Analista de Cartera
 
 security:
   - sessionCookie: []
@@ -751,7 +790,8 @@ paths:
 
         **Contrato 0.4 (manual de TransUnion, inconsistencia 074):** la fecha de corte
         debe ser **posterior** a la del último corte enviado (`ENVIADO`); si es igual o anterior,
-        responde `409`. Implementado en el backend (`DISCREPANCIAS.md`, A9).
+        responde `409`. Implementado en el backend (`DISCREPANCIAS.md`, A9). Desde la 0.9, «enviado»
+        incluye `ENVIADO_CON_INCONSISTENCIAS` (RF54).
 
         **Si hay un `BORRADOR` equivocado** de otra fecha, se elimina con
         `DELETE /extracciones/{id}/` y se vuelve a generar.
@@ -1001,6 +1041,14 @@ paths:
         `BORRADOR`**. Si no hay errores correctivos, lo pasa a `VALIDADO` y devuelve el resumen con
         las `advertencias` (reglas informativas; puede ser `[]`), que no bloquean. Solo se puede
         validar un corte en `BORRADOR`. *Implementado en el backend.*
+
+        **0.9 (propuesta, RF53):** aplica todas las reglas del Manual de `GET /extracciones/{id}/validaciones/`.
+        Cada elemento de `errores` y de `advertencias` puede traer además `obligacion_id`,
+        `numero_obligacion` y `campo`, para que la pantalla enlace a la obligación. Los roles no cambian.
+
+        **0.9.3:** `ACTUALIZACION_MENSUAL` es correctiva y se exige **siempre**: si el corte no tiene
+        una actualización mensual ejecutada (`POST /ciclos/`), responde `409` con esa regla en
+        `errores` (mockup v3, validaciones de la pantalla 12). No es un `409` aparte.
       operationId: extraccionesValidar
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -1045,6 +1093,19 @@ paths:
                     detail: 'El corte tiene errores correctivos que deben resolverse.'
                     errores:
                       - { regla: SIN_IDENTIFICACION, mensaje: Falta el tipo o el número de identificación }
+                sin_actualizacion_mensual:
+                  summary: Falta la actualización mensual del corte (0.9.3)
+                  value:
+                    detail: 'El corte tiene errores correctivos que deben resolverse.'
+                    errores:
+                      - { regla: ACTUALIZACION_MENSUAL, mensaje: 'Falta ejecutar la actualización mensual de este corte.' }
+                errores_por_obligacion:
+                  summary: Errores correctivos con la obligación (0.9)
+                  value:
+                    detail: 'El corte tiene errores correctivos que deben resolverse.'
+                    errores:
+                      - { regla: CIERRE_INCOMPLETO, mensaje: 'Falta la fecha de pago del cierre.', obligacion_id: 3, numero_obligacion: 2259-1092, campo: fecha_pago }
+                      - { regla: NUMERO_OBLIGACION_INVALIDO, mensaje: 'El número de obligación tiene más de 20 caracteres.', obligacion_id: null, numero_obligacion: 2260-5543-REFINANC-01, campo: numero_obligacion }
 
   /extracciones/{id}/registrar-envio/:
     post:
@@ -1060,6 +1121,10 @@ paths:
         primero que el corte exista (`404`) y después las fechas; un formato de fecha inválido sí
         se rechaza antes (`400` por campo). Lo de la fecha de corte y el orden ya están implementados en
         el backend.
+
+        **0.9 (propuesta, RF20, RF54, RF57):** exige que el corte tenga un archivo generado
+        (`POST /extracciones/{id}/archivo/`) y que el último sea **apto para envío**; si no, responde `409`.
+        El archivo queda con `enviado: true` y su `fecha_envio`. Los roles no cambian.
       operationId: extraccionesRegistrarEnvio
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -1111,11 +1176,20 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
               example: { detail: 'Corte no encontrado.' }
         '409':
-          description: El corte no está en `VALIDADO`.
+          description: El corte no está en `VALIDADO`, no tiene archivo o su archivo no es apto para envío (0.9).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
-              example: { detail: 'El corte no está en estado VALIDADO.' }
+              examples:
+                no_validado:
+                  summary: El corte no está en VALIDADO
+                  value: { detail: 'El corte no está en estado VALIDADO.' }
+                sin_archivo:
+                  summary: Sin archivo generado (0.9)
+                  value: { detail: 'Primero genera el archivo plano del corte.', code: sin_archivo }
+                no_apto:
+                  summary: Archivo no apto para envío (0.9)
+                  value: { detail: 'El archivo no es apto para envío: faltan los datos de la entidad ante TransUnion.', code: archivo_no_apto }
 
   # ───────────────────────── Historial (RF6, RF8) ─────────────────────────
   /historial/reportes/:
@@ -1123,7 +1197,8 @@ paths:
       tags: [Historial]
       summary: Historial de reportes enviados a TransUnion (RF6)
       description: |
-        Los cortes en estado `ENVIADO`, del envío más reciente al más antiguo. Los filtros `desde`
+        Los cortes en estado `ENVIADO` (y, desde la 0.9, `ENVIADO_CON_INCONSISTENCIAS`: también se
+        enviaron), del envío más reciente al más antiguo. Los filtros `desde`
         y `hasta` se aplican sobre `fecha_envio` y son inclusivos. Arreglo plano, sin paginación.
         Puede ser `[]` mientras no se haya registrado ningún envío. *Implementado en el backend.*
       operationId: historialReportes
@@ -1168,8 +1243,8 @@ paths:
       summary: Detalle de un reporte enviado (RF6)
       description: |
         Las filas que se enviaron en ese corte, ordenadas por `OBLIGACION_ID` y paginadas con
-        `limite` y `desplazamiento`. Solo para cortes en `ENVIADO`; en cualquier otro estado
-        responde `404`. Muestra parte de los 22 campos de CENS (ver decisión 13 del README).
+        `limite` y `desplazamiento`. Solo para cortes enviados (`ENVIADO` o, desde la 0.9,
+        `ENVIADO_CON_INCONSISTENCIAS`); en cualquier otro estado responde `404`. Muestra parte de los 22 campos de CENS (ver decisión 13 del README).
         *Implementado en el backend.*
 
         **Dato personal:** `numero_identificacion` llega enmascarado (`NumeroIdentificacion`).
@@ -1227,7 +1302,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404':
-          description: El reporte no existe o el corte no está en `ENVIADO`.
+          description: El reporte no existe o el corte no se ha enviado.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorDetail' }
@@ -1437,6 +1512,1966 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  # ═════════════════════════ Iteración 2 · HU-B (ciclo de vida y estados) ═════════════════════════
+  # Todo lo que sigue es *propuesta* (contrato 0.9): el backend todavía no lo implementa. Los ejemplos
+  # usan las 12 obligaciones ficticias del mockup v3 (docs/iteracion2/NexoVolt_Mockups_Iteracion2_v3.html).
+
+  # ───────────────────────── Obligaciones (pantalla 9) ─────────────────────────
+  /obligaciones/:
+    get:
+      tags: [Obligaciones]
+      summary: Listar las obligaciones con su estado actual (RF10–RF19, RF45–RF50)
+      description: |
+        Una fila por obligación (una financiación), con el estado que tiene según el **último ciclo
+        mensual** (`POST /ciclos/`). Incluye las cerradas (Saldada `02` y Cartera Recuperada `07`,
+        marcadas con `cerrada: true`) y, con `?eliminada=true`, las eliminadas en TransUnion (RF50).
+        Ordenadas por `numero_obligacion`. Pagina con `limite` y `desplazamiento`. *Propuesta.*
+
+        **0.9.3:** `?abierta=true` deja solo las abiertas (no cerradas ni eliminadas, como `abiertas`
+        en el resumen); lo usa el formulario de refinanciación (RF18). Un `limite` o `desplazamiento`
+        inválido responde `{ detail }`, como la paginación de la extracción; los filtros, por campo.
+      operationId: obligacionesList
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Limite'
+        - $ref: '#/components/parameters/Desplazamiento'
+        - name: estado_tu
+          in: query
+          description: Solo las obligaciones en este estado (Tabla 4b).
+          schema: { $ref: '#/components/schemas/EstadoObligacion' }
+        - name: eliminada
+          in: query
+          description: "`true` = solo las eliminadas en TransUnion (RF50); `false` u omitido = solo las no eliminadas."
+          schema: { type: boolean, default: false }
+        - name: cuotas_mora_min
+          in: query
+          description: Solo las que tienen al menos este número de cuotas en mora (la tarjeta del panel usa `2`).
+          schema: { type: integer, minimum: 0 }
+        - name: q
+          in: query
+          description: Busca por número de obligación o por nombre del titular (contiene, sin distinguir mayúsculas).
+          schema: { type: string, maxLength: 60 }
+        - name: abierta
+          in: query
+          description: "0.9.3. `true` = solo las abiertas: estado distinto de 02 y 07 y no eliminadas (RF18). `false` u omitido = sin este filtro."
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Página de obligaciones.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ListaPaginada'
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: { $ref: '#/components/schemas/ObligacionResumen' }
+              example:
+                total: 12
+                resultados:
+                  - obligacion_id: 7
+                    numero_obligacion: 2250-0987
+                    nombre_titular: Hotel Mirador Cúcuta
+                    numero_identificacion: '******0007'
+                    estado_tu: '03'
+                    edad_mora: '05'
+                    dias_mora: 156
+                    cuotas_mora: 6
+                    valor_mora: 1620000
+                    valor_saldo: 5420000
+                    cerrada: false
+                    primer_reporte: false
+                    caducado: true
+                    en_reclamo: false
+                    eliminada: false
+                    requiere_revision: false
+                  - obligacion_id: 10
+                    numero_obligacion: 2263-9004
+                    nombre_titular: Ferretería La Esquina
+                    numero_identificacion: '******0010'
+                    estado_tu: '01'
+                    edad_mora: '00'
+                    dias_mora: 0
+                    cuotas_mora: 0
+                    valor_mora: 0
+                    valor_saldo: 1450000
+                    cerrada: false
+                    primer_reporte: true
+                    caducado: false
+                    en_reclamo: false
+                    eliminada: false
+                    requiere_revision: false
+        '400':
+          description: Filtro inválido (por campo) o paginación inválida (`detail`, 0.9.3).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorCampos'
+                  - $ref: '#/components/schemas/ErrorDetail'
+              examples:
+                filtro:
+                  summary: Filtro inválido
+                  value: { estado_tu: ['Estado no válido. Usa un código de la Tabla 4b.'] }
+                no_enteros:
+                  summary: "`limite` o `desplazamiento` no son enteros"
+                  value: { detail: 'Los parámetros limite y desplazamiento deben ser enteros.' }
+                fuera_de_rango:
+                  summary: "`limite` menor que 1 o `desplazamiento` negativo"
+                  value: { detail: 'El límite debe ser mayor que 0 y el desplazamiento no puede ser negativo.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /obligaciones/resumen/:
+    get:
+      tags: [Obligaciones]
+      summary: Resumen de la cartera por estado y por cuotas en mora (RF19)
+      description: |
+        Conteos para las tarjetas de la pantalla 9 y del panel. `por_estado` cuenta todas las
+        obligaciones no eliminadas, también las cerradas; `por_cuotas_mora` cuenta solo las
+        **abiertas** (no cerradas ni eliminadas), y sus cuatro grupos suman `abiertas`.
+        `financiaciones_nuevas` lista las obligaciones del corte en `BORRADOR` que nunca se han
+        reportado: entrarán en primer reporte en el próximo ciclo (RF10). *Propuesta.*
+      operationId: obligacionesResumen
+      x-roles: [Analista de Cartera]
+      responses:
+        '200':
+          description: Resumen de la cartera.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResumenObligaciones' }
+              example:
+                fecha_ultimo_ciclo: '2026-09-30'
+                total: 12
+                abiertas: 9
+                por_estado:
+                  - { estado_tu: '01', cantidad: 7 }
+                  - { estado_tu: '03', cantidad: 1 }
+                  - { estado_tu: '06', cantidad: 1 }
+                  - { estado_tu: '02', cantidad: 2 }
+                  - { estado_tu: '07', cantidad: 1 }
+                eliminadas: 0
+                por_cuotas_mora: { al_dia: 2, una: 2, dos_a_tres: 2, cuatro_o_mas: 3 }
+                financiaciones_nuevas:
+                  - { numero_obligacion: 2265-2208, nombre_titular: Panadería La Espiga }
+                  - { numero_obligacion: 2266-7745, nombre_titular: Colegio San Rafael }
+                  - { numero_obligacion: 2267-3361, nombre_titular: Taller Mecánico Los Pinos }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /obligaciones/{id}/:
+    get:
+      tags: [Obligaciones]
+      summary: Detalle de una obligación (RF10–RF19, RF22, RF45–RF50, RF52)
+      description: |
+        Todo lo que muestra el panel de detalle de la pantalla 9: valores por separado (RF52), mora
+        y cuotas (RF17, RF19), fecha de exigibilidad y años en mora (RF49), datos del SAC (caducado,
+        RF14), cierre (RF12, RF15, RF22), pago de la mora (RF47), reestructuración (RF18) y las
+        posibles transiciones según su estado. Los pagos vienen de la extracción del SAC: **no se
+        registran a mano**. Las reglas que dependen de CENS o TransUnion llegan con
+        `por_confirmar: true`. *Propuesta.*
+      operationId: obligacionesRead
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Detalle de la obligación.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObligacionDetalle' }
+              examples:
+                en_mora:
+                  summary: Vigente con dos cuotas vencidas (2258-7731)
+                  value:
+                    obligacion_id: 2
+                    numero_obligacion: 2258-7731
+                    nombre_titular: María Fernanda Ortiz
+                    numero_identificacion: '******0002'
+                    estado_tu: '01'
+                    edad_mora: '01'
+                    dias_mora: 47
+                    cuotas_mora: 2
+                    valor_mora: 140000
+                    valor_saldo: 842300
+                    cerrada: false
+                    primer_reporte: false
+                    caducado: false
+                    en_reclamo: false
+                    eliminada: false
+                    requiere_revision: false
+                    motivo_revision: null
+                    concepto: { codigo: 3625, descripcion: Cuota financiación energía no regulados }
+                    fecha_ingreso: '2026-02-28'
+                    valor_inicial: 1050000
+                    valor_cuota: 70000
+                    valor_cuota_antes_cierre: null
+                    fecha_exigibilidad: '2026-08-14'
+                    anios_mora: null
+                    atrasos_permitidos: 4
+                    cuotas_atrasadas: 2
+                    cierre: null
+                    pago_mora: null
+                    reestructuracion: null
+                    refinanciada_en: null
+                    movimiento_posterior_cierre: false
+                    cuotas_vencidas:
+                      - { fecha_vencimiento: '2026-08-14', valor_pendiente: 70000, dias: 47 }
+                      - { fecha_vencimiento: '2026-09-14', valor_pendiente: 70000, dias: 16 }
+                    pagos: []
+                    posibles_transiciones:
+                      - { rf: RF12, texto: 'Pago total → 02 · Saldada', por_confirmar: false }
+                      - { rf: RF14, texto: 'Crédito caducado en el SAC y con mora → 03 · Dudoso Recaudo', por_confirmar: true }
+                      - { rf: RF45, texto: 'Castigo contable de CENS y con mora → 06 · Castigada', por_confirmar: false }
+                      - { rf: RF18, texto: 'Refinanciación → 02 · Saldada con modo de extinción 16', por_confirmar: false }
+                    advertencias: []
+                cerrada:
+                  summary: Saldada por pago total (2259-1092)
+                  value:
+                    obligacion_id: 3
+                    numero_obligacion: 2259-1092
+                    nombre_titular: Jorge Iván Salcedo
+                    numero_identificacion: '******0003'
+                    estado_tu: '02'
+                    edad_mora: '00'
+                    dias_mora: 0
+                    cuotas_mora: 0
+                    valor_mora: 0
+                    valor_saldo: 0
+                    cerrada: true
+                    primer_reporte: false
+                    caducado: false
+                    en_reclamo: false
+                    eliminada: false
+                    requiere_revision: false
+                    motivo_revision: null
+                    concepto: { codigo: 3588, descripcion: Cuota recuperación energía dejada de facturar }
+                    fecha_ingreso: '2025-11-30'
+                    valor_inicial: 1020000
+                    valor_cuota: 0
+                    valor_cuota_antes_cierre: 85000
+                    fecha_exigibilidad: null
+                    anios_mora: null
+                    atrasos_permitidos: 4
+                    cuotas_atrasadas: 0
+                    cierre:
+                      fecha_corte: '2026-09-30'
+                      fecha_pago: '2026-09-12'
+                      modo_extincion: { codigo: '01', descripcion: Voluntario }
+                      tipo_pago: { codigo: '01', descripcion: Voluntario }
+                    pago_mora: null
+                    reestructuracion: null
+                    refinanciada_en: null
+                    movimiento_posterior_cierre: false
+                    cuotas_vencidas: []
+                    pagos:
+                      - { fecha_corte: '2026-09-30', valor: 170000, aplicado_a: 'Cuotas del 2026-08-12 y del 2026-09-12 (pago total)', nota: null }
+                    posibles_transiciones:
+                      - { rf: RF13, texto: 'Se reporta una sola vez, en el corte en que cerró (30/09/2026), y después ya no', por_confirmar: false }
+                    advertencias: []
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La obligación no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Obligación no encontrada.' }
+
+  /obligaciones/{id}/linea-tiempo/:
+    get:
+      tags: [Obligaciones]
+      summary: Línea de tiempo de estados de una obligación (RF10–RF19, RF45–RF47)
+      description: |
+        Los eventos de la obligación, del más reciente al más antiguo: primer reporte, cambios de
+        estado, cambios de edad, reclamos y cierres. `edad_mora` es la edad reportada en ese corte.
+        *Propuesta.*
+      operationId: obligacionesLineaTiempo
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Eventos de la obligación.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EventoObligacion' }
+              example:
+                - { fecha: '2026-09-30', estado_tu: '01', edad_mora: '01', descripcion: 'Dos cuotas sin pagar: 47 días desde la más antigua, edad 01' }
+                - { fecha: '2026-08-31', estado_tu: '01', edad_mora: '00', descripcion: 'Primera cuota sin pagar: 17 días de mora' }
+                - { fecha: '2026-02-28', estado_tu: '01', edad_mora: '00', descripcion: 'Primer reporte en Vigente (01), al día' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La obligación no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Obligación no encontrada.' }
+
+  # ───────────────────────── Matriz y ciclo mensual (pantalla 10) ─────────────────────────
+  /matriz-estados/:
+    get:
+      tags: [Ciclo mensual]
+      summary: Matriz de cambios de estado de Sector Real Servicios (RF14, RF15, RF45, RF46)
+      description: |
+        La Tabla de Cambios de Estado 2 del Manual (p. 40), tal como está cargada en
+        `NV_TRANSICION_ESTADO` (script 12): 10 estados de origen × 2 (sin mora `n`, con mora `m`) ×
+        10 destinos × 2 = **400 transiciones**. Saldada (`02`) y Cartera Recuperada (`07`) no tienen
+        ninguna salida permitida. La pantalla muestra solo los 5 estados que usa CENS; el ciclo
+        valida contra la matriz completa. La matriz se lee de la base, no se copia al código.
+        *Propuesta.*
+      operationId: matrizEstados
+      x-roles: [Analista de Cartera]
+      responses:
+        '200':
+          description: La matriz completa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrizEstados' }
+              example:
+                tipo_cartera: 2
+                estados: ['01', '02', '04', '08', '06', '07', '03', '10', '11', '12']
+                transiciones:
+                  - { desde: '01', desde_con_mora: false, hacia: '02', hacia_con_mora: false, permitida: true }
+                  - { desde: '01', desde_con_mora: true, hacia: '03', hacia_con_mora: true, permitida: true }
+                  - { desde: '02', desde_con_mora: false, hacia: '01', hacia_con_mora: false, permitida: false }
+                  - { desde: '03', desde_con_mora: true, hacia: '07', hacia_con_mora: false, permitida: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ciclos/:
+    get:
+      tags: [Ciclo mensual]
+      summary: Historial de actualizaciones mensuales
+      description: Una fila por ciclo ejecutado, del más reciente al más antiguo. Arreglo plano (pocos registros, uno por mes). *Propuesta.*
+      operationId: ciclosList
+      x-roles: [Analista de Cartera]
+      responses:
+        '200':
+          description: Ciclos ejecutados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CicloResumen' }
+              example:
+                - corte_id: 2
+                  fecha_corte: '2026-09-30'
+                  fecha_ejecucion: '2026-09-30T10:02:00-05:00'
+                  ejecutada_por: Juan Pérez
+                  primer_reporte: 2
+                  cambios_estado: 2
+                  cierres: 2
+                  rechazados: 0
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Ciclo mensual]
+      summary: Ejecutar la actualización mensual de estados (RF10–RF17, RF19, RF45–RF49)
+      description: |
+        Calcula el estado, la edad, la mora y los datos de cierre de cada obligación del corte en
+        `BORRADOR` de `fecha_corte`, que crea antes la extracción (`POST /extracciones/`, RF1).
+        **Orden de trabajo:** extracción → ciclo → validar → archivo → envío. Es **síncrono**:
+        responde cuando termina. Volver a ejecutarlo sobre el mismo `BORRADOR` reemplaza el
+        resultado anterior.
+
+        Orden de las reglas por obligación (ficha de reparto §4.6): primer reporte (RF10), mora y
+        cuotas con los pagos del SAC de la cuota más antigua a la más reciente (RF7, RF17, RF19,
+        RF49; regla de imputación por confirmar, C-29), marcas de caducado y castigo (RF14, RF45),
+        estado nuevo (RF12, RF15, RF45, RF46, RF14), matriz (713) o primer reporte (881), cierres y
+        pago de la mora (RF22, RF47) y edad (RF11). Un cambio rechazado conserva el estado anterior
+        y aparece en `rechazos`.
+
+        `fecha_corte` debe ser el último día del mes y posterior a la del último corte **enviado**
+        (`400` por campo). Mientras el corte siga en `BORRADOR` se puede volver a ejecutar con la misma
+        fecha (por ejemplo, después de corregir el dato en el SAC y regenerar la extracción).
+
+        **Rechazos (713 y 881).** Un rechazo no se resuelve en NexoVolt: se corrige el dato en el origen
+        (SAC), se regenera la extracción y se vuelve a ejecutar el ciclo (RF10, flujo alterno). Mientras
+        tanto, `GET /extracciones/{id}/validaciones/` lo muestra como `correctiva` con la obligación y
+        `validar` no deja pasar el corte. La exclusión de una obligación con justificación (RF10) queda
+        **por definir** con José Luis; no tiene endpoint en la 0.9. *Propuesta.*
+      operationId: ciclosCreate
+      x-roles: [Analista de Cartera]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CicloCreateRequest' }
+            example: { fecha_corte: '2026-10-31' }
+      responses:
+        '201':
+          description: Ciclo ejecutado. Devuelve el resultado completo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CicloDetalle' }
+              example:
+                corte_id: 3
+                fecha_corte: '2026-10-31'
+                fecha_ejecucion: '2026-11-03T09:15:00-05:00'
+                ejecutada_por: Juan Pérez
+                primer_reporte: 3
+                cambios_estado: 2
+                cierres: 1
+                rechazados: 1
+                con_pagos: 5
+                a_dudoso: 1
+                a_castigada: 1
+                normalizadas: 0
+                transiciones:
+                  - obligacion_id: 13
+                    numero_obligacion: 2265-2208
+                    nombre_titular: Panadería La Espiga
+                    estado_anterior: null
+                    estado_nuevo: '01'
+                    edad_anterior: null
+                    edad_nueva: '00'
+                    primer_reporte: true
+                    requiere_revision: false
+                    reglas:
+                      - { rf: RF10, texto: 'Entra con su estado y su mora reales', por_confirmar: false }
+                  - obligacion_id: 2
+                    numero_obligacion: 2258-7731
+                    nombre_titular: María Fernanda Ortiz
+                    estado_anterior: '01'
+                    estado_nuevo: '01'
+                    edad_anterior: '01'
+                    edad_nueva: '01'
+                    primer_reporte: false
+                    requiere_revision: false
+                    reglas:
+                      - { rf: RF17, texto: 'Pago de $70.000 aplicado a: cuota del 14/08/2026', por_confirmar: true }
+                      - { rf: RF11, texto: '47 días desde la cuota más antigua sin pagar (14/09/2026): edad 01 → 01', por_confirmar: false }
+                rechazos:
+                  - obligacion_id: 15
+                    numero_obligacion: 2267-3361
+                    nombre_titular: Taller Mecánico Los Pinos
+                    estado_anterior: null
+                    estado_calculado: '07'
+                    codigo: '881'
+                    motivo: 'Error 881: estado no permitido en primer reporte'
+        '400':
+          description: Fecha de corte inválida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              examples:
+                fin_de_mes:
+                  summary: No es el último día del mes
+                  value: { fecha_corte: ['El corte es el último día del mes. Para ese mes sería el 31/10/2026.'] }
+                anterior:
+                  summary: No es posterior al último corte enviado
+                  value: { fecha_corte: ['La fecha de corte debe ser posterior al último corte enviado (30/09/2026).'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: No hay un corte en `BORRADOR` de esa fecha.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Primero genera la extracción de ese corte.' }
+
+  /ciclos/{corte_id}/:
+    get:
+      tags: [Ciclo mensual]
+      summary: Resultado de la actualización mensual de un corte
+      description: El mismo cuerpo que devuelve `POST /ciclos/`. *Propuesta.*
+      operationId: ciclosRead
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/CorteId'
+      responses:
+        '200':
+          description: Resultado del ciclo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CicloDetalle' }
+              example:
+                corte_id: 2
+                fecha_corte: '2026-09-30'
+                fecha_ejecucion: '2026-09-30T10:02:00-05:00'
+                ejecutada_por: Juan Pérez
+                primer_reporte: 2
+                cambios_estado: 2
+                cierres: 2
+                rechazados: 0
+                con_pagos: 2
+                a_dudoso: 0
+                a_castigada: 0
+                normalizadas: 0
+                transiciones:
+                  - obligacion_id: 3
+                    numero_obligacion: 2259-1092
+                    nombre_titular: Jorge Iván Salcedo
+                    estado_anterior: '01'
+                    estado_nuevo: '02'
+                    edad_anterior: '00'
+                    edad_nueva: '00'
+                    primer_reporte: false
+                    requiere_revision: false
+                    reglas:
+                      - { rf: RF12, texto: 'Pago total: Saldada · fecha de pago 12/09/2026, modo 01, tipo de pago 01', por_confirmar: false }
+                rechazos: []
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe o no tiene ciclo ejecutado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Ese corte no tiene una actualización mensual ejecutada.' }
+
+  # ───────────────────────── Refinanciaciones (pantalla 11) ─────────────────────────
+  /refinanciaciones/:
+    get:
+      tags: [Refinanciaciones]
+      summary: Listar las refinanciaciones registradas (RF18)
+      description: |
+        Las detectadas en el SAC (`CREDITOS.PROCESO_REFINANCIACION`, por confirmar que CENS lo
+        diligencia) y las registradas a mano como respaldo. Más reciente primero. Arreglo plano.
+        *Propuesta.*
+      operationId: refinanciacionesList
+      x-roles: [Analista de Cartera]
+      responses:
+        '200':
+          description: Refinanciaciones.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Refinanciacion' }
+              example:
+                - id: 1
+                  fecha: '2026-09-28'
+                  fecha_registro: '2026-09-28T15:20:00-05:00'
+                  registrada_por: Juan Pérez
+                  origen: MANUAL
+                  obligacion_original:
+                    obligacion_id: 11
+                    numero_obligacion: 2255-7788
+                    nombre_titular: Inversiones Pamplona S.A.S.
+                    estado_cierre: '02'
+                    modo_extincion: { codigo: '16', descripcion: Refinanciación }
+                  obligacion_nueva:
+                    obligacion_id: 12
+                    numero_obligacion: 2271-5502
+                    estado_tu: '01'
+                    numero_reestructuraciones: 1
+                  saldo_refinanciado: 4380000
+                  naturaleza: { codigo: '07', descripcion: Otra, confirmado: false }
+                  numero_cuotas: 36
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Refinanciaciones]
+      summary: Registrar una refinanciación a mano (respaldo, RF18)
+      description: |
+        Cierra la obligación original con modo de extinción `16` Refinanciación y tipo de pago `02`
+        No voluntario: en Saldada (`02`) si estaba en `01` u `08`, o en Cartera Recuperada (`07`) si
+        estaba en `03` o `06` en mora (por confirmar con TransUnion, P-TU-06). Crea la nueva
+        obligación con número propio (RF5), reestructurada (`01`) y la naturaleza indicada (Tabla 11;
+        código por confirmar con CENS). Guarda el vínculo entre las dos. *Propuesta.*
+      operationId: refinanciacionesCreate
+      x-roles: [Analista de Cartera]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefinanciacionCreateRequest' }
+            example: { obligacion_original_id: 11, naturaleza: '07', numero_cuotas: 36, fecha: '2026-09-28' }
+      responses:
+        '201':
+          description: Refinanciación registrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refinanciacion' }
+              example:
+                id: 2
+                fecha: '2026-10-15'
+                fecha_registro: '2026-10-15T11:00:00-05:00'
+                registrada_por: Juan Pérez
+                origen: MANUAL
+                obligacion_original:
+                  obligacion_id: 7
+                  numero_obligacion: 2250-0987
+                  nombre_titular: Hotel Mirador Cúcuta
+                  estado_cierre: '07'
+                  modo_extincion: { codigo: '16', descripcion: Refinanciación }
+                obligacion_nueva:
+                  obligacion_id: 16
+                  numero_obligacion: 2272-6101
+                  estado_tu: '01'
+                  numero_reestructuraciones: 1
+                saldo_refinanciado: 5420000
+                naturaleza: { codigo: '06', descripcion: Ordinaria, confirmado: false }
+                numero_cuotas: 24
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              examples:
+                cuotas:
+                  summary: Número de cuotas fuera de rango
+                  value: { numero_cuotas: ['Ingresa un número de cuotas entre 1 y 120.'] }
+                naturaleza:
+                  summary: Naturaleza que no está en el catálogo
+                  value: { naturaleza: ['Selecciona la naturaleza de la reestructuración.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La obligación original no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Obligación no encontrada.' }
+        '409':
+          description: La matriz no permite cerrar la obligación original, o ya está cerrada o eliminada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              examples:
+                matriz:
+                  summary: Origen en Suspendida o en un estado de ley
+                  value: { detail: 'TransUnion no acepta pasar de 04 · Suspendida a 02 · Saldada (error 713). Define el tratamiento con CENS.', code: transicion_no_permitida }
+                cerrada:
+                  summary: Obligación ya cerrada
+                  value: { detail: 'La obligación 2259-1092 ya está cerrada: no se puede refinanciar.', code: obligacion_cerrada }
+
+  # ───────────────────────── Catálogos del Manual ─────────────────────────
+  /catalogos/{nombre}/:
+    get:
+      tags: [Catálogos]
+      summary: Catálogo del Manual de TransUnion (RF18, RF23, RF24, RF47, RF50)
+      description: |
+        Códigos de las tablas del Manual Sector Real v34 cargados en la base (script 10). Cada código
+        trae `confirmado`: `false` mientras CENS o TransUnion no lo confirmen (la pantalla lo muestra
+        como «por confirmar»). Lectura para ambos roles. *Propuesta.*
+      operationId: catalogosRead
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - name: nombre
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/NombreCatalogo' }
+      responses:
+        '200':
+          description: Códigos del catálogo, ordenados por código.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ItemCatalogo' }
+              example:
+                - { codigo: '01', descripcion: Voluntario, confirmado: true }
+                - { codigo: '16', descripcion: Refinanciación, confirmado: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El catálogo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Catálogo no encontrado.' }
+
+  # ───────────────────────── Estados y homologación (pantalla 16, Administrador) ─────────────────────────
+  /estados/:
+    get:
+      tags: [Estados y homologación]
+      summary: Catálogo de los 10 estados de la Tabla 4b (RF48)
+      description: |
+        Los estados de Sector Real Servicios (`NV_ESTADO_TU`, tipo de cartera 2) con su uso en
+        CENS: `01`, `02`, `03`, `06` y `07` se usan; `08` no se usa (Acta 3); `04` propuesta: no se
+        usa; `10`, `11` y `12` solo si el cliente está admitido en el proceso de ley (fuente del dato
+        por confirmar). *Propuesta.*
+      operationId: estadosList
+      x-roles: [Administrador]
+      responses:
+        '200':
+          description: Los 10 estados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EstadoCatalogoTU' }
+              example:
+                - { codigo: '01', nombre: Vigente, usado: true, es_cierre: false, confirmado: true }
+                - { codigo: '04', nombre: Suspendida por la entidad, usado: false, es_cierre: false, confirmado: false }
+                - { codigo: '08', nombre: Inactivo, usado: false, es_cierre: false, confirmado: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /homologacion-estados/:
+    get:
+      tags: [Estados y homologación]
+      summary: Homologación de los estados del SAC (RF48)
+      description: |
+        Cada estado del crédito en el sistema comercial de CENS y su equivalente en TransUnion
+        (`NV_HOMOLOGA_ESTADO`). `accion` `ESTADO` asigna `estado_tu`; `CIERRE` significa que el
+        crédito se cierra (RF12 o RF15) y `estado_tu` va `null`. Un estado con `accion` `null` está
+        **sin homologar**: sus obligaciones se bloquean en la validación del corte (RF53). B y D están
+        pendientes de CENS (C-11, C-54). `prioridad` (`NV_HOMOLOGA_ESTADO.PRIORIDAD`) decide el estado de
+        una obligación cuyos créditos tienen estados distintos: gana el de menor número. Viene de la carga
+        inicial (script 12) y es de solo lectura. Ordenado por `prioridad`. *Propuesta (0.9.1).*
+      operationId: homologacionEstadosList
+      x-roles: [Administrador]
+      responses:
+        '200':
+          description: Homologación vigente.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HomologacionEstado' }
+              example:
+                - { estado_sac: A, prioridad: 1, descripcion: Activo (propuesto), accion: ESTADO, estado_tu: '01', confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: C, prioridad: 2, descripcion: Caducado (propuesto), accion: ESTADO, estado_tu: '03', confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: D, prioridad: 3, descripcion: 'Desconocido: preguntar a CENS', accion: null, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: B, prioridad: 4, descripcion: 'Desconocido: preguntar a CENS', accion: null, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+                - { estado_sac: F, prioridad: 5, descripcion: Finalizado (propuesto), accion: CIERRE, estado_tu: null, confirmado: false, actualizado_por: null, fecha_actualizacion: null }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /homologacion-estados/{estado_sac}/:
+    put:
+      tags: [Estados y homologación]
+      summary: Actualizar la homologación de un estado del SAC (RF48)
+      description: |
+        Reemplaza la homologación de un estado del SAC. Con `accion` `ESTADO`, `estado_tu` es
+        obligatorio, debe ser un estado **en uso** (`usado: true` en `GET /estados/`) y no puede ser de
+        cierre (02 o 07): a esos se llega con `CIERRE`, que según el estado anterior da 02 o 07 (RF12,
+        RF15; `NV_ESTADO_TU.CIERRE_AL_PAGAR`). Con `CIERRE`, `estado_tu` debe ir `null`. `prioridad` no se
+        cambia aquí. Queda registrado quién y cuándo lo cambió, y en la bitácora. *Propuesta (0.9.1).*
+      operationId: homologacionEstadosUpdate
+      x-roles: [Administrador]
+      parameters:
+        - name: estado_sac
+          in: path
+          required: true
+          description: Código del estado en el SAC (una letra).
+          schema: { type: string, pattern: '^[A-Z]$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HomologacionEstadoUpdateRequest' }
+            example: { accion: ESTADO, estado_tu: '01', confirmado: true }
+      responses:
+        '200':
+          description: Homologación actualizada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HomologacionEstado' }
+              example: { estado_sac: A, prioridad: 1, descripcion: Activo (propuesto), accion: ESTADO, estado_tu: '01', confirmado: true, actualizado_por: Rosa Martínez, fecha_actualizacion: '2026-11-07T10:30:00-05:00' }
+        '400':
+          description: Combinación inválida (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              examples:
+                no_usado:
+                  summary: Estado de TransUnion que CENS no usa
+                  value: { estado_tu: ['El estado 08 · Inactivo no se usa en CENS: elige un estado en uso.'] }
+                cierre_con_estado:
+                  summary: Cierre con estado asignado
+                  value: { estado_tu: ['Un estado que cierra el crédito no lleva estado de TransUnion.'] }
+                estado_de_cierre:
+                  summary: Estado de cierre asignado como estado (0.9.1)
+                  value: { estado_tu: ['Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El estado del SAC no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Estado del SAC no encontrado.' }
+
+  # ═════════════════════════ Iteración 2 · HU-C (generación y transmisión del reporte) ═════════════════════════
+
+  # ───────────────────────── Reporte a TransUnion (pantalla 12) ─────────────────────────
+  /extracciones/{id}/validaciones/:
+    get:
+      tags: [Reporte a TransUnion]
+      summary: Validaciones del corte contra el Manual, antes de generar (RF19, RF21, RF22, RF49, RF51, RF53, RF57)
+      description: |
+        La lista «Validaciones antes de generar» de la pantalla 12. Cada ítem agrupa una regla o un
+        conjunto de reglas con su `nivel`: `correctiva` bloquea la validación y la generación (en
+        TransUnion sería correctiva), `advertencia` e `informativa` solo avisan, `ok` pasó. Las
+        correctivas traen la lista de obligaciones que fallan, con el campo cuando aplica. No
+        cambia el corte (solo consulta): `POST /extracciones/{id}/validar/` aplica las mismas reglas
+        y pasa el corte a `VALIDADO`. `puede_generar` es `false` mientras haya alguna correctiva.
+        *Propuesta.*
+      operationId: extraccionesValidaciones
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Resultado de las validaciones.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidacionesCorte' }
+              example:
+                corte_id: 2
+                fecha_corte: '2026-09-30'
+                estado_corte: VALIDADO
+                puede_generar: true
+                resultados:
+                  - regla: ACTUALIZACION_MENSUAL
+                    titulo: Actualización mensual del corte
+                    nivel: ok
+                    detalle: Ejecutada el 30/09/2026 por Juan Pérez.
+                    rf: [RF10, RF11]
+                    por_confirmar: false
+                    obligaciones: []
+                  - regla: OMISION_VS_ULTIMO_CORTE
+                    titulo: Obligaciones del último corte
+                    nivel: ok
+                    detalle: 8 de 8 obligaciones activas del último corte incluidas.
+                    rf: [RF21]
+                    por_confirmar: false
+                    obligaciones: []
+                  - regla: CIERRE_INCOMPLETO
+                    titulo: Campos de cierre (RF22)
+                    nivel: ok
+                    detalle: 2 cierres con saldo, mora y cuota en cero, fecha de pago, modo de extinción y tipo de pago.
+                    rf: [RF22]
+                    por_confirmar: false
+                    obligaciones: []
+                  - regla: VALORES_EN_MILES
+                    titulo: Valores en miles de pesos (RF51)
+                    nivel: informativa
+                    detalle: Los valores se reportan en miles de pesos, como enteros. Regla de redondeo por confirmar con TransUnion.
+                    rf: [RF51]
+                    por_confirmar: true
+                    obligaciones: []
+                  - regla: ENTIDAD_CON_MARCADOR
+                    titulo: Datos de la entidad (RF57)
+                    nivel: advertencia
+                    detalle: 'Llevan relleno mientras TransUnion no los asigne: el archivo saldrá no apto para envío.'
+                    rf: [RF57]
+                    por_confirmar: false
+                    obligaciones: []
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+
+  /extracciones/{id}/archivo/:
+    post:
+      tags: [Reporte a TransUnion]
+      summary: Generar el archivo plano del reporte total (RF20, RF21, RF51, RF57)
+      description: |
+        Genera el archivo del corte `VALIDADO` con la estructura del Manual (págs. 44-52): registro
+        tipo 1 (29 caracteres), un registro tipo 2 por obligación y titular, y registro tipo 9 (33
+        caracteres), en texto plano de longitud fija y codificación Windows-1252. La longitud del
+        registro tipo 2 está **por confirmar** con TransUnion (el Manual declara 930 y sus campos suman
+        929): el backend la toma de un parámetro y la devuelve en `longitud_registro_tipo2`.
+
+        Incluye las obligaciones abiertas y las que cerraron en este corte; excluye las cerradas en
+        cortes anteriores y las eliminadas (RF13, RF16, RF21, RF50). Los valores van en miles de pesos
+        (RF51). El nombre es `SSR` + tipo de entidad + código de entidad + fecha de corte. Si la
+        entidad lleva marcador (RF57), el archivo **se genera** pero sale con `apto_envio: false`.
+        Generar otra vez el archivo de un corte crea una versión nueva. *Propuesta.*
+      operationId: extraccionesArchivo
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '201':
+          description: Archivo generado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Archivo' }
+              example:
+                id: 2
+                corte_id: 2
+                fecha_corte: '2026-09-30'
+                nombre: SSRXXXXXX20260930
+                tipo_reporte: '01'
+                fecha_generacion: '2026-10-01T09:20:00-05:00'
+                generado_por: Juan Pérez
+                n_registros: 11
+                total_registros: 13
+                n_excluidas: 1
+                saldo_total: 21863586
+                longitud_registro_tipo2: 930
+                apto_envio: false
+                motivo_no_apto: 'La entidad tiene datos con relleno (XXX): TransUnion lo rechazaría.'
+                enviado: false
+                fecha_envio: null
+                estado_corte: VALIDADO
+                tiene_resultados: false
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El corte no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Corte no encontrado.' }
+        '409':
+          description: El corte no está en `VALIDADO`, o un campo no cabe en su posición (no se genera nada).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCorrectivo' }
+              examples:
+                no_validado:
+                  summary: El corte no está validado
+                  value: { detail: 'Valida el corte antes de generar el archivo.' }
+                campo_largo:
+                  summary: Un campo excede su longitud
+                  value:
+                    detail: 'No se generó el archivo: hay campos que no caben en su posición.'
+                    errores:
+                      - { regla: CAMPO_EXCEDE_LONGITUD, mensaje: 'El nombre del titular tiene 61 caracteres y el campo admite 60.', obligacion_id: 6, numero_obligacion: 2262-3318, campo: nombre_titular }
+
+  /archivos/:
+    get:
+      tags: [Reporte a TransUnion]
+      summary: Listar los archivos generados (RF20, RF54)
+      description: |
+        Más reciente primero. Arreglo plano (uno o pocos por mes). En el ejemplo, el archivo del
+        31/08/2026 se generó con datos de entidad **de prueba** (`001`, `123`), como en el caso de prueba
+        de RF57; los de CENS siguen con marcador hasta que TransUnion los asigne. *Propuesta.*
+      operationId: archivosList
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - name: corte_id
+          in: query
+          description: Solo los archivos de este corte.
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Archivos generados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Archivo' }
+              example:
+                - id: 2
+                  corte_id: 2
+                  fecha_corte: '2026-09-30'
+                  nombre: SSRXXXXXX20260930
+                  tipo_reporte: '01'
+                  fecha_generacion: '2026-10-01T09:20:00-05:00'
+                  generado_por: Juan Pérez
+                  n_registros: 11
+                  total_registros: 13
+                  n_excluidas: 1
+                  saldo_total: 21863586
+                  longitud_registro_tipo2: 930
+                  apto_envio: false
+                  motivo_no_apto: 'La entidad tiene datos con relleno (XXX): TransUnion lo rechazaría.'
+                  enviado: false
+                  fecha_envio: null
+                  estado_corte: VALIDADO
+                  tiene_resultados: false
+                - id: 1
+                  corte_id: 1
+                  fecha_corte: '2026-08-31'
+                  nombre: SSR00112320260831
+                  tipo_reporte: '01'
+                  fecha_generacion: '2026-09-01T09:20:00-05:00'
+                  generado_por: Carlos Sánchez
+                  n_registros: 9
+                  total_registros: 11
+                  n_excluidas: 0
+                  saldo_total: 19844130
+                  longitud_registro_tipo2: 930
+                  apto_envio: true
+                  motivo_no_apto: null
+                  enviado: true
+                  fecha_envio: '2026-09-02'
+                  estado_corte: ENVIADO_CON_INCONSISTENCIAS
+                  tiene_resultados: true
+        '400':
+          description: Filtro inválido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { corte_id: ['Indica el id numérico del corte.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /archivos/{id}/descarga/:
+    get:
+      tags: [Reporte a TransUnion]
+      summary: Descargar el archivo plano (RF20)
+      description: |
+        El contenido tal cual se carga en STRANSFER: texto de longitud fija en Windows-1252, con
+        `Content-Disposition: attachment; filename="SSR….txt"`. *Propuesta.*
+      operationId: archivosDescarga
+      x-roles: [Analista de Cartera, Administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: El archivo.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: 'attachment; filename="SSRXXXXXX20260930.txt"'
+          content:
+            text/plain:
+              schema: { type: string, format: binary }
+              example: "111XXXXXX          0120260930\r\n2…\r\n9…\r\n"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El archivo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Archivo no encontrado.' }
+
+  /archivos/{id}/resultados/:
+    get:
+      tags: [Reporte a TransUnion]
+      summary: Ver los resultados del cargue de TransUnion (RF54)
+      description: Lo que se cargó de los archivos de respuesta de TransUnion para este archivo. *Propuesta.*
+      operationId: archivosResultadosRead
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Resultados del cargue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultadosCargue' }
+              example:
+                archivo_id: 1
+                corte_id: 1
+                fecha_corte: '2026-08-31'
+                fecha_carga: '2026-09-05T14:00:00-05:00'
+                cargado_por: Carlos Sánchez
+                estado_corte: ENVIADO_CON_INCONSISTENCIAS
+                archivos_cargados:
+                  - { nombre_archivo: Detalle_Inco_CSR_001_123_Correctivas_20260831.txt, tipo_archivo: CORRECTIVAS, n_filas: 1 }
+                  - { nombre_archivo: norep.001.123.CODIGOPRODUCTO.20260831.0.txt, tipo_archivo: NOREP, n_filas: 1 }
+                recibidos: 9
+                cargados: 8
+                con_inconsistencias: 2
+                no_reportadas: 1
+                inconsistencias:
+                  - { obligacion_id: 2, numero_obligacion: 2258-7731, tipo: CORRECTIVA, codigo: '707', descripcion: 'VALOR DE MORA ES REQUERIDO' }
+                  - { obligacion_id: 4, numero_obligacion: 2260-5543, tipo: NO_REPORTADA, codigo: R, descripcion: 'Obligación no reportada' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El archivo no existe o todavía no tiene resultados cargados.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Este archivo todavía no tiene resultados cargados.' }
+    post:
+      tags: [Reporte a TransUnion]
+      summary: Cargar los archivos de respuesta de TransUnion (RF54, RF23)
+      description: |
+        Uno o varios archivos delimitados por pipes que devuelve TransUnion después del cargue:
+        estadísticos, detalle de correctivas y de alertas, Especiales, 953_Detalle y no reportados
+        (norep). Su estructura exacta sale del Manual v34 (págs. 42-43 y 52-54). **0.9.4:** los archivos
+        de radicación y de cierre de reclamos ya no entran aquí: según el Manual (p. 57) los devuelve el
+        proceso «Marcación de obligaciones (Reclamos Batch)», que es aparte del reporte mensual y no
+        depende del archivo de un corte (ver `GET /reclamos/insumo/`). El sistema asocia cada inconsistencia a la obligación del corte y deja
+        el corte en `ENVIADO` o, si hay correctivas, en `ENVIADO_CON_INCONSISTENCIAS`. Si un archivo no
+        corresponde al corte o no tiene la estructura esperada responde `422` y **no guarda nada**.
+        Solo para archivos ya enviados. *Propuesta.*
+
+        Los archivos se reconocen por el nombre que les da TransUnion (Manual, p. 43), donde `XXX_XXX` son
+        el tipo y el código de entidad y `AAAAMMDD` la fecha de corte:
+        `Esta_Inco_CSR_XXX_XXX_Correctivas_AAAAMMDD.txt`, `Esta_Inco_CSR_XXX_XXX_Alertas_AAAAMMDD.txt` y
+        `est.XXX.XXX.CODIGOPRODUCTO.AAAAMMDD..txt` (estadísticos); `Detalle_Inco_CSR_XXX_XXX_Correctivas_AAAAMMDD.txt`;
+        `Detalle_Inco_CSR_XXX_XXX_Alertas_AAAAMMDD.txt`; `Detalle_Inco_CSR_XXX_XXX_Especiales_AAAAMMDD.txt`;
+        `953_Detalle_Inco_CSR_XXX_XXX_Alertas_AAAAMMDD.txt`, y `norep.XXX.XXX.CODIGOPRODUCTO.AAAAMMDD.0.txt`.
+        El detalle de inconsistencias (pp. 52-53) trae por línea el registro tipo 2 enviado y hasta cinco
+        grupos de código, descripción y tipo; como la tabla del Manual salta el campo 7, se exige un mínimo de
+        campos y el total queda **por confirmar con TransUnion**; el número de obligación sale de las posiciones
+        89 a 108 del registro tipo 2 (Tabla 2). La estructura de los estadísticos no está en el Manual (por
+        confirmar). La p. 43 escribe `CSR`, pero en la Tabla 22 la sigla de cartera servicios es `SSR`
+        (`CSR` es cartera préstamos): se aceptan las dos hasta que TransUnion confirme.
+      operationId: archivosResultadosCreate
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivos]
+              properties:
+                archivos:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: binary }
+      responses:
+        '201':
+          description: Resultados cargados.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultadosCargue' }
+              examples:
+                con_correctivas:
+                  summary: Con correctivas, el corte pasa a ENVIADO_CON_INCONSISTENCIAS
+                  value:
+                    archivo_id: 1
+                    corte_id: 1
+                    fecha_corte: '2026-08-31'
+                    fecha_carga: '2026-09-05T14:00:00-05:00'
+                    cargado_por: Carlos Sánchez
+                    estado_corte: ENVIADO_CON_INCONSISTENCIAS
+                    archivos_cargados:
+                      - { nombre_archivo: Detalle_Inco_CSR_001_123_Correctivas_20260831.txt, tipo_archivo: CORRECTIVAS, n_filas: 1 }
+                    recibidos: 9
+                    cargados: 8
+                    con_inconsistencias: 1
+                    no_reportadas: 0
+                    inconsistencias:
+                      - { obligacion_id: 2, numero_obligacion: 2258-7731, tipo: CORRECTIVA, codigo: '707', descripcion: 'VALOR DE MORA ES REQUERIDO' }
+                sin_correctivas:
+                  summary: Sin correctivas, el corte queda ENVIADO
+                  value:
+                    archivo_id: 1
+                    corte_id: 1
+                    fecha_corte: '2026-08-31'
+                    fecha_carga: '2026-09-05T14:00:00-05:00'
+                    cargado_por: Carlos Sánchez
+                    estado_corte: ENVIADO
+                    archivos_cargados:
+                      - { nombre_archivo: Esta_Inco_CSR_001_123_Correctivas_20260831.txt, tipo_archivo: ESTADISTICOS, n_filas: 9 }
+                    recibidos: 9
+                    cargados: 9
+                    con_inconsistencias: 0
+                    no_reportadas: 0
+                    inconsistencias: []
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El archivo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Archivo no encontrado.' }
+        '409':
+          description: El archivo todavía no se ha enviado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Registra el envío del archivo antes de cargar sus resultados.' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  # ───────────────────────── Reclamos Habeas Data (pantalla 13 · propuesta, dueño Omar) ─────────────────────────
+  /reclamos/:
+    get:
+      tags: [Reclamos]
+      summary: Listar los reclamos de Habeas Data (RF23)
+      description: |
+        Más reciente primero. Arreglo plano. `vencido` es `true` cuando pasó la fecha límite de
+        respuesta (15 días hábiles, prorrogables 8) y sigue abierto. *Propuesta; pantalla de Omar.*
+      operationId: reclamosList
+      x-roles: [Analista de Cartera]
+      parameters:
+        - name: estado
+          in: query
+          schema: { type: string, enum: [EN_RECLAMO, CERRADO] }
+      responses:
+        '200':
+          description: Reclamos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Reclamo' }
+              example:
+                - id: 1
+                  obligacion_id: 4
+                  numero_obligacion: 2260-5543
+                  nombre_titular: Diana Patricia Niño
+                  tipologia: { codigo: '02', descripcion: Pago no reflejado, confirmado: false }
+                  fecha_radicacion: '2026-09-22'
+                  observacion: El titular indica un pago realizado el 15/09.
+                  estado: EN_RECLAMO
+                  marcacion_generada: false
+                  desmarcacion_generada: false
+                  fecha_limite_respuesta: '2026-10-14'
+                  vencido: false
+                  resultado: null
+                  fecha_cierre: null
+                  observacion_cierre: null
+                  registrado_por: Juan Pérez
+                  fecha_registro: '2026-09-22T09:15:00-05:00'
+        '400':
+          description: Filtro inválido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { estado: ['Estado no válido.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Reclamos]
+      summary: Registrar un reclamo (RF23)
+      description: La obligación en reclamo **se sigue reportando** en el archivo total. *Propuesta; pantalla de Omar.*
+      operationId: reclamosCreate
+      x-roles: [Analista de Cartera]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReclamoCreateRequest' }
+            example: { obligacion_id: 4, tipologia: '02', fecha_radicacion: '2026-09-22', observacion: El titular indica un pago realizado el 15/09. }
+      responses:
+        '201':
+          description: Reclamo registrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reclamo' }
+              example:
+                id: 1
+                obligacion_id: 4
+                numero_obligacion: 2260-5543
+                nombre_titular: Diana Patricia Niño
+                tipologia: { codigo: '02', descripcion: Pago no reflejado, confirmado: false }
+                fecha_radicacion: '2026-09-22'
+                observacion: El titular indica un pago realizado el 15/09.
+                estado: EN_RECLAMO
+                marcacion_generada: false
+                desmarcacion_generada: false
+                fecha_limite_respuesta: '2026-10-14'
+                vencido: false
+                resultado: null
+                fecha_cierre: null
+                observacion_cierre: null
+                registrado_por: Juan Pérez
+                fecha_registro: '2026-09-22T09:15:00-05:00'
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { tipologia: ['Selecciona una tipología válida de la Ley 1266.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: La obligación ya tiene un reclamo abierto.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'La obligación 2260-5543 ya tiene un reclamo abierto.' }
+
+  /reclamos/{id}/cerrar/:
+    post:
+      tags: [Reclamos]
+      summary: Registrar la respuesta y el cierre de un reclamo (RF23)
+      description: |
+        Deja el reclamo en `CERRADO` con `desmarcacion_generada: false`: entra en el siguiente archivo
+        de desmarcación (Reclamos Batch, Manual p. 57). *Propuesta; pantalla de Omar.*
+      operationId: reclamosCerrar
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReclamoCerrarRequest' }
+            example: { resultado: Procedente, fecha_cierre: '2026-09-17', observacion_cierre: Se corrigió el titular de la obligación. }
+      responses:
+        '200':
+          description: Reclamo cerrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reclamo' }
+              example:
+                id: 3
+                obligacion_id: 9
+                numero_obligacion: 2241-3302
+                nombre_titular: Panadería El Trigal
+                tipologia: { codigo: '03', descripcion: Titular no reconoce la obligación, confirmado: false }
+                fecha_radicacion: '2026-08-30'
+                observacion: El titular no reconoce la obligación.
+                estado: CERRADO
+                marcacion_generada: true
+                desmarcacion_generada: false
+                fecha_limite_respuesta: '2026-09-18'
+                vencido: false
+                resultado: Procedente
+                fecha_cierre: '2026-09-17'
+                observacion_cierre: Se corrigió el titular de la obligación.
+                registrado_por: Juan Pérez
+                fecha_registro: '2026-08-30T10:00:00-05:00'
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { fecha_cierre: ['La fecha de cierre no puede ser anterior a la de radicación.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: El reclamo no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Reclamo no encontrado.' }
+        '409':
+          description: El reclamo ya está cerrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El reclamo ya está cerrado.' }
+
+  /reclamos/insumo/:
+    get:
+      tags: [Reclamos]
+      summary: Insumo para la marcación o desmarcación batch de TransUnion (RF23)
+      description: |
+        Archivo para el proceso «Marcación de obligaciones (Reclamos Batch)» de TransUnion (Manual,
+        p. 57): un proceso masivo para marcar o desmarcar obligaciones según las tipologías de reclamo
+        de la Ley de Habeas Data. Se sube por stransfer con el perfil de marcación de obligaciones.
+
+        - `tipo=marcacion`: los reclamos `EN_RECLAMO` con `marcacion_generada: false`.
+        - `tipo=desmarcacion`: los reclamos `CERRADO` con `desmarcacion_generada: false`.
+
+        **Cambia el estado (0.9.4):** los reclamos incluidos quedan con `marcacion_generada` o
+        `desmarcacion_generada` en `true`, así que una segunda llamada ya no los trae. Generar el
+        archivo **no** quiere decir que TransUnion lo aplicó: según el Manual, TransUnion devuelve un
+        archivo de radicación (las marcaciones efectivas), uno de cierre (las desmarcadas) y uno de
+        inconsistencias. Cargar esos archivos no tiene endpoint todavía.
+
+        El Manual describe el proceso pero **no la estructura del archivo**: la del ejemplo
+        (`número|tipología|fecha`) está **por confirmar con TransUnion**. *Propuesta; pantalla de Omar.*
+      operationId: reclamosInsumo
+      x-roles: [Analista de Cartera]
+      parameters:
+        - name: tipo
+          in: query
+          required: true
+          schema: { type: string, enum: [marcacion, desmarcacion] }
+      responses:
+        '200':
+          description: El insumo.
+          content:
+            text/plain:
+              schema: { type: string, format: binary }
+              example: "2260-5543|02|20260922\r\n"
+        '400':
+          description: Tipo inválido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { tipo: ['Usa marcacion o desmarcacion.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Otro usuario cambió los reclamos mientras se generaba el archivo (0.9.4). Se puede reintentar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'El insumo cambió mientras se generaba. Intenta de nuevo.' }
+
+  # ───────────────────────── Novedades, eliminaciones y rectificaciones (pantalla 14 · propuesta, dueño Angel) ─────────────────────────
+  /novedades/:
+    get:
+      tags: [Novedades]
+      summary: Listar las novedades de Actualización en Línea (RF24)
+      description: Más reciente primero. Arreglo plano. *Propuesta; pantalla de Angel.*
+      operationId: novedadesList
+      x-roles: [Analista de Cartera]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoNovedad' }
+        - name: tipo
+          in: query
+          schema: { $ref: '#/components/schemas/TipoNovedad' }
+      responses:
+        '200':
+          description: Novedades.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Novedad' }
+              example:
+                - id: 1
+                  tipo: ACTUALIZACION
+                  sujeto: OBLIGACION
+                  obligacion_id: 4
+                  referencia: 2260-5543
+                  motivo: 'Pago del titular posterior al corte: se actualiza sin esperar al próximo reporte'
+                  motivo_eliminacion: null
+                  valores_enviados: null
+                  fecha_deteccion: '2026-09-29'
+                  origen: AUTOMATICA
+                  estado: PENDIENTE
+                  numero_transaccion_tu: null
+                  fecha_gestion: null
+                  motivo_rechazo: null
+                  registrada_por: null
+        '400':
+          description: Filtro inválido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { estado: ['Estado no válido.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Novedades]
+      summary: Registrar una novedad hecha en Actualización en Línea (RF24, RF55)
+      description: |
+        Registra lo que el Analista hizo en el módulo de Actualización en Línea de TransUnion (que
+        **no** se usa para pruebas: escribe en la base real). Una eliminación exige
+        `motivo_eliminacion` (Tabla 28). *Propuesta; pantalla de Angel.*
+      operationId: novedadesCreate
+      x-roles: [Analista de Cartera]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovedadCreateRequest' }
+            example: { tipo: ACTUALIZACION, sujeto: OBLIGACION, obligacion_id: 6, referencia: 2262-3318, motivo: Cambio de dirección de contacto del titular }
+      responses:
+        '201':
+          description: Novedad registrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Novedad' }
+              example:
+                id: 3
+                tipo: ACTUALIZACION
+                sujeto: OBLIGACION
+                obligacion_id: 6
+                referencia: 2262-3318
+                motivo: Cambio de dirección de contacto del titular
+                motivo_eliminacion: null
+                valores_enviados: null
+                fecha_deteccion: '2026-09-24'
+                origen: MANUAL
+                estado: PENDIENTE
+                numero_transaccion_tu: null
+                fecha_gestion: null
+                motivo_rechazo: null
+                registrada_por: Carlos Sánchez
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { motivo_eliminacion: ['Selecciona el motivo de la eliminación (Tabla 28).'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /novedades/{id}/gestionar/:
+    post:
+      tags: [Novedades]
+      summary: Marcar una novedad como gestionada en TransUnion (RF24, RF50)
+      description: |
+        Registra el número de transacción de TransUnion. Si la novedad es una eliminación, crea la
+        eliminación (RF50) y la obligación deja de reportarse. *Propuesta; pantalla de Angel.*
+      operationId: novedadesGestionar
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovedadGestionarRequest' }
+            example: { numero_transaccion_tu: TU-AL-001532, fecha_gestion: '2026-09-24' }
+      responses:
+        '200':
+          description: Novedad gestionada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Novedad' }
+              example:
+                id: 3
+                tipo: ACTUALIZACION
+                sujeto: OBLIGACION
+                obligacion_id: 6
+                referencia: 2262-3318
+                motivo: Cambio de dirección de contacto del titular
+                motivo_eliminacion: null
+                valores_enviados: null
+                fecha_deteccion: '2026-09-24'
+                origen: MANUAL
+                estado: GESTIONADA
+                numero_transaccion_tu: TU-AL-001532
+                fecha_gestion: '2026-09-24'
+                motivo_rechazo: null
+                registrada_por: Carlos Sánchez
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { numero_transaccion_tu: ['Ingresa el número de transacción de TransUnion.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La novedad no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Novedad no encontrada.' }
+        '409':
+          description: La novedad no está pendiente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'La novedad no está pendiente.' }
+
+  /novedades/{id}/rechazar/:
+    post:
+      tags: [Novedades]
+      summary: Registrar que TransUnion rechazó la novedad (RF24)
+      description: "*Propuesta; pantalla de Angel.*"
+      operationId: novedadesRechazar
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovedadRechazarRequest' }
+            example: { motivo_rechazo: El módulo en línea rechazó la transacción por datos del titular. }
+      responses:
+        '200':
+          description: Novedad rechazada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Novedad' }
+              example:
+                id: 1
+                tipo: ACTUALIZACION
+                sujeto: OBLIGACION
+                obligacion_id: 4
+                referencia: 2260-5543
+                motivo: 'Pago del titular posterior al corte: se actualiza sin esperar al próximo reporte'
+                motivo_eliminacion: null
+                valores_enviados: null
+                fecha_deteccion: '2026-09-29'
+                origen: AUTOMATICA
+                estado: RECHAZADA
+                numero_transaccion_tu: null
+                fecha_gestion: '2026-09-30'
+                motivo_rechazo: El módulo en línea rechazó la transacción por datos del titular.
+                registrada_por: null
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { motivo_rechazo: ['Escribe el motivo del rechazo.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La novedad no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Novedad no encontrada.' }
+        '409':
+          description: La novedad no está pendiente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'La novedad no está pendiente.' }
+
+  /eliminaciones/:
+    get:
+      tags: [Novedades]
+      summary: Listar las obligaciones eliminadas en TransUnion (RF50)
+      description: Pagina con `limite` y `desplazamiento`. *Propuesta; pantalla de Angel.*
+      operationId: eliminacionesList
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Limite'
+        - $ref: '#/components/parameters/Desplazamiento'
+      responses:
+        '200':
+          description: Página de eliminaciones.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ListaPaginada'
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: { $ref: '#/components/schemas/Eliminacion' }
+              example:
+                total: 1
+                resultados:
+                  - id: 1
+                    obligacion_id: null
+                    numero_obligacion: 2249-1180
+                    fecha: '2026-09-15'
+                    motivo: { codigo: '01', descripcion: Reportada por error, confirmado: false }
+                    numero_transaccion_tu: TU-AL-001198
+                    bloqueada: true
+                    fecha_activacion: null
+                    numero_activacion_tu: null
+        '400':
+          description: Paginación inválida (`detail`, como la extracción; 0.9.3).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              examples:
+                no_enteros:
+                  summary: "`limite` o `desplazamiento` no son enteros"
+                  value: { detail: 'Los parámetros limite y desplazamiento deben ser enteros.' }
+                fuera_de_rango:
+                  summary: "`limite` menor que 1 o `desplazamiento` negativo"
+                  value: { detail: 'El límite debe ser mayor que 0 y el desplazamiento no puede ser negativo.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /eliminaciones/{id}/reactivar/:
+    post:
+      tags: [Novedades]
+      summary: Registrar la activación hecha con TransUnion (RF50)
+      description: Desbloquea la obligación para volver a reportarla. *Propuesta; pantalla de Angel.*
+      operationId: eliminacionesReactivar
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EliminacionReactivarRequest' }
+            example: { numero_activacion_tu: TU-AC-000045, fecha_activacion: '2026-10-20' }
+      responses:
+        '200':
+          description: Obligación reactivada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Eliminacion' }
+              example:
+                id: 1
+                obligacion_id: null
+                numero_obligacion: 2249-1180
+                fecha: '2026-09-15'
+                motivo: { codigo: '01', descripcion: Reportada por error, confirmado: false }
+                numero_transaccion_tu: TU-AL-001198
+                bloqueada: false
+                fecha_activacion: '2026-10-20'
+                numero_activacion_tu: TU-AC-000045
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { numero_activacion_tu: ['Ingresa el número de la activación en TransUnion.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La eliminación no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Eliminación no encontrada.' }
+        '409':
+          description: Ya está reactivada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'La obligación ya fue reactivada.' }
+
+  /rectificaciones/:
+    get:
+      tags: [Novedades]
+      summary: Listar las rectificaciones (RF55)
+      description: Más reciente primero. Arreglo plano. *Propuesta; pantalla de Angel.*
+      operationId: rectificacionesList
+      x-roles: [Analista de Cartera]
+      responses:
+        '200':
+          description: Rectificaciones.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Rectificacion' }
+              example:
+                - id: 1
+                  novedad_id: 2
+                  obligacion_id: 2
+                  numero_obligacion: 2258-7731
+                  corte_id: 1
+                  fecha_corte: '2026-08-31'
+                  campo: valor_mora
+                  valor_anterior: '140000'
+                  valor_corregido: '70000'
+                  justificacion: 'El corte 31/08/2026 reportó un valor en mora errado.'
+                  medio: ACTUALIZACION_LINEA
+                  estado: REGISTRADA
+                  confirmacion_tu: null
+                  registrada_por: Juan Pérez
+                  fecha_registro: '2026-09-30T11:00:00-05:00'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Novedades]
+      summary: Registrar una rectificación de un corte enviado (RF55)
+      description: |
+        Guarda la corrección **sin borrar** el valor original (`valor_anterior` lo toma el sistema del
+        corte afectado) y prepara el insumo para TransUnion. Solo sobre cortes enviados.
+        **0.9.5:** la respuesta del `201` trae `insumo`, como ya lo hace el backend. Su formato
+        (`número|campo|valor corregido`) está **por confirmar con TransUnion**: el Manual (p. 57,
+        «Novedades Batch») dice que las correcciones masivas usan archivos de estructura fija, pero no
+        la da.
+        **0.9.2:** acepta `novedad_id` (opcional) para enlazarla con la novedad de tipo `CORRECCION`
+        que la originó; la pantalla 14 crea primero la novedad y después la rectificación. `400` en
+        `novedad_id` si la novedad no existe. *Propuesta; pantalla de Angel.*
+      operationId: rectificacionesCreate
+      x-roles: [Analista de Cartera]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RectificacionCreateRequest' }
+            example: { novedad_id: 2, obligacion_id: 2, corte_id: 1, campo: valor_mora, valor_corregido: '70000', justificacion: 'El corte 31/08/2026 reportó un valor en mora errado.', medio: ACTUALIZACION_LINEA }
+      responses:
+        '201':
+          description: Rectificación registrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rectificacion' }
+              example:
+                id: 1
+                novedad_id: 2
+                obligacion_id: 2
+                numero_obligacion: 2258-7731
+                corte_id: 1
+                fecha_corte: '2026-08-31'
+                campo: valor_mora
+                valor_anterior: '140000'
+                valor_corregido: '70000'
+                justificacion: 'El corte 31/08/2026 reportó un valor en mora errado.'
+                medio: ACTUALIZACION_LINEA
+                estado: REGISTRADA
+                confirmacion_tu: null
+                registrada_por: Juan Pérez
+                fecha_registro: '2026-09-30T11:00:00-05:00'
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { justificacion: ['Escribe la justificación de la corrección.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: El corte no fue enviado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Solo se rectifican cortes ya enviados a TransUnion.' }
+
+  /rectificaciones/{id}/confirmar/:
+    post:
+      tags: [Novedades]
+      summary: Registrar la confirmación de TransUnion de una rectificación (RF55)
+      description: "*Propuesta; pantalla de Angel.*"
+      operationId: rectificacionesConfirmar
+      x-roles: [Analista de Cartera]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RectificacionConfirmarRequest' }
+            example: { confirmacion_tu: TU-AL-001610 }
+      responses:
+        '200':
+          description: Rectificación confirmada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rectificacion' }
+              example:
+                id: 1
+                novedad_id: 2
+                obligacion_id: 2
+                numero_obligacion: 2258-7731
+                corte_id: 1
+                fecha_corte: '2026-08-31'
+                campo: valor_mora
+                valor_anterior: '140000'
+                valor_corregido: '70000'
+                justificacion: 'El corte 31/08/2026 reportó un valor en mora errado.'
+                medio: ACTUALIZACION_LINEA
+                estado: CONFIRMADA
+                confirmacion_tu: TU-AL-001610
+                registrada_por: Juan Pérez
+                fecha_registro: '2026-09-30T11:00:00-05:00'
+        '400':
+          description: Datos inválidos (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              example: { confirmacion_tu: ['Ingresa el número de confirmación de TransUnion.'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: La rectificación no existe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'Rectificación no encontrada.' }
+        '409':
+          description: Ya está confirmada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorDetail' }
+              example: { detail: 'La rectificación ya está confirmada.' }
+
+  # ───────────────────────── Datos de la entidad (pantalla 15) ─────────────────────────
+  /entidad/:
+    get:
+      tags: [Entidad]
+      summary: Datos de la entidad ante TransUnion (RF57)
+      description: |
+        Tipo de entidad (3 dígitos, Tabla 29), código de entidad (3 dígitos, Tabla 30) y código de
+        sucursal (6 caracteres). Mientras TransUnion no los asigne llevan el **marcador** `XXX`,
+        `XXX` y `XXXXXX` (mismo largo del campo) y los archivos salen no aptos para envío. Lectura
+        para ambos roles (el Analista ve el aviso en el panel y en la pantalla 12). *Propuesta.*
+      operationId: entidadRead
+      x-roles: [Analista de Cartera, Administrador]
+      responses:
+        '200':
+          description: Datos vigentes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entidad' }
+              example:
+                tipo_entidad: XXX
+                codigo_entidad: XXX
+                codigo_sucursal: XXXXXX
+                con_marcador: true
+                prefijo_archivo: SSRXXXXXX
+                actualizado_por: null
+                fecha_actualizacion: null
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Entidad]
+      summary: Guardar los datos de la entidad (RF57)
+      description: |
+        Reemplaza los tres datos. Cada uno debe tener su largo exacto: el tipo y el código de entidad,
+        3 dígitos o el marcador `XXX`; la sucursal, 6 letras mayúsculas o dígitos (`XXXXXX` es el
+        marcador). Para «volver al relleno» se envían los tres marcadores. Queda en la bitácora.
+        *Propuesta.*
+      operationId: entidadUpdate
+      x-roles: [Administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EntidadUpdateRequest' }
+            example: { tipo_entidad: '001', codigo_entidad: '123', codigo_sucursal: A1B2C3 }
+      responses:
+        '200':
+          description: Datos guardados.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entidad' }
+              example:
+                tipo_entidad: '001'
+                codigo_entidad: '123'
+                codigo_sucursal: A1B2C3
+                con_marcador: false
+                prefijo_archivo: SSR001123
+                actualizado_por: Rosa Martínez
+                fecha_actualizacion: '2026-11-07T10:00:00-05:00'
+        '400':
+          description: Algún dato no tiene el largo o el tipo del campo (por campo).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorCampos' }
+              examples:
+                tipo:
+                  summary: Tipo de entidad de 2 dígitos
+                  value: { tipo_entidad: ['El tipo de entidad debe tener 3 dígitos (o XXX mientras TransUnion no los asigne).'] }
+                sucursal:
+                  summary: Sucursal con caracteres no permitidos
+                  value: { codigo_sucursal: ['El código de sucursal debe tener 6 caracteres (o XXXXXX mientras TransUnion no los asigne).'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── Panel principal (pantalla 4) ─────────────────────────
+  /panel/resumen/:
+    get:
+      tags: [Panel]
+      summary: Tarjetas de HU-B y HU-C del panel del Analista (RF6, RF19, RF23, RF24, RF57)
+      description: |
+        Lo que muestra el panel del Analista: distribución de la cartera por estado, último archivo
+        para TransUnion, reclamos abiertos, novedades pendientes, obligaciones abiertas con 2 o más
+        cuotas en mora y si la entidad lleva marcador. El Administrador no ve estas tarjetas (y
+        recibe `403`). *Propuesta.*
+      operationId: panelResumen
+      x-roles: [Analista de Cartera]
+      responses:
+        '200':
+          description: Resumen del panel.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PanelResumen' }
+              example:
+                fecha_ultimo_ciclo: '2026-09-30'
+                total_obligaciones: 12
+                distribucion:
+                  - { estado_tu: '01', cantidad: 7 }
+                  - { estado_tu: '03', cantidad: 1 }
+                  - { estado_tu: '06', cantidad: 1 }
+                  - { estado_tu: '02', cantidad: 2 }
+                  - { estado_tu: '07', cantidad: 1 }
+                ultimo_archivo:
+                  id: 2
+                  corte_id: 2
+                  fecha_corte: '2026-09-30'
+                  nombre: SSRXXXXXX20260930
+                  tipo_reporte: '01'
+                  fecha_generacion: '2026-10-01T09:20:00-05:00'
+                  generado_por: Juan Pérez
+                  n_registros: 11
+                  total_registros: 13
+                  n_excluidas: 1
+                  saldo_total: 21863586
+                  longitud_registro_tipo2: 930
+                  apto_envio: false
+                  motivo_no_apto: 'La entidad tiene datos con relleno (XXX): TransUnion lo rechazaría.'
+                  enviado: false
+                  fecha_envio: null
+                  estado_corte: VALIDADO
+                  tiene_resultados: false
+                en_reclamo: 2
+                novedades_pendientes: 2
+                con_dos_o_mas_cuotas: 5
+                entidad_con_marcador: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1480,6 +3515,12 @@ components:
         Cuántas filas saltarse (desde 0). Por defecto 0. Un valor negativo responde `400`.
         Implementado en el backend.
       schema: { type: integer, minimum: 0, default: 0 }
+    CorteId:
+      name: corte_id
+      in: path
+      required: true
+      description: Id del corte (el mismo de `/extracciones/{id}/`).
+      schema: { type: integer }
 
   responses:
     ValidationError:
@@ -1518,6 +3559,18 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorDetail' }
           example: { detail: 'Demasiados intentos. Intenta de nuevo en unos minutos.', code: throttled }
+    UnprocessableEntity:
+      description: El archivo cargado no corresponde o no tiene la estructura esperada; no se guardó nada (0.9, RF54).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorDetail' }
+          examples:
+            otro_corte:
+              summary: Archivo de otro corte
+              value: { detail: 'El archivo Detalle_Inco_CSR_001_123_Correctivas_20260731.txt es del corte 31/07/2026, no del 31/08/2026.', code: archivo_de_otro_corte }
+            estructura:
+              summary: Estructura distinta a la esperada
+              value: { detail: 'El archivo Detalle_Inco_CSR_001_123_Correctivas_20260831.txt no tiene la estructura esperada (línea 3: no trae el registro tipo 2 con el código, la descripción y el tipo de la inconsistencia).', code: estructura_invalida }
 
   schemas:
     # ── Errores ──
@@ -1728,7 +3781,7 @@ components:
             debe existir y estar activo.
     EstadoCorte:
       type: string
-      enum: [BORRADOR, VALIDADO, ENVIADO, ANULADO]
+      enum: [BORRADOR, VALIDADO, ENVIADO, ENVIADO_CON_INCONSISTENCIAS, ANULADO]
       description: |
         Estado del corte (negocio). Transiciones:
         `POST /extracciones/` crea el corte en `BORRADOR` (un `BORRADOR` de la misma fecha se
@@ -1737,6 +3790,10 @@ components:
         `DELETE /extracciones/{id}/` borra un `BORRADOR` (no lo deja en `ANULADO`: lo elimina).
         `ANULADO` existe en la base pero **ninguna operación de la API lo produce todavía**; los
         listados lo excluyen. Solo puede haber un corte en `BORRADOR` a la vez.
+
+        **0.9 (propuesta, RF54):** al cargar los resultados de TransUnion (`POST /archivos/{id}/resultados/`),
+        un corte `ENVIADO` pasa a `ENVIADO_CON_INCONSISTENCIAS` si el cargue trae correctivas. Para todo
+        lo demás (historial de reportes, regla A9, último corte enviado) cuenta como **enviado**.
     CorteResumen:
       type: object
       required: [id, fecha_corte, fecha_ejecucion, grupo, obligaciones, saldo_consolidado, estado, ejecutada_por]
@@ -1780,6 +3837,9 @@ components:
       properties:
         regla: { type: string, example: SIN_IDENTIFICACION, description: Identificador estable de la regla. }
         mensaje: { type: string, example: Falta el tipo o el número de identificación, description: Texto en español para mostrar. }
+        obligacion_id: { type: integer, nullable: true, description: "0.9: obligación a la que se refiere, si aplica." }
+        numero_obligacion: { type: string, nullable: true, description: "0.9: su número, para mostrar." }
+        campo: { type: string, nullable: true, description: "0.9: campo que falla, si aplica." }
     CorteValidado:
       description: El resumen del corte ya en `VALIDADO`, más las advertencias informativas.
       allOf:
@@ -1933,7 +3993,7 @@ components:
     ReporteEnviado:
       type: object
       required: [id, fecha_corte, fecha_envio, total_registros, saldo_consolidado, grupo, observacion]
-      description: Un corte en estado `ENVIADO`. El `id` es el del corte.
+      description: Un corte enviado (`ENVIADO` o, desde la 0.9, `ENVIADO_CON_INCONSISTENCIAS`). El `id` es el del corte.
       properties:
         id: { type: integer, example: 1 }
         fecha_corte: { type: string, format: date, example: '2026-09-30' }
@@ -2043,3 +4103,652 @@ components:
             `Campos: descripcion, activo`,
             `Fecha de corte 2026-08-31`. En usuarios incluye el correo del usuario afectado y los
             nombres de los campos que cambiaron (diferencia AE del README).
+
+    # ═════════════════════════ Iteración 2 (contrato 0.9, propuesta) ═════════════════════════
+    # ── Comunes ──
+    Pesos:
+      type: integer
+      minimum: 0
+      description: Valor en pesos colombianos (COP), sin decimales. La conversión a miles de pesos (RF51) la hace el generador del archivo, no la API.
+    EstadoObligacionONulo:
+      type: string
+      nullable: true
+      enum: ['01', '02', '03', '04', '06', '07', '08', '10', '11', '12', null]
+      description: Como `EstadoObligacion`, o `null` (por ejemplo, el estado anterior en un primer reporte). Repite su enum porque Redocly no acepta `null` dentro de un `allOf`; una prueba de `contrato.test.js` vigila que sigan iguales.
+    CodigoEdadMoraONulo:
+      type: string
+      nullable: true
+      enum: ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', null]
+      description: Como `CodigoEdadMora`, o `null`. Repite su enum (ver `EstadoObligacionONulo`).
+    CodigoDescripcionONulo:
+      type: object
+      nullable: true
+      required: [codigo, descripcion]
+      description: Como `CodigoDescripcion`, o `null` si falta el dato.
+      properties:
+        codigo: { type: string }
+        descripcion: { type: string }
+    ItemCatalogoONulo:
+      type: object
+      nullable: true
+      required: [codigo, descripcion, confirmado]
+      description: Como `ItemCatalogo`, o `null`. En una novedad, el motivo de eliminación (Tabla 28) solo va en las eliminaciones.
+      properties:
+        codigo: { type: string }
+        descripcion: { type: string }
+        confirmado: { type: boolean }
+    CodigoDescripcion:
+      type: object
+      required: [codigo, descripcion]
+      description: Un código de una tabla del Manual con su texto.
+      properties:
+        codigo: { type: string, example: '01' }
+        descripcion: { type: string, example: Voluntario }
+    ItemCatalogo:
+      type: object
+      required: [codigo, descripcion, confirmado]
+      description: |
+        Un código de un catálogo del Manual (script 10). `confirmado` es `false` mientras CENS o
+        TransUnion no lo confirmen: la pantalla lo muestra con la etiqueta «por confirmar». Los
+        códigos de los ejemplos de tipologías de reclamo y motivos de eliminación son ilustrativos:
+        los oficiales los carga el script 10 desde el Manual v34.
+      properties:
+        codigo: { type: string, example: '16' }
+        descripcion: { type: string, example: Refinanciación }
+        confirmado: { type: boolean }
+    NombreCatalogo:
+      type: string
+      enum: [modos-extincion, tipos-pago, naturalezas-reestructuracion, motivos-eliminacion, tipologias-reclamo]
+      description: |
+        `modos-extincion` (Tabla 10), `tipos-pago` (Tabla 31), `naturalezas-reestructuracion`
+        (Tabla 11; código que usará CENS por definir), `motivos-eliminacion` (Tabla 28) y
+        `tipologias-reclamo` (Ley 1266 y lista de TransUnion, por confirmar).
+    ReglaAplicada:
+      type: object
+      required: [rf, texto, por_confirmar]
+      description: Una regla de negocio aplicada o posible, en texto para mostrar (sin HTML).
+      properties:
+        rf: { type: string, pattern: '^RF\d{1,2}$', example: RF14 }
+        texto: { type: string, example: 'Crédito caducado en el SAC y con mora → 03 · Dudoso Recaudo' }
+        por_confirmar: { type: boolean, description: "`true` si la regla depende de una respuesta de CENS o de TransUnion (Anexo A)." }
+    ObligacionRef:
+      type: object
+      nullable: true
+      required: [obligacion_id, numero_obligacion]
+      properties:
+        obligacion_id: { type: integer, example: 11 }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+    ConteoEstado:
+      type: object
+      required: [estado_tu, cantidad]
+      properties:
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        cantidad: { type: integer, minimum: 0 }
+
+    # ── Obligaciones (pantalla 9) ──
+    ObligacionResumen:
+      type: object
+      required: [obligacion_id, numero_obligacion, nombre_titular, numero_identificacion, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, cerrada, primer_reporte, caducado, en_reclamo, eliminada, requiere_revision]
+      description: Una obligación (una financiación) con su estado según el último ciclo mensual.
+      properties:
+        obligacion_id: { type: integer, example: 7, description: "Id interno; se usa en `GET /obligaciones/{id}/`." }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        nombre_titular: { type: string, example: Hotel Mirador Cúcuta }
+        numero_identificacion: { $ref: '#/components/schemas/NumeroIdentificacion' }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
+        dias_mora: { type: integer, minimum: 0, example: 156, description: Días desde la fecha límite de la cuota vencida más antigua sin pagar completa (RF7). }
+        cuotas_mora: { type: integer, minimum: 0, example: 6, description: 'Cuotas facturadas, vencidas y no pagadas completas (RF19).' }
+        valor_mora: { $ref: '#/components/schemas/Pesos' }
+        valor_saldo: { $ref: '#/components/schemas/Pesos' }
+        cerrada: { type: boolean, description: "`true` en Saldada (`02`) y Cartera Recuperada (`07`): se reportan una sola vez (RF13, RF16)." }
+        primer_reporte: { type: boolean, description: "`true` si todavía no figura en ningún corte enviado (RF10)." }
+        caducado: { type: boolean, description: "Crédito caducado en el SAC: sus atrasos alcanzaron los permitidos (RF14)." }
+        en_reclamo: { type: boolean, description: Tiene un reclamo de Habeas Data abierto (RF23). Se sigue reportando. }
+        eliminada: { type: boolean, description: Eliminada en TransUnion; no se vuelve a reportar (RF50). }
+        requiere_revision: { type: boolean, description: "Marcada para revisión del Analista (RF11, RF14, RF45, RF47); el motivo está en el detalle." }
+    Cierre:
+      type: object
+      nullable: true
+      required: [fecha_corte, fecha_pago, modo_extincion, tipo_pago]
+      description: Datos de cierre en Saldada o Cartera Recuperada (RF12, RF15, RF22).
+      properties:
+        fecha_corte: { type: string, format: date, example: '2026-09-30', description: Corte en que se reportó (o se reportará) el cierre. }
+        fecha_pago: { type: string, format: date, nullable: true, example: '2026-09-12', description: "`null` si falta: el cierre no se reporta (RF22)." }
+        modo_extincion: { $ref: '#/components/schemas/CodigoDescripcionONulo' }
+        tipo_pago: { $ref: '#/components/schemas/CodigoDescripcionONulo' }
+    PagoMora:
+      type: object
+      nullable: true
+      required: [fecha_pago, modo_extincion, tipo_pago, valor_real_pagado]
+      description: Pago de la mora sin cierre (RF47). Modo y tipo por defecto Voluntario (`01`), por confirmar con CENS.
+      properties:
+        fecha_pago: { type: string, format: date, nullable: true, description: "`null` si no hay fecha: la obligación queda marcada para revisión." }
+        modo_extincion: { $ref: '#/components/schemas/CodigoDescripcion' }
+        tipo_pago: { $ref: '#/components/schemas/CodigoDescripcion' }
+        valor_real_pagado: { $ref: '#/components/schemas/Pesos' }
+    Reestructuracion:
+      type: object
+      nullable: true
+      required: [numero_reestructuraciones, naturaleza, obligacion_anterior]
+      description: Obligación reestructurada (`01`) por una refinanciación (RF18). Se mantiene en los cortes siguientes.
+      properties:
+        numero_reestructuraciones: { type: integer, minimum: 1, example: 1 }
+        naturaleza: { $ref: '#/components/schemas/ItemCatalogo' }
+        obligacion_anterior: { $ref: '#/components/schemas/ObligacionRef', description: La obligación original que se refinanció. }
+    CuotaVencida:
+      type: object
+      required: [fecha_vencimiento, valor_pendiente, dias]
+      properties:
+        fecha_vencimiento: { type: string, format: date, example: '2026-08-14' }
+        valor_pendiente: { $ref: '#/components/schemas/Pesos' }
+        dias: { type: integer, minimum: 0, example: 47, description: Días desde el vencimiento hasta la fecha de corte. }
+    PagoExtraido:
+      type: object
+      required: [fecha_corte, valor, aplicado_a, nota]
+      description: Un pago que trajo la extracción del SAC (`CLI_PAGOS`). Se aplica de la cuota más antigua a la más reciente (regla de imputación por confirmar, C-29).
+      properties:
+        fecha_corte: { type: string, format: date, example: '2026-09-30' }
+        valor: { $ref: '#/components/schemas/Pesos' }
+        aplicado_a: { type: string, example: 'Cuota del 14/08/2026' }
+        nota: { type: string, nullable: true }
+    ObligacionDetalle:
+      description: El detalle de la pantalla 9.
+      allOf:
+        - $ref: '#/components/schemas/ObligacionResumen'
+        - type: object
+          required: [motivo_revision, concepto, fecha_ingreso, valor_inicial, valor_cuota, valor_cuota_antes_cierre, fecha_exigibilidad, anios_mora, atrasos_permitidos, cuotas_atrasadas, cierre, pago_mora, reestructuracion, refinanciada_en, movimiento_posterior_cierre, cuotas_vencidas, pagos, posibles_transiciones, advertencias]
+          properties:
+            motivo_revision: { type: string, nullable: true, example: 'La edad bajó de 02 a 00 sin un abono en el periodo (RF11).' }
+            concepto:
+              type: object
+              required: [codigo, descripcion]
+              properties:
+                codigo: { type: integer, example: 3625 }
+                descripcion: { type: string, nullable: true }
+            fecha_ingreso: { type: string, format: date, example: '2026-02-28', description: Fecha del primer corte en que aparece. }
+            valor_inicial: { allOf: [{ $ref: '#/components/schemas/Pesos' }], description: "Monto financiado (`DEUDA_INICIAL_CAP`; composición por confirmar, P-CENS-03)." }
+            valor_cuota: { allOf: [{ $ref: '#/components/schemas/Pesos' }], description: Cuota periódica; `0` en una obligación cerrada (RF22). }
+            valor_cuota_antes_cierre: { type: integer, minimum: 0, nullable: true, description: "Cuota que tenía antes de cerrar («al cerrar se reporta en $0», RF52). `null` si no está cerrada." }
+            fecha_exigibilidad: { type: string, format: date, nullable: true, example: '2026-08-14', description: Fecha límite de la cuota impaga más antigua (RF49). `null` si está al día. }
+            anios_mora: { type: integer, minimum: 0, nullable: true, example: null, description: Solo con edad `14` (RF49). }
+            atrasos_permitidos: { type: integer, minimum: 0, example: 4, description: "Atrasos con los que caduca el crédito en el SAC (`CREDITOS.ATRASOS_PERMITIDOS`, RF14)." }
+            cuotas_atrasadas: { type: integer, minimum: 0, example: 2, description: "`CREDITOS.CONTATRASOS`." }
+            cierre: { $ref: '#/components/schemas/Cierre' }
+            pago_mora: { $ref: '#/components/schemas/PagoMora' }
+            reestructuracion: { $ref: '#/components/schemas/Reestructuracion' }
+            refinanciada_en: { $ref: '#/components/schemas/ObligacionRef', description: 'La nueva obligación, si esta se cerró por refinanciación (RF18).' }
+            movimiento_posterior_cierre: { type: boolean, description: "`true` si el SAC muestra movimiento después del cierre: no se reporta y solo se corrige por rectificación (RF13, RF16, RF55)." }
+            cuotas_vencidas:
+              type: array
+              description: Cuotas vencidas sin pagar completas, de la más antigua a la más reciente (RF17).
+              items: { $ref: '#/components/schemas/CuotaVencida' }
+            pagos:
+              type: array
+              description: Pagos de la última extracción.
+              items: { $ref: '#/components/schemas/PagoExtraido' }
+            posibles_transiciones:
+              type: array
+              description: «Qué puede pasar con esta obligación», según su estado.
+              items: { $ref: '#/components/schemas/ReglaAplicada' }
+            advertencias:
+              type: array
+              description: Alertas informativas de la obligación (por ejemplo, saldo mayor al valor inicial, RF52).
+              items: { $ref: '#/components/schemas/ReglaMensaje' }
+    ResumenObligaciones:
+      type: object
+      required: [fecha_ultimo_ciclo, total, abiertas, por_estado, eliminadas, por_cuotas_mora, financiaciones_nuevas]
+      properties:
+        fecha_ultimo_ciclo: { type: string, format: date, nullable: true, example: '2026-09-30' }
+        total: { type: integer, minimum: 0, description: Obligaciones no eliminadas. }
+        abiertas: { type: integer, minimum: 0, description: No cerradas ni eliminadas. }
+        por_estado: { type: array, items: { $ref: '#/components/schemas/ConteoEstado' } }
+        eliminadas: { type: integer, minimum: 0 }
+        por_cuotas_mora:
+          type: object
+          required: [al_dia, una, dos_a_tres, cuatro_o_mas]
+          description: Solo obligaciones abiertas; los cuatro grupos suman `abiertas` (RF19).
+          properties:
+            al_dia: { type: integer, minimum: 0 }
+            una: { type: integer, minimum: 0 }
+            dos_a_tres: { type: integer, minimum: 0 }
+            cuatro_o_mas: { type: integer, minimum: 0 }
+        financiaciones_nuevas:
+          type: array
+          description: Obligaciones del corte en `BORRADOR` que nunca se han reportado (entrarán en primer reporte, RF10).
+          items:
+            type: object
+            required: [numero_obligacion, nombre_titular]
+            properties:
+              numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+              nombre_titular: { type: string }
+    EventoObligacion:
+      type: object
+      required: [fecha, estado_tu, edad_mora, descripcion]
+      properties:
+        fecha: { type: string, format: date, example: '2026-09-30' }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
+        descripcion: { type: string, example: 'Primer reporte en Vigente (01), al día' }
+
+    # ── Matriz y ciclo mensual (pantalla 10) ──
+    TransicionMatriz:
+      type: object
+      required: [desde, desde_con_mora, hacia, hacia_con_mora, permitida]
+      properties:
+        desde: { $ref: '#/components/schemas/EstadoObligacion' }
+        desde_con_mora: { type: boolean, description: "`false` = sin mora (`n`), `true` = con mora (`m`)." }
+        hacia: { $ref: '#/components/schemas/EstadoObligacion' }
+        hacia_con_mora: { type: boolean }
+        permitida: { type: boolean, description: "`false` = TransUnion lo rechaza con el error 713." }
+    MatrizEstados:
+      type: object
+      required: [tipo_cartera, estados, transiciones]
+      properties:
+        tipo_cartera: { type: integer, example: 2, description: 2 = Servicios. }
+        estados:
+          type: array
+          description: Orden de las columnas de la matriz del Manual.
+          items: { $ref: '#/components/schemas/EstadoObligacion' }
+        transiciones:
+          type: array
+          description: Las 400 combinaciones.
+          items: { $ref: '#/components/schemas/TransicionMatriz' }
+    CicloCreateRequest:
+      type: object
+      required: [fecha_corte]
+      properties:
+        fecha_corte: { type: string, format: date, example: '2026-10-31', description: Último día del mes; debe existir un corte en `BORRADOR` con esta fecha. }
+    CicloResumen:
+      type: object
+      required: [corte_id, fecha_corte, fecha_ejecucion, ejecutada_por, primer_reporte, cambios_estado, cierres, rechazados]
+      properties:
+        corte_id: { type: integer, example: 2 }
+        fecha_corte: { type: string, format: date, example: '2026-09-30' }
+        fecha_ejecucion: { type: string, format: date-time, example: '2026-09-30T10:02:00-05:00' }
+        ejecutada_por: { type: string, nullable: true, example: Juan Pérez, description: "`null` si lo ejecutó el proceso programado (RF9)." }
+        primer_reporte: { type: integer, minimum: 0 }
+        cambios_estado: { type: integer, minimum: 0 }
+        cierres: { type: integer, minimum: 0, description: Obligaciones que pasaron a 02 o 07. }
+        rechazados: { type: integer, minimum: 0, description: 'Cambios rechazados (713 u 881). Bloquean la validación del corte hasta que se corrija el dato en el SAC y se vuelva a ejecutar el ciclo.' }
+    Transicion:
+      type: object
+      required: [obligacion_id, numero_obligacion, nombre_titular, estado_anterior, estado_nuevo, edad_anterior, edad_nueva, primer_reporte, requiere_revision, reglas]
+      description: «Qué pasó» con una obligación en el ciclo.
+      properties:
+        obligacion_id: { type: integer }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        nombre_titular: { type: string }
+        estado_anterior: { $ref: '#/components/schemas/EstadoObligacionONulo', description: "`null` en primer reporte." }
+        estado_nuevo: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_anterior: { $ref: '#/components/schemas/CodigoEdadMoraONulo' }
+        edad_nueva: { $ref: '#/components/schemas/CodigoEdadMora' }
+        primer_reporte: { type: boolean }
+        requiere_revision: { type: boolean, description: 'Salto de más de un tramo o baja de edad sin abono (RF11), caducado o castigo sin mora (RF14, RF45).' }
+        reglas: { type: array, items: { $ref: '#/components/schemas/ReglaAplicada' } }
+    RechazoCiclo:
+      type: object
+      required: [obligacion_id, numero_obligacion, nombre_titular, estado_anterior, estado_calculado, codigo, motivo]
+      properties:
+        obligacion_id: { type: integer }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        nombre_titular: { type: string }
+        estado_anterior: { $ref: '#/components/schemas/EstadoObligacionONulo', description: "`null` en primer reporte." }
+        estado_calculado: { $ref: '#/components/schemas/EstadoObligacion' }
+        codigo: { type: string, enum: ['713', '881'], description: "`713` cambio de estado inválido (matriz); `881` estado no permitido en primer reporte." }
+        motivo: { type: string, example: 'Error 713: la matriz no permite pasar de Saldada sin mora a Dudoso Recaudo' }
+    CicloDetalle:
+      allOf:
+        - $ref: '#/components/schemas/CicloResumen'
+        - type: object
+          required: [con_pagos, a_dudoso, a_castigada, normalizadas, transiciones, rechazos]
+          properties:
+            con_pagos: { type: integer, minimum: 0, description: Obligaciones con pagos aplicados del SAC. }
+            a_dudoso: { type: integer, minimum: 0 }
+            a_castigada: { type: integer, minimum: 0 }
+            normalizadas: { type: integer, minimum: 0, description: Pagaron la mora sin cancelar el saldo y volvieron a 01 (RF46). }
+            transiciones: { type: array, items: { $ref: '#/components/schemas/Transicion' } }
+            rechazos: { type: array, items: { $ref: '#/components/schemas/RechazoCiclo' } }
+
+    # ── Refinanciaciones (pantalla 11) ──
+    Refinanciacion:
+      type: object
+      required: [id, fecha, fecha_registro, registrada_por, origen, obligacion_original, obligacion_nueva, saldo_refinanciado, naturaleza, numero_cuotas]
+      properties:
+        id: { type: integer, example: 1 }
+        fecha: { type: string, format: date, example: '2026-09-28' }
+        fecha_registro: { type: string, format: date-time }
+        registrada_por: { type: string, nullable: true, description: "`null` si la detectó la extracción del SAC." }
+        origen: { type: string, enum: [SAC, MANUAL] }
+        obligacion_original:
+          type: object
+          required: [obligacion_id, numero_obligacion, nombre_titular, estado_cierre, modo_extincion]
+          properties:
+            obligacion_id: { type: integer }
+            numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+            nombre_titular: { type: string }
+            estado_cierre: { type: string, enum: ['02', '07'] }
+            modo_extincion: { $ref: '#/components/schemas/CodigoDescripcion' }
+        obligacion_nueva:
+          type: object
+          required: [obligacion_id, numero_obligacion, estado_tu, numero_reestructuraciones]
+          properties:
+            obligacion_id: { type: integer }
+            numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+            estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+            numero_reestructuraciones: { type: integer, minimum: 1 }
+        saldo_refinanciado: { $ref: '#/components/schemas/Pesos' }
+        naturaleza: { $ref: '#/components/schemas/ItemCatalogo' }
+        numero_cuotas: { type: integer, minimum: 1, maximum: 120 }
+    RefinanciacionCreateRequest:
+      type: object
+      required: [obligacion_original_id, naturaleza, numero_cuotas, fecha]
+      properties:
+        obligacion_original_id: { type: integer }
+        naturaleza: { type: string, description: Código de `GET /catalogos/naturalezas-reestructuracion/`. }
+        numero_cuotas: { type: integer, minimum: 1, maximum: 120 }
+        fecha: { type: string, format: date, description: No puede ser futura. }
+
+    # ── Estados y homologación (pantalla 16) ──
+    EstadoCatalogoTU:
+      type: object
+      required: [codigo, nombre, usado, es_cierre, confirmado]
+      properties:
+        codigo: { $ref: '#/components/schemas/EstadoObligacion' }
+        nombre: { type: string, example: Vigente }
+        usado: { type: boolean, description: "Si CENS usa el estado (`NV_ESTADO_TU.USADO`)." }
+        es_cierre: { type: boolean, description: "`true` en 02 y 07." }
+        confirmado: { type: boolean }
+    HomologacionEstado:
+      type: object
+      required: [estado_sac, prioridad, descripcion, accion, estado_tu, confirmado, actualizado_por, fecha_actualizacion]
+      properties:
+        estado_sac: { type: string, pattern: '^[A-Z]$', example: A }
+        prioridad: { type: integer, minimum: 1, readOnly: true, description: "0.9.1. Si los créditos de una obligación tienen estados distintos, gana el de menor número (`NV_HOMOLOGA_ESTADO.PRIORIDAD`). Solo lectura." }
+        descripcion: { type: string, nullable: true, description: Texto del estado en el SAC (lo carga el script 12; por confirmar con CENS). }
+        accion: { type: string, enum: [ESTADO, CIERRE, null], nullable: true, description: "`null` = sin homologar: bloquea la obligación en RF53." }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacionONulo' }
+        confirmado: { type: boolean }
+        actualizado_por: { type: string, nullable: true }
+        fecha_actualizacion: { type: string, format: date-time, nullable: true }
+    HomologacionEstadoUpdateRequest:
+      type: object
+      required: [accion, estado_tu]
+      properties:
+        accion: { type: string, enum: [ESTADO, CIERRE] }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacionONulo' }
+        confirmado: { type: boolean, default: false }
+
+    # ── Reporte a TransUnion (pantalla 12) ──
+    NivelValidacion:
+      type: string
+      enum: [ok, correctiva, advertencia, informativa]
+      description: "`correctiva` bloquea (rojo); `advertencia` avisa (amarillo); `informativa` es informativa (azul); `ok` pasó."
+    ObligacionReferida:
+      type: object
+      required: [obligacion_id, numero_obligacion, campo, mensaje]
+      properties:
+        obligacion_id: { type: integer, nullable: true, description: "`null` si la obligación ya no existe en NexoVolt." }
+        numero_obligacion: { type: string, example: 2262-3318 }
+        campo: { type: string, nullable: true, example: fecha_pago }
+        mensaje: { type: string, example: Falta la fecha de pago del cierre. }
+    ResultadoValidacion:
+      type: object
+      required: [regla, titulo, nivel, detalle, rf, por_confirmar, obligaciones]
+      properties:
+        regla: { type: string, example: CIERRE_INCOMPLETO, description: Identificador estable de la regla o del grupo de reglas. }
+        titulo: { type: string, example: Campos de cierre (RF22) }
+        nivel: { $ref: '#/components/schemas/NivelValidacion' }
+        detalle: { type: string }
+        rf: { type: array, items: { type: string, pattern: '^RF\d{1,2}$' } }
+        por_confirmar: { type: boolean }
+        obligaciones: { type: array, items: { $ref: '#/components/schemas/ObligacionReferida' } }
+    ValidacionesCorte:
+      type: object
+      required: [corte_id, fecha_corte, estado_corte, puede_generar, resultados]
+      properties:
+        corte_id: { type: integer }
+        fecha_corte: { type: string, format: date }
+        estado_corte: { $ref: '#/components/schemas/EstadoCorte' }
+        puede_generar: { type: boolean, description: "`false` mientras haya alguna regla `correctiva` o el corte no esté `VALIDADO`." }
+        resultados: { type: array, items: { $ref: '#/components/schemas/ResultadoValidacion' } }
+    Archivo:
+      type: object
+      required: [id, corte_id, fecha_corte, nombre, tipo_reporte, fecha_generacion, generado_por, n_registros, total_registros, n_excluidas, saldo_total, longitud_registro_tipo2, apto_envio, motivo_no_apto, enviado, fecha_envio, estado_corte, tiene_resultados]
+      description: Un archivo plano generado (`NV_ARCHIVO`).
+      properties:
+        id: { type: integer }
+        corte_id: { type: integer }
+        fecha_corte: { type: string, format: date }
+        nombre: { type: string, maxLength: 40, example: SSRXXXXXX20260930, description: "`SSR` + tipo de entidad + código de entidad + fecha de corte (RF20, RF57)." }
+        tipo_reporte: { type: string, example: '01', description: "`01` = reporte total." }
+        fecha_generacion: { type: string, format: date-time }
+        generado_por: { type: string, nullable: true }
+        n_registros: { type: integer, minimum: 0, description: Registros tipo 2 (uno por obligación y titular). }
+        total_registros: { type: integer, minimum: 0, description: Total del registro tipo 9 (incluye el 1 y el 9). }
+        n_excluidas: { type: integer, minimum: 0, description: Cerradas en cortes anteriores o eliminadas (no cuentan como omitidas). }
+        saldo_total: { $ref: '#/components/schemas/Pesos' }
+        longitud_registro_tipo2: { type: integer, example: 930, description: Parámetro por confirmar con TransUnion (930 declarados contra 929 de la suma de campos). }
+        apto_envio: { type: boolean, description: "`false` si la entidad lleva marcador (RF57)." }
+        motivo_no_apto: { type: string, nullable: true }
+        enviado: { type: boolean }
+        fecha_envio: { type: string, format: date, nullable: true }
+        estado_corte: { $ref: '#/components/schemas/EstadoCorte' }
+        tiene_resultados: { type: boolean, description: Si ya se cargaron los archivos de respuesta de TransUnion (RF54). }
+    TipoArchivoResultado:
+      type: string
+      description: Archivos de respuesta del reporte mensual (Manual, p. 43). Desde la 0.9.4 no incluye los de reclamos (Reclamos Batch, p. 57).
+      enum: [ESTADISTICOS, CORRECTIVAS, ALERTAS, ESPECIALES, DETALLE_953, NOREP]
+    Inconsistencia:
+      type: object
+      required: [obligacion_id, numero_obligacion, tipo, codigo, descripcion]
+      properties:
+        obligacion_id: { type: integer, nullable: true, description: "`null` si el número no corresponde a una obligación del corte." }
+        numero_obligacion: { type: string }
+        tipo: { type: string, enum: [CORRECTIVA, INFORMATIVA, NO_REPORTADA] }
+        codigo: { type: string, description: Código que trae el archivo de TransUnion. }
+        descripcion: { type: string }
+    ResultadosCargue:
+      type: object
+      required: [archivo_id, corte_id, fecha_corte, fecha_carga, cargado_por, estado_corte, archivos_cargados, recibidos, cargados, con_inconsistencias, no_reportadas, inconsistencias]
+      properties:
+        archivo_id: { type: integer }
+        corte_id: { type: integer }
+        fecha_corte: { type: string, format: date }
+        fecha_carga: { type: string, format: date-time }
+        cargado_por: { type: string, nullable: true }
+        estado_corte: { $ref: '#/components/schemas/EstadoCorte' }
+        archivos_cargados:
+          type: array
+          items:
+            type: object
+            required: [nombre_archivo, tipo_archivo, n_filas]
+            properties:
+              nombre_archivo: { type: string }
+              tipo_archivo: { $ref: '#/components/schemas/TipoArchivoResultado' }
+              n_filas: { type: integer, minimum: 0 }
+        recibidos: { type: integer, minimum: 0 }
+        cargados: { type: integer, minimum: 0 }
+        con_inconsistencias: { type: integer, minimum: 0 }
+        no_reportadas: { type: integer, minimum: 0, description: Obligaciones marcadas como no reportadas (R). }
+        inconsistencias: { type: array, items: { $ref: '#/components/schemas/Inconsistencia' } }
+
+    # ── Reclamos (pantalla 13, propuesta para Omar) ──
+    Reclamo:
+      type: object
+      description: |
+        Reclamo de Habeas Data (RF23). La obligación se sigue reportando en el archivo mensual. Ante
+        TransUnion, la marca se pide con el proceso «Marcación de obligaciones (Reclamos Batch)»
+        (Manual, p. 57).
+      required: [id, obligacion_id, numero_obligacion, nombre_titular, tipologia, fecha_radicacion, observacion, estado, marcacion_generada, desmarcacion_generada, fecha_limite_respuesta, vencido, resultado, fecha_cierre, observacion_cierre, registrado_por, fecha_registro]
+      properties:
+        id: { type: integer }
+        obligacion_id: { type: integer }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        nombre_titular: { type: string }
+        tipologia: { $ref: '#/components/schemas/ItemCatalogo' }
+        fecha_radicacion: { type: string, format: date }
+        observacion: { type: string, maxLength: 500, nullable: true, description: Lo que dice el titular al radicar. No cambia al cerrar. }
+        estado: { type: string, enum: [EN_RECLAMO, CERRADO] }
+        marcacion_generada: { type: boolean, description: '0.9.4. Ya salió en un archivo de marcación (`GET /reclamos/insumo/?tipo=marcacion`). No quiere decir que TransUnion lo radicó: eso lo dice su archivo de radicación (Manual, p. 57), que todavía no se carga. Reemplaza a `radicado_en_tu`.' }
+        desmarcacion_generada: { type: boolean, description: '0.9.4. Ya salió en un archivo de desmarcación (`tipo=desmarcacion`). Solo puede ser `true` en un reclamo `CERRADO`.' }
+        fecha_limite_respuesta: { type: string, format: date, description: '15 días hábiles desde la radicación (prorrogables 8), sin contar fines de semana ni festivos de Colombia. La regla exacta de conteo (desde qué día se cuenta) está por confirmar con jurídica.' }
+        vencido: { type: boolean, description: "`true` si sigue `EN_RECLAMO` después de la fecha límite." }
+        resultado: { type: string, maxLength: 30, nullable: true }
+        fecha_cierre: { type: string, format: date, nullable: true }
+        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'La respuesta al titular, registrada al cerrar.' }
+        registrado_por: { type: string, nullable: true }
+        fecha_registro: { type: string, format: date-time }
+    ReclamoCreateRequest:
+      type: object
+      required: [obligacion_id, tipologia, fecha_radicacion]
+      properties:
+        obligacion_id: { type: integer }
+        tipologia: { type: string, description: Código de `GET /catalogos/tipologias-reclamo/`. }
+        fecha_radicacion: { type: string, format: date }
+        observacion: { type: string, maxLength: 500, nullable: true }
+    ReclamoCerrarRequest:
+      type: object
+      required: [resultado, fecha_cierre]
+      properties:
+        resultado: { type: string, maxLength: 30 }
+        fecha_cierre: { type: string, format: date }
+        observacion_cierre: { type: string, maxLength: 500, nullable: true }
+
+    # ── Novedades, eliminaciones y rectificaciones (pantalla 14, propuesta para Angel) ──
+    TipoNovedad:
+      type: string
+      enum: [INCLUSION, ACTUALIZACION, CORRECCION, ELIMINACION]
+    EstadoNovedad:
+      type: string
+      enum: [PENDIENTE, GESTIONADA, RECHAZADA]
+    Novedad:
+      type: object
+      required: [id, tipo, sujeto, obligacion_id, referencia, motivo, motivo_eliminacion, valores_enviados, fecha_deteccion, origen, estado, numero_transaccion_tu, fecha_gestion, motivo_rechazo, registrada_por]
+      properties:
+        id: { type: integer }
+        tipo: { $ref: '#/components/schemas/TipoNovedad' }
+        sujeto: { type: string, enum: [OBLIGACION, TITULAR] }
+        obligacion_id: { type: integer, nullable: true, description: "`null` en inclusiones." }
+        referencia: { type: string, maxLength: 40 }
+        motivo: { type: string, maxLength: 500 }
+        motivo_eliminacion: { $ref: '#/components/schemas/ItemCatalogoONulo' }
+        valores_enviados: { type: string, maxLength: 1000, nullable: true }
+        fecha_deteccion: { type: string, format: date }
+        origen: { type: string, enum: [MANUAL, AUTOMATICA] }
+        estado: { $ref: '#/components/schemas/EstadoNovedad' }
+        numero_transaccion_tu: { type: string, maxLength: 30, nullable: true }
+        fecha_gestion: { type: string, format: date, nullable: true }
+        motivo_rechazo: { type: string, maxLength: 300, nullable: true }
+        registrada_por: { type: string, nullable: true }
+    NovedadCreateRequest:
+      type: object
+      required: [tipo, sujeto, referencia, motivo]
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoNovedad' }
+        sujeto: { type: string, enum: [OBLIGACION, TITULAR] }
+        obligacion_id: { type: integer, nullable: true }
+        referencia: { type: string, maxLength: 40 }
+        motivo: { type: string, maxLength: 500 }
+        motivo_eliminacion: { type: string, nullable: true, description: Código de `GET /catalogos/motivos-eliminacion/`; obligatorio si `tipo` es `ELIMINACION`. }
+        valores_enviados: { type: string, maxLength: 1000, nullable: true }
+    NovedadGestionarRequest:
+      type: object
+      required: [numero_transaccion_tu, fecha_gestion]
+      properties:
+        numero_transaccion_tu: { type: string, maxLength: 30 }
+        fecha_gestion: { type: string, format: date }
+    NovedadRechazarRequest:
+      type: object
+      required: [motivo_rechazo]
+      properties:
+        motivo_rechazo: { type: string, maxLength: 300 }
+    Eliminacion:
+      type: object
+      required: [id, obligacion_id, numero_obligacion, fecha, motivo, numero_transaccion_tu, bloqueada, fecha_activacion, numero_activacion_tu]
+      properties:
+        id: { type: integer }
+        obligacion_id: { type: integer, nullable: true }
+        numero_obligacion: { type: string }
+        fecha: { type: string, format: date }
+        motivo: { $ref: '#/components/schemas/ItemCatalogo' }
+        numero_transaccion_tu: { type: string, nullable: true }
+        bloqueada: { type: boolean, description: "`true` mientras no se registre la activación hecha con TransUnion." }
+        fecha_activacion: { type: string, format: date, nullable: true }
+        numero_activacion_tu: { type: string, nullable: true }
+    EliminacionReactivarRequest:
+      type: object
+      required: [numero_activacion_tu, fecha_activacion]
+      properties:
+        numero_activacion_tu: { type: string, maxLength: 30 }
+        fecha_activacion: { type: string, format: date }
+    Rectificacion:
+      type: object
+      required: [id, novedad_id, obligacion_id, numero_obligacion, corte_id, fecha_corte, campo, valor_anterior, valor_corregido, justificacion, medio, estado, confirmacion_tu, registrada_por, fecha_registro]
+      properties:
+        id: { type: integer }
+        novedad_id: { type: integer, nullable: true }
+        obligacion_id: { type: integer }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        corte_id: { type: integer }
+        fecha_corte: { type: string, format: date }
+        campo: { type: string, maxLength: 40 }
+        valor_anterior: { type: string, maxLength: 100, nullable: true }
+        valor_corregido: { type: string, maxLength: 100 }
+        justificacion: { type: string, maxLength: 500 }
+        medio: { type: string, enum: [ACTUALIZACION_LINEA, PROCESO_ESPECIAL] }
+        estado: { type: string, enum: [REGISTRADA, CONFIRMADA] }
+        confirmacion_tu: { type: string, nullable: true }
+        registrada_por: { type: string, nullable: true }
+        fecha_registro: { type: string, format: date-time }
+        insumo:
+          type: string
+          description: '0.9.5. Solo en la respuesta de `POST /rectificaciones/`: una línea `numero_obligacion|campo|valor_corregido` con CRLF final. Formato **por confirmar con TransUnion** (Manual, p. 57, «Novedades Batch»).'
+    RectificacionCreateRequest:
+      type: object
+      required: [obligacion_id, corte_id, campo, valor_corregido, justificacion, medio]
+      properties:
+        novedad_id: { type: integer, nullable: true, description: '0.9.2. Novedad `CORRECCION` que origina la rectificación (RF24, RF55).' }
+        obligacion_id: { type: integer }
+        corte_id: { type: integer }
+        campo: { type: string, maxLength: 40 }
+        valor_corregido: { type: string, maxLength: 100 }
+        justificacion: { type: string, maxLength: 500 }
+        medio: { type: string, enum: [ACTUALIZACION_LINEA, PROCESO_ESPECIAL] }
+    RectificacionConfirmarRequest:
+      type: object
+      required: [confirmacion_tu]
+      properties:
+        confirmacion_tu: { type: string, maxLength: 30 }
+
+    # ── Entidad (pantalla 15) y panel (pantalla 4) ──
+    Entidad:
+      type: object
+      required: [tipo_entidad, codigo_entidad, codigo_sucursal, con_marcador, prefijo_archivo, actualizado_por, fecha_actualizacion]
+      properties:
+        tipo_entidad: { type: string, pattern: '^(\d{3}|XXX)$', example: XXX, description: 'Tres dígitos (Tabla 29) o el marcador. Si TransUnion exige un valor numérico en el registro tipo 1, el marcador sería `000` (por confirmar).' }
+        codigo_entidad: { type: string, pattern: '^(\d{3}|XXX)$', example: XXX, description: Tres dígitos (Tabla 30) o el marcador. }
+        codigo_sucursal: { type: string, pattern: '^[A-Z0-9]{6}$', example: XXXXXX, description: Seis caracteres; debe existir en TransUnion. Regla para varias sucursales por definir. }
+        con_marcador: { type: boolean, description: "`true` si alguno de los tres conserva el marcador: los archivos salen no aptos para envío." }
+        prefijo_archivo: { type: string, example: SSRXXXXXX, description: "`SSR` + tipo + código; el nombre del archivo agrega la fecha de corte." }
+        actualizado_por: { type: string, nullable: true }
+        fecha_actualizacion: { type: string, format: date-time, nullable: true }
+    EntidadUpdateRequest:
+      type: object
+      required: [tipo_entidad, codigo_entidad, codigo_sucursal]
+      properties:
+        tipo_entidad: { type: string, pattern: '^(\d{3}|XXX)$' }
+        codigo_entidad: { type: string, pattern: '^(\d{3}|XXX)$' }
+        codigo_sucursal: { type: string, pattern: '^[A-Z0-9]{6}$' }
+    PanelResumen:
+      type: object
+      required: [fecha_ultimo_ciclo, total_obligaciones, distribucion, ultimo_archivo, en_reclamo, novedades_pendientes, con_dos_o_mas_cuotas, entidad_con_marcador]
+      properties:
+        fecha_ultimo_ciclo: { type: string, format: date, nullable: true }
+        total_obligaciones: { type: integer, minimum: 0 }
+        distribucion: { type: array, items: { $ref: '#/components/schemas/ConteoEstado' } }
+        ultimo_archivo: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/Archivo' }] }
+        en_reclamo: { type: integer, minimum: 0 }
+        novedades_pendientes: { type: integer, minimum: 0 }
+        con_dos_o_mas_cuotas: { type: integer, minimum: 0, description: Obligaciones abiertas con 2 o más cuotas en mora (RF19). }
+        entidad_con_marcador: { type: boolean }

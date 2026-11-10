@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from config.formatos import fecha_str
+from config.formatos import fecha_str, timestamp_str
 
 
 # ── Conceptos ────────────────────────────────────────────────────────────────
@@ -90,3 +90,71 @@ class GrupoConceptoActualizarSerializer(serializers.Serializer):
         if "activo" in validated:
             validated["activo"] = "S" if validated["activo"] else "N"
         return validated
+
+
+# ── Datos de la entidad ante TransUnion (RF57) ────────────────────────────────
+
+MSG_ENTIDAD = {
+    "tipo_entidad": "El tipo de entidad debe tener 3 dígitos (o XXX mientras TransUnion no los asigne).",
+    "codigo_entidad": "El código de entidad debe tener 3 dígitos (o XXX mientras TransUnion no los asigne).",
+    "codigo_sucursal": "El código de sucursal debe tener 6 caracteres (o XXXXXX mientras TransUnion no los asigne).",
+}
+
+
+def _campo_entidad(patron, campo):
+    mensajes = {
+        "invalid": MSG_ENTIDAD[campo],
+        "required": "Este campo es requerido.",
+        "blank": "Este campo es requerido.",
+        "null": "Este campo es requerido.",
+    }
+    return serializers.RegexField(patron, trim_whitespace=True, error_messages=mensajes)
+
+
+class EntidadActualizarSerializer(serializers.Serializer):
+    tipo_entidad = _campo_entidad(r"^(\d{3}|XXX)$", "tipo_entidad")
+    codigo_entidad = _campo_entidad(r"^(\d{3}|XXX)$", "codigo_entidad")
+    codigo_sucursal = _campo_entidad(r"^[A-Z0-9]{6}$", "codigo_sucursal")
+
+    def to_internal_value(self, data):
+        # Igual que el frontend: la sucursal admite letras y se compara en mayúsculas.
+        if isinstance(data, dict):
+            data = {
+                campo: valor.upper() if isinstance(valor, str) else valor
+                for campo, valor in data.items()
+            }
+        return super().to_internal_value(data)
+
+
+class EntidadSerializer(serializers.Serializer):
+    def to_representation(self, instance):
+        return {
+            "tipo_entidad": instance["tipo_entidad"],
+            "codigo_entidad": instance["codigo_entidad"],
+            "codigo_sucursal": instance["codigo_sucursal"],
+            "con_marcador": instance["con_marcador"],
+            "prefijo_archivo": instance["prefijo_archivo"],
+            "actualizado_por": instance["actualizado_por"],
+            "fecha_actualizacion": timestamp_str(instance["fecha_actualizacion"]),
+        }
+
+
+# ── Catálogo y homologación de estados (RF48) ─────────────────────────────────
+
+class HomologacionActualizarSerializer(serializers.Serializer):
+    """Solo forma: la regla (estado en uso, cierre sin estado, 02 y 07 con «Cierre») la aplica el servicio."""
+
+    accion = serializers.CharField(
+        allow_null=True, required=False,
+        error_messages={"invalid": "Elige cómo se reporta el estado: como estado de TransUnion o como cierre."},
+    )
+    estado_tu = serializers.CharField(allow_null=True, allow_blank=True, required=False, trim_whitespace=True)
+    confirmado = serializers.BooleanField(required=False, default=False)
+
+    def validate_estado_tu(self, valor):
+        return valor or None
+
+
+class HomologacionSerializer(serializers.Serializer):
+    def to_representation(self, instance):
+        return {**instance, "fecha_actualizacion": timestamp_str(instance["fecha_actualizacion"])}

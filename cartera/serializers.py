@@ -39,3 +39,37 @@ class CorteResumenSerializer(serializers.Serializer):
             "estado":            instance["estado"],
             "ejecutada_por":     instance["ejecutada_por"],
         }
+
+
+class ResultadosCargueSerializer(serializers.Serializer):
+    def to_representation(self, instance):
+        return {
+            "archivo_id":         instance["archivo_id"],
+            "corte_id":           instance["corte_id"],
+            "fecha_corte":        fecha_str(instance["fecha_corte"]),
+            "fecha_carga":        timestamp_str(instance["fecha_carga"]),
+            "cargado_por":        instance["cargado_por"],
+            "estado_corte":       instance["estado_corte"],
+            "archivos_cargados":  [
+                {
+                    "nombre_archivo": a["nombre_archivo"],
+                    "tipo_archivo":   a["tipo_archivo"],
+                    "n_filas":        a["n_filas"],
+                }
+                for a in instance["archivos_cargados"]
+            ],
+            "recibidos":          instance["recibidos"],
+            "cargados":           instance["cargados"],
+            "con_inconsistencias": instance["con_inconsistencias"],
+            "no_reportadas":      instance["no_reportadas"],
+            "inconsistencias":    [
+                {
+                    "obligacion_id":    i["obligacion_id"],
+                    "numero_obligacion": i["numero_obligacion"],
+                    "tipo":             i["tipo"],
+                    "codigo":           i["codigo"],
+                    "descripcion":      i["descripcion"],
+                }
+                for i in instance["inconsistencias"]
+            ],
+        }
