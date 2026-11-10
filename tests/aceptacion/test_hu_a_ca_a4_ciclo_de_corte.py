@@ -52,6 +52,7 @@ def test_cp_a_18_un_borrador_sin_errores_correctivos_queda_validado():
     oraculo = OraculoFalso(
         fetchone=[
             ("BORRADOR",),              # estado actual del corte
+            (1,),                       # SELECT COUNT(*) FROM NV_CICLO
             _fila_resumen("VALIDADO"),  # resumen después de validar
         ],
         fetchall=[
@@ -72,7 +73,7 @@ def test_cp_a_18_un_borrador_sin_errores_correctivos_queda_validado():
 def test_cp_a_18_un_corte_con_errores_correctivos_no_se_valida():
     """Flujo alterno: los errores correctivos se devuelven para que el Analista los resuelva."""
     oraculo = OraculoFalso(
-        fetchone=[("BORRADOR",)],
+        fetchone=[("BORRADOR",), (1,)],
         fetchall=[[
             ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación"),
         ]],

@@ -571,7 +571,7 @@ def test_validar_corte_no_es_borrador():
 
 def test_validar_corte_con_correctivas_lanza_excepcion():
     mock_conn, mock_cursor = _mock_conn()
-    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchone.side_effect = [("BORRADOR",), (1,)]
     mock_cursor.fetchall.return_value = [
         ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación"),
     ]
@@ -586,6 +586,7 @@ def test_validar_corte_sin_errores_actualiza_estado():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),   # SELECT ESTADO
+        (1,),            # SELECT COUNT(*) FROM NV_CICLO
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),  # obtener_corte
     ]
     mock_cursor.fetchall.return_value = []   # V_VALIDACION_CORTE → sin errores
@@ -599,6 +600,7 @@ def test_validar_corte_devuelve_advertencias():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),
+        (1,),  # SELECT COUNT(*) FROM NV_CICLO
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = [
@@ -614,7 +616,7 @@ def test_rf49_validar_corte_bloquea_exigibilidad_futura():
     """Fecha de exigibilidad mayor a la fecha del sistema → V_VALIDACION_CORTE devuelve
     correctiva FECHA_EXIGIBILIDAD_FUTURA y validar_corte lanza CorteConErroresCorrectivos."""
     mock_conn, mock_cursor = _mock_conn()
-    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchone.side_effect = [("BORRADOR",), (1,)]
     mock_cursor.fetchall.return_value = [
         (
             "FECHA_EXIGIBILIDAD_FUTURA",
@@ -843,6 +845,7 @@ def test_validar_corte_filtra_por_corte_id():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),
+        (1,),  # SELECT COUNT(*) FROM NV_CICLO
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = []
@@ -1115,7 +1118,7 @@ def test_rf19_validar_corte_707_bloquea_edad_sin_valor_mora():
     validar_corte lanza CorteConErroresCorrectivos y bloquea el corte (RF19, RF53).
     """
     mock_conn, mock_cursor = _mock_conn()
-    mock_cursor.fetchone.return_value = ("BORRADOR",)
+    mock_cursor.fetchone.side_effect = [("BORRADOR",), (1,)]
     mock_cursor.fetchall.return_value = [
         ("EDAD_SIN_VALOR_MORA", "CORRECTIVA",
          "Obligación 2258-7731 tiene edad 01 con valor de mora 0 (regla 707)"),
@@ -1134,6 +1137,7 @@ def test_rf19_validar_corte_cuotas_mora_incoherente_es_informativa():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
         ("BORRADOR",),
+        (1,),  # SELECT COUNT(*) FROM NV_CICLO
         (1, "2026-09-30", "VALIDADO", None, 5, None, None, 0, None),
     ]
     mock_cursor.fetchall.return_value = [
