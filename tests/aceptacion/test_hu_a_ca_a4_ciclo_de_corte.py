@@ -75,7 +75,8 @@ def test_cp_a_18_un_corte_con_errores_correctivos_no_se_valida():
     oraculo = OraculoFalso(
         fetchone=[("BORRADOR",), (1,)],
         fetchall=[[
-            ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación"),
+            ("SIN_IDENTIFICACION", "CORRECTIVA", "Falta el tipo o el número de identificación",
+             7, "2259-1092"),
         ]],
     )
 
