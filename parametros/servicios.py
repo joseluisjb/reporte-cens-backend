@@ -385,7 +385,7 @@ def guardar_entidad(datos, usuario=None):
 
 # Columnas de NV_ESTADO_TU que no están documentadas en el repo (la tabla viene del script base, que
 # no está versionado). Confirmarlas con la sección 0 de parametros/sql/verificacion_12a_*.sql.
-_COL_ESTADO_TU = {"codigo": "ESTADO_TU", "nombre": "DESCRIPCION"}
+_COL_ESTADO_TU = {"codigo": "CODIGO_ESTADO", "nombre": "NOMBRE"}
 
 ACCIONES_HOMOLOGACION = ("ESTADO", "CIERRE")
 ESTADOS_DE_CIERRE = ("02", "07")
