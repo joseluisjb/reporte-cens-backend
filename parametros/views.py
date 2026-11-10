@@ -12,6 +12,8 @@ from parametros.serializers import (
     GrupoConceptoActualizarSerializer,
     EntidadActualizarSerializer,
     EntidadSerializer,
+    HomologacionActualizarSerializer,
+    HomologacionSerializer,
 )
 
 
@@ -176,3 +178,45 @@ class EntidadView(APIView):
         serializer.is_valid(raise_exception=True)
         entidad = servicios.guardar_entidad(serializer.validated_data, usuario=request.user)
         return Response(EntidadSerializer(entidad).data)
+
+
+class EstadosTUView(APIView):
+    """Catálogo de los 10 estados de la Tabla 4b con su uso en CENS (RF48). Solo el Administrador."""
+
+    permission_classes = [EsAdministrador]
+
+    def get(self, request):
+        return Response(servicios.listar_estados_tu())
+
+
+class HomologacionEstadosView(APIView):
+    """Homologación de los estados del SAC (RF48). Solo el Administrador."""
+
+    permission_classes = [EsAdministrador]
+
+    def get(self, request):
+        return Response(HomologacionSerializer(servicios.listar_homologaciones(), many=True).data)
+
+
+class HomologacionEstadoView(APIView):
+    """Actualizar la homologación de un estado del SAC (RF48). Solo el Administrador."""
+
+    permission_classes = [EsAdministrador]
+
+    def put(self, request, estado_sac):
+        serializer = HomologacionActualizarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        datos = serializer.validated_data
+        try:
+            homologacion = servicios.actualizar_homologacion(
+                estado_sac,
+                datos.get("accion"),
+                datos.get("estado_tu"),
+                datos.get("confirmado", False),
+                usuario=request.user,
+            )
+        except servicios.EstadoSacNoEncontrado:
+            return Response({"detail": "Estado del SAC no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except servicios.HomologacionInvalida as exc:
+            return Response(exc.errores, status=status.HTTP_400_BAD_REQUEST)
+        return Response(HomologacionSerializer(homologacion).data)

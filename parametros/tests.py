@@ -968,3 +968,179 @@ def test_put_entidad_volver_al_relleno():
     assert response.data["con_marcador"] is True
     assert response.data["prefijo_archivo"] == "SSRXXXXXX"
     assert response.data["actualizado_por"] == "Rosa Martínez"
+
+
+# ---------------------------------------------------------------------------
+# Catálogo y homologación de estados (RF48)
+# ---------------------------------------------------------------------------
+
+from parametros.views import EstadosTUView, HomologacionEstadosView, HomologacionEstadoView
+
+# (codigo, nombre, USADO, ES_CIERRE, CONFIRMADO) como los devuelve NV_ESTADO_TU para servicios.
+_FILAS_ESTADOS = [
+    ("01", "Vigente", "S", "N", "S"),
+    ("02", "Saldada", "S", "S", "S"),
+    ("03", "Dudoso recaudo", "S", "N", "N"),
+    ("04", "Suspendida por la entidad", "N", "N", "N"),
+    ("06", "Castigada", "S", "N", "S"),
+    ("07", "Castigada recuperada", "S", "S", "S"),
+    ("08", "Inactivo", "N", "N", "S"),
+    ("10", "Ley 550 de 1999", "S", "N", "N"),
+    ("11", "Ley 1116 de 2006", "S", "N", "N"),
+    ("12", "Ley 1564 de 2012 Insolvencia PNNC", "S", "N", "N"),
+]
+_ESTADOS = [
+    {"codigo": c, "nombre": n, "usado": u == "S", "es_cierre": e == "S", "confirmado": f == "S"}
+    for c, n, u, e, f in _FILAS_ESTADOS
+]
+_FILA_A = ("A", 1, "Activo (propuesto)", "ESTADO", "01", "N", None, None)
+
+
+def test_listar_estados_tu_traduce_las_banderas():
+    conn, _ = _cursor_entidad(_FILAS_ESTADOS)
+    with patch("parametros.servicios.connection", conn):
+        estados = servicios.listar_estados_tu()
+    assert len(estados) == 10
+    assert estados[1] == {"codigo": "02", "nombre": "Saldada", "usado": True, "es_cierre": True, "confirmado": True}
+    assert [e["codigo"] for e in estados if not e["usado"]] == ["04", "08"]
+
+
+def test_listar_homologaciones_pone_el_nombre_de_quien_la_cambio():
+    fecha = datetime(2026, 11, 7, 10, 30)
+    conn, _ = _cursor_entidad([
+        ("A", 1, "Activo (propuesto)", "ESTADO", "01", "S", 1, fecha),
+        ("F", 5, "Finalizado (propuesto)", "CIERRE", None, "N", None, None),
+        ("B", 4, "Desconocido: preguntar a CENS", None, None, "N", None, None),
+    ])
+    with patch("parametros.servicios.connection", conn), \
+         patch("parametros.servicios._nombres_usuarios", return_value={1: "Rosa Martínez"}):
+        filas = servicios.listar_homologaciones()
+    assert filas[0] == {
+        "estado_sac": "A", "prioridad": 1, "descripcion": "Activo (propuesto)", "accion": "ESTADO",
+        "estado_tu": "01", "confirmado": True, "actualizado_por": "Rosa Martínez", "fecha_actualizacion": fecha,
+    }
+    assert filas[1]["accion"] == "CIERRE" and filas[1]["estado_tu"] is None
+    assert filas[2]["accion"] is None  # sin homologar: RF53 bloquea sus obligaciones
+
+
+@pytest.mark.parametrize("accion, estado_tu, esperado", [
+    ("ESTADO", "01", {}),
+    ("ESTADO", "03", {}),
+    ("CIERRE", None, {}),
+    (None, None, {"accion": ["Elige cómo se reporta el estado: como estado de TransUnion o como cierre."]}),
+    ("OTRA", "01", {"accion": ["Elige cómo se reporta el estado: como estado de TransUnion o como cierre."]}),
+    ("ESTADO", None, {"estado_tu": ["Selecciona el estado de TransUnion."]}),
+    ("ESTADO", "05", {"estado_tu": ["Ese estado no está en la Tabla 4b de TransUnion."]}),
+    ("ESTADO", "08", {"estado_tu": ["El estado 08 · Inactivo no se usa en CENS: elige un estado en uso."]}),
+    ("ESTADO", "04", {"estado_tu": ["El estado 04 · Suspendida por la entidad no se usa en CENS: elige un estado en uso."]}),
+    ("ESTADO", "02", {"estado_tu": ["Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior."]}),
+    ("ESTADO", "07", {"estado_tu": ["Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior."]}),
+    ("CIERRE", "02", {"estado_tu": ["Un estado que cierra el crédito no lleva estado de TransUnion."]}),
+])
+def test_validar_homologacion(accion, estado_tu, esperado):
+    assert servicios.validar_homologacion(accion, estado_tu, _ESTADOS) == esperado
+
+
+def _actualizar(estado_sac, accion, estado_tu, confirmado=False, fila_existente=_FILA_A):
+    conn, cursor = _cursor_entidad([fila_existente] if fila_existente else [])
+    usuario = MagicMock(nombre="Rosa Martínez", pk=1)
+    with _guardado_simulado(conn) as bitacora, \
+         patch("parametros.servicios.listar_estados_tu", return_value=_ESTADOS), \
+         patch("parametros.servicios._nombres_usuarios", return_value={}):
+        resultado = servicios.actualizar_homologacion(estado_sac, accion, estado_tu, confirmado, usuario=usuario)
+    return resultado, cursor, bitacora
+
+
+def test_actualizar_homologacion_guarda_y_deja_bitacora():
+    _, cursor, bitacora = _actualizar("A", "ESTADO", "01", confirmado=True)
+    update = next(c for c in cursor.execute.call_args_list if c.args[0].startswith("UPDATE"))
+    accion, estado_tu, confirmado, usuario_id, _, estado_sac = update.args[1]
+    assert (accion, estado_tu, confirmado, usuario_id, estado_sac) == ("ESTADO", "01", "S", 1, "A")
+    bitacora.assert_called_once()
+    assert bitacora.call_args.args[:3] == ("HOMOLOGACION_ACTUALIZADA", "NV_HOMOLOGA_ESTADO", "A")
+
+
+def test_actualizar_homologacion_cierre_guarda_estado_nulo():
+    _, cursor, _ = _actualizar("F", "CIERRE", None, fila_existente=("F", 5, "Finalizado", "CIERRE", None, "N", None, None))
+    update = next(c for c in cursor.execute.call_args_list if c.args[0].startswith("UPDATE"))
+    assert update.args[1][:2] == ["CIERRE", None]
+
+
+def test_actualizar_homologacion_estado_no_usado_no_guarda():
+    with pytest.raises(servicios.HomologacionInvalida) as exc:
+        _actualizar("A", "ESTADO", "08")
+    assert "estado_tu" in exc.value.errores
+
+
+def test_actualizar_homologacion_estado_sac_inexistente():
+    with pytest.raises(servicios.EstadoSacNoEncontrado):
+        _actualizar("Z", "ESTADO", "01", fila_existente=None)
+
+
+def _peticion_homologacion(vista, metodo, rol, datos=None, **kwargs):
+    factory = APIRequestFactory()
+    request = getattr(factory, metodo)("/api/homologacion-estados/", datos or {}, format="json")
+    usuario = usuario_con_rol(rol)
+    usuario.nombre = "Rosa Martínez"
+    force_authenticate(request, user=usuario)
+    return vista.as_view()(request, **kwargs)
+
+
+@pytest.mark.parametrize("vista", [EstadosTUView, HomologacionEstadosView])
+def test_listados_solo_administrador(vista):
+    with patch("parametros.views.servicios.listar_estados_tu", return_value=_ESTADOS), \
+         patch("parametros.views.servicios.listar_homologaciones", return_value=[]):
+        assert _peticion_homologacion(vista, "get", "ADMINISTRADOR").status_code == 200
+        assert _peticion_homologacion(vista, "get", "ANALISTA_CARTERA").status_code == 403
+
+
+def test_put_homologacion_admin_cambia_a_vigente():
+    guardada = {
+        "estado_sac": "A", "prioridad": 1, "descripcion": "Activo (propuesto)", "accion": "ESTADO",
+        "estado_tu": "01", "confirmado": True, "actualizado_por": "Rosa Martínez",
+        "fecha_actualizacion": datetime(2026, 11, 7, 10, 30),
+    }
+    with patch("parametros.views.servicios.actualizar_homologacion", return_value=guardada) as actualizar:
+        response = _peticion_homologacion(
+            HomologacionEstadoView, "put", "ADMINISTRADOR",
+            {"accion": "ESTADO", "estado_tu": "01", "confirmado": True}, estado_sac="A",
+        )
+    assert response.status_code == 200
+    assert response.data["fecha_actualizacion"] == "2026-11-07T10:30:00-05:00"
+    assert actualizar.call_args.args == ("A", "ESTADO", "01", True)
+
+
+def test_put_homologacion_analista_403():
+    with patch("parametros.views.servicios.actualizar_homologacion") as actualizar:
+        response = _peticion_homologacion(
+            HomologacionEstadoView, "put", "ANALISTA_CARTERA", {"accion": "ESTADO", "estado_tu": "01"}, estado_sac="A",
+        )
+    assert response.status_code == 403
+    actualizar.assert_not_called()
+
+
+def test_put_homologacion_estado_no_usado_400_por_campo():
+    errores = {"estado_tu": ["El estado 08 · Inactivo no se usa en CENS: elige un estado en uso."]}
+    with patch("parametros.views.servicios.actualizar_homologacion", side_effect=servicios.HomologacionInvalida(errores)):
+        response = _peticion_homologacion(
+            HomologacionEstadoView, "put", "ADMINISTRADOR", {"accion": "ESTADO", "estado_tu": "08"}, estado_sac="A",
+        )
+    assert response.status_code == 400
+    assert response.data == errores
+
+
+def test_put_homologacion_estado_sac_inexistente_404():
+    with patch("parametros.views.servicios.actualizar_homologacion", side_effect=servicios.EstadoSacNoEncontrado()):
+        response = _peticion_homologacion(
+            HomologacionEstadoView, "put", "ADMINISTRADOR", {"accion": "CIERRE", "estado_tu": None}, estado_sac="Z",
+        )
+    assert response.status_code == 404
+    assert response.data == {"detail": "Estado del SAC no encontrado."}
+
+
+def test_put_homologacion_estado_vacio_se_toma_como_nulo():
+    with patch("parametros.views.servicios.actualizar_homologacion", return_value={**dict.fromkeys(
+        ["estado_sac", "prioridad", "descripcion", "accion", "estado_tu", "confirmado", "actualizado_por"]),
+        "fecha_actualizacion": None}) as actualizar:
+        _peticion_homologacion(HomologacionEstadoView, "put", "ADMINISTRADOR", {"accion": "CIERRE", "estado_tu": ""}, estado_sac="F")
+    assert actualizar.call_args.args == ("F", "CIERRE", None, False)

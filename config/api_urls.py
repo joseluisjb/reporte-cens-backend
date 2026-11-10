@@ -3,11 +3,19 @@ from rest_framework.routers import DefaultRouter
 
 from config.auditoria import AuditoriaView
 from config.views import SaludView
-from parametros.views import ConceptoViewSet, EntidadView, GrupoConceptoViewSet
+from parametros.views import (
+    ConceptoViewSet,
+    EntidadView,
+    EstadosTUView,
+    GrupoConceptoViewSet,
+    HomologacionEstadosView,
+    HomologacionEstadoView,
+)
 from cartera.views import ArchivoViewSet, ExtraccionViewSet
 from ciclo.views import CicloViewSet, MatrizEstadosView, ObligacionesViewSet
 from novedades.views import EliminacionesViewSet, NovedadesViewSet
 from novedades.rectificaciones_views import RectificacionesViewSet
+from novedades.reclamos_views import ReclamosViewSet
 from historial.views import ReporteViewSet, DeudorViewSet
 from usuarios.views import (
     CambioContrasenaView,
@@ -33,6 +41,7 @@ router.register("historial/deudores", DeudorViewSet, basename="historial-deudor"
 router.register("novedades", NovedadesViewSet, basename="novedad")
 router.register("eliminaciones", EliminacionesViewSet, basename="eliminacion")
 router.register("rectificaciones", RectificacionesViewSet, basename="rectificacion")
+router.register("reclamos", ReclamosViewSet, basename="reclamo")
 
 urlpatterns = [
     path("salud/", SaludView.as_view(), name="salud"),
@@ -48,4 +57,11 @@ urlpatterns = [
     path("auditoria/", AuditoriaView.as_view(), name="auditoria"),
     path("matriz-estados/", MatrizEstadosView.as_view(), name="matriz-estados"),
     path("entidad/", EntidadView.as_view(), name="entidad"),
+    path("estados/", EstadosTUView.as_view(), name="estados"),
+    path("homologacion-estados/", HomologacionEstadosView.as_view(), name="homologacion-estados"),
+    path(
+        "homologacion-estados/<str:estado_sac>/",
+        HomologacionEstadoView.as_view(),
+        name="homologacion-estado",
+    ),
 ] + router.urls

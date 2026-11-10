@@ -45,6 +45,7 @@ EVENTOS = {
     "GRUPO_DESACTIVADO": ("Grupo de conceptos desactivado", "desactivacion", "Parametrización"),
     "GRUPO_ELIMINADO": ("Grupo de conceptos eliminado", "eliminacion", "Parametrización"),
     "ENTIDAD_ACTUALIZADA": ("Datos de la entidad actualizados", "edicion", "Parametrización"),
+    "HOMOLOGACION_ACTUALIZADA": ("Homologación de estados actualizada", "edicion", "Parametrización"),
     "CORTE_GENERADO": ("Corte generado", "calculo", "Extracción"),
     "CORTE_VALIDADO": ("Corte validado", "modificacion", "Extracción"),
     "ENVIO_REGISTRADO": ("Envío registrado", "modificacion", "Extracción"),
@@ -59,6 +60,9 @@ EVENTOS = {
     "NOVEDAD_RECHAZADA": ("Novedad rechazada", "modificacion", "Novedades en Línea"),
     "RECTIFICACION_REGISTRADA": ("Rectificación registrada", "correccion", "Novedades en Línea"),
     "RECTIFICACION_CONFIRMADA": ("Rectificación confirmada", "edicion", "Novedades en Línea"),
+    "RECLAMO_REGISTRADO": ("Reclamo registrado", "creacion", "Novedades en Línea"),
+    "RECLAMO_CERRADO": ("Reclamo cerrado", "edicion", "Novedades en Línea"),
+    "RECLAMO_INSUMO_GENERADO": ("Insumo de reclamos generado", "exportacion", "Novedades en Línea"),
 }
 
 _COLUMNAS = (
