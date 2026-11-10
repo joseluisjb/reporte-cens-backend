@@ -11,7 +11,9 @@
    (verificada contra la p. 40 y contra la constante MX del mockup v3). La prueba
    tests/test_matriz_estados.py falla si este archivo y la Matriz se separan.
 
-   CON_MORA_DESDE y CON_MORA_HACIA: S = con mora (m), N = sin mora (n).
+   CON_MORA_DESDE y CON_MORA_HACIA: S = con mora (m), N = sin mora (n). En la tabla
+   real las columnas son ESTADO_ORIGEN, MORA_ORIGEN ('M'/'N'), ESTADO_DESTINO,
+   MORA_DESTINO y PERMITIDO (script base 01); la consulta las traduce.
    PERMITIDA: S = TransUnion acepta el cambio, N = lo rechaza (error 713).
 
    Es de solo lectura: no crea ni modifica objetos. Ejecutar en el esquema de
@@ -829,7 +831,16 @@ comparacion AS (
             ELSE 'DIFIERE'
         END AS RESULTADO
     FROM esperada e
-    FULL OUTER JOIN NEXOVOLT.NV_TRANSICION_ESTADO r
+    FULL OUTER JOIN (
+        -- Columnas reales (script base 01): la mora va como 'M'/'N'.
+        SELECT ESTADO_ORIGEN AS ESTADO_DESDE,
+               CASE MORA_ORIGEN WHEN 'M' THEN 'S' ELSE 'N' END AS CON_MORA_DESDE,
+               ESTADO_DESTINO AS ESTADO_HACIA,
+               CASE MORA_DESTINO WHEN 'M' THEN 'S' ELSE 'N' END AS CON_MORA_HACIA,
+               PERMITIDO AS PERMITIDA
+        FROM NEXOVOLT.NV_TRANSICION_ESTADO
+        WHERE TIPO_CARTERA = 2
+    ) r
       ON  r.ESTADO_DESDE   = e.ESTADO_DESDE
       AND r.CON_MORA_DESDE = e.CON_MORA_DESDE
       AND r.ESTADO_HACIA   = e.ESTADO_HACIA
@@ -1654,7 +1665,16 @@ SELECT
     e.PERMITIDA                               AS ESPERADA,
     r.PERMITIDA                               AS EN_TABLA
 FROM esperada e
-FULL OUTER JOIN NEXOVOLT.NV_TRANSICION_ESTADO r
+FULL OUTER JOIN (
+        -- Columnas reales (script base 01): la mora va como 'M'/'N'.
+        SELECT ESTADO_ORIGEN AS ESTADO_DESDE,
+               CASE MORA_ORIGEN WHEN 'M' THEN 'S' ELSE 'N' END AS CON_MORA_DESDE,
+               ESTADO_DESTINO AS ESTADO_HACIA,
+               CASE MORA_DESTINO WHEN 'M' THEN 'S' ELSE 'N' END AS CON_MORA_HACIA,
+               PERMITIDO AS PERMITIDA
+        FROM NEXOVOLT.NV_TRANSICION_ESTADO
+        WHERE TIPO_CARTERA = 2
+    ) r
   ON  r.ESTADO_DESDE   = e.ESTADO_DESDE
   AND r.CON_MORA_DESDE = e.CON_MORA_DESDE
   AND r.ESTADO_HACIA   = e.ESTADO_HACIA

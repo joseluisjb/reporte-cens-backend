@@ -115,3 +115,18 @@ def test_el_ciclo_lee_bien_las_400_casillas():
         if _transicion_permitida(permitidas, *clave) != (valor == "S")
     ]
     assert errores == []
+
+
+def test_la_consulta_usa_las_columnas_reales_de_nv_transicion_estado():
+    """Las pruebas simulan la base: esto fija los nombres del script base 01 (sección 3.6).
+
+    Con ESTADO_DESDE, CON_MORA_DESDE, ESTADO_HACIA, CON_MORA_HACIA y PERMITIDA, Oracle respondía
+    ORA-00904 y GET /matriz-estados/ y POST /ciclos/ daban 500 en Render.
+    """
+    from ciclo.servicios import _SQL_MATRIZ
+
+    for columna in ("TIPO_CARTERA", "ESTADO_ORIGEN", "MORA_ORIGEN", "ESTADO_DESTINO", "MORA_DESTINO", "PERMITIDO"):
+        assert columna in _SQL_MATRIZ
+    for columna in ("ESTADO_DESDE", "CON_MORA_DESDE", "ESTADO_HACIA", "CON_MORA_HACIA", "PERMITIDA"):
+        assert columna not in _SQL_MATRIZ
+    assert "WHEN 'M' THEN 'S'" in _SQL_MATRIZ
