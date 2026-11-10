@@ -2783,7 +2783,7 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ReclamoCerrarRequest' }
-            example: { resultado: Procedente, fecha_cierre: '2026-09-17', observacion_cierre: Se corrigió el titular de la obligación. }
+            example: { resultado: Procedente, fecha_cierre: '2026-09-17' }
       responses:
         '200':
           description: Reclamo cerrado.
@@ -2804,7 +2804,7 @@ paths:
                 vencido: false
                 resultado: Procedente
                 fecha_cierre: '2026-09-17'
-                observacion_cierre: Se corrigió el titular de la obligación.
+                observacion_cierre: null
                 registrado_por: Juan Pérez
                 fecha_registro: '2026-08-30T10:00:00-05:00'
         '400':
@@ -4555,12 +4555,12 @@ components:
         fecha_radicacion: { type: string, format: date }
         observacion: { type: string, maxLength: 500, nullable: true, description: Lo que dice el titular al radicar. No cambia al cerrar. }
         estado: { type: string, enum: [EN_RECLAMO, CERRADO] }
-        radicado_en_tu: { type: boolean, description: Si TransUnion ya devolvió el archivo de radicación (RF54). }
+        radicado_en_tu: { type: boolean, description: "Indica si el insumo de marcación ya se generó. No confirma la respuesta de TransUnion, que aún no puede asociarse a cada reclamo con el esquema actual." }
         fecha_limite_respuesta: { type: string, format: date, description: '15 días hábiles desde la radicación (prorrogables 8), sin contar fines de semana ni festivos de Colombia. La regla exacta de conteo (desde qué día se cuenta) está por confirmar con jurídica.' }
         vencido: { type: boolean, description: "`true` si sigue `EN_RECLAMO` después de la fecha límite." }
         resultado: { type: string, maxLength: 30, nullable: true }
         fecha_cierre: { type: string, format: date, nullable: true }
-        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'La respuesta al titular, registrada al cerrar.' }
+        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'No se persiste con el esquema actual; envía null u omite el campo. El resultado sí queda registrado.' }
         registrado_por: { type: string, nullable: true }
         fecha_registro: { type: string, format: date-time }
     ReclamoCreateRequest:
@@ -4577,7 +4577,7 @@ components:
       properties:
         resultado: { type: string, maxLength: 30 }
         fecha_cierre: { type: string, format: date }
-        observacion_cierre: { type: string, maxLength: 500, nullable: true }
+        observacion_cierre: { type: string, maxLength: 500, nullable: true, description: 'Debe omitirse o ser null hasta que el esquema incluya una columna para persistir la respuesta.' }
 
     # ── Novedades, eliminaciones y rectificaciones (pantalla 14, propuesta para Angel) ──
     TipoNovedad:
