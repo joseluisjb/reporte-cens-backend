@@ -35,6 +35,17 @@ class RefinanciacionesViewSet(viewsets.ViewSet):
                 {"detail": "Obligación no encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except refinanciaciones.ObligacionEliminada as exc:
+            return Response(
+                {
+                    "detail": (
+                        f"La obligación {exc.numero_obligacion} ha sido eliminada en TransUnion: "
+                        "no se puede refinanciar."
+                    ),
+                    "code": "obligacion_eliminada",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         except refinanciaciones.ObligacionCerrada as exc:
             return Response(
                 {

@@ -14,6 +14,12 @@ class ObligacionCerrada(Exception):
         super().__init__(f"La obligación {numero_obligacion} ya está cerrada.")
 
 
+class ObligacionEliminada(Exception):
+    def __init__(self, numero_obligacion):
+        self.numero_obligacion = numero_obligacion
+        super().__init__(f"La obligación {numero_obligacion} ha sido eliminada.")
+
+
 class TransicionNoPermitida(Exception):
     def __init__(self, estado_desde):
         self.estado_desde = estado_desde
@@ -35,7 +41,7 @@ _CIERRE_POR_ESTADO = {
 #       4=OBLIGACION_ORIGEN_ID, 5=o_orig.NUMERO_OBLIGACION_TU,
 #       6=NOMBRE_TITULAR, 7=NVL(rd_orig.ESTADO_TU,'01'),
 #       8=OBLIGACION_NUEVA_ID, 9=o_nueva.NUMERO_OBLIGACION_TU,
-#       10=NVL(rd_nueva.ESTADO_TU,'01'), 11=NVL(rd_nueva.N_REESTRUCTURACIONES,1),
+#       10=NVL(rd_nueva.ESTADO_TU,'01'), 11=profundidad de cadena (N_REESTRUCTURACIONES),
 #       12=SALDO_REFINANCIADO, 13=NATURALEZA, 14=nat.DESCRIPCION,
 #       15=nat.CONFIRMADO, 16=N_CUOTAS, 17=u.NOMBRE
 _SELECT_REFINANCIACION = (
@@ -46,7 +52,9 @@ _SELECT_REFINANCIACION = (
     "NVL(rd_orig.ESTADO_TU, '01') ESTADO_TU_ORIG, "
     "r.OBLIGACION_NUEVA_ID, o_nueva.NUMERO_OBLIGACION_TU, "
     "NVL(rd_nueva.ESTADO_TU, '01') ESTADO_TU_NUEVA, "
-    "NVL(rd_nueva.N_REESTRUCTURACIONES, 1), "
+    "(SELECT COUNT(*) FROM NEXOVOLT.NV_REFINANCIACION r_cnt "
+    "START WITH r_cnt.OBLIGACION_NUEVA_ID = r.OBLIGACION_NUEVA_ID "
+    "CONNECT BY r_cnt.OBLIGACION_NUEVA_ID = PRIOR r_cnt.OBLIGACION_ORIGEN_ID), "
     "r.SALDO_REFINANCIADO, r.NATURALEZA, nat.DESCRIPCION, nat.CONFIRMADO, "
     "r.N_CUOTAS, u.NOMBRE"
 )
@@ -142,17 +150,20 @@ def crear_refinanciacion(data, usuario=None):
                 raise ObligacionNoEncontrada()
             cliente_id, numero_proceso, numero_obligacion, cierre_definitivo, eliminada = row
 
-            if cierre_definitivo == "S" or eliminada == "S":
+            if eliminada == "S":
+                raise ObligacionEliminada(numero_obligacion)
+            if cierre_definitivo == "S":
                 raise ObligacionCerrada(numero_obligacion)
 
             cursor.execute(
-                "SELECT ESTADO_TU FROM NEXOVOLT.NV_REPORTE_DETALLE "
+                "SELECT ESTADO_TU, VALOR_SALDO FROM NEXOVOLT.NV_REPORTE_DETALLE "
                 "WHERE OBLIGACION_ID = %s "
                 "ORDER BY CORTE_ID DESC FETCH FIRST 1 ROW ONLY",
                 [obligacion_id],
             )
             estado_row = cursor.fetchone()
             estado_actual = estado_row[0] if estado_row else None
+            saldo_refinanciado = int(estado_row[1]) if estado_row and estado_row[1] is not None else None
 
             if estado_actual in ("02", "07"):
                 raise ObligacionCerrada(numero_obligacion)
@@ -188,11 +199,18 @@ def crear_refinanciacion(data, usuario=None):
             cursor.execute(
                 "INSERT INTO NEXOVOLT.NV_REFINANCIACION "
                 "(REFINANCIACION_ID, OBLIGACION_ORIGEN_ID, OBLIGACION_NUEVA_ID, "
-                "FECHA, NATURALEZA, N_CUOTAS, ORIGEN, USUARIO_ID) "
-                "VALUES (%s, %s, %s, %s, %s, %s, 'MANUAL', %s)",
+                "FECHA, NATURALEZA, N_CUOTAS, SALDO_REFINANCIADO, ORIGEN, USUARIO_ID) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 'MANUAL', %s)",
                 [refinanciacion_id, obligacion_id, nueva_obligacion_id,
-                 fecha, naturaleza_codigo, numero_cuotas,
+                 fecha, naturaleza_codigo, numero_cuotas, saldo_refinanciado,
                  getattr(usuario, "pk", None)],
+            )
+
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_OBLIGACION "
+                "SET CIERRE_DEFINITIVO = 'S', FECHA_CIERRE = %s "
+                "WHERE OBLIGACION_ID = %s",
+                [fecha, obligacion_id],
             )
 
     with tolerar_fallo_bitacora("REFINANCIACION_REGISTRADA"):

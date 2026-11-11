@@ -79,7 +79,7 @@ def test_crear_refinanciacion_manual_inserta_obligacion_y_refinanciacion():
     conn, cursor = _mock_conn()
     cursor.fetchone.side_effect = [
         (5001, 99, "2255-7788", "N", "N"),  # obligación
-        ("01",),                             # último estado reportado
+        ("01", 4380000),                     # último estado reportado + saldo
         ("REESTRUCTURACION VOLUNTARIA",),    # naturaleza
         (1,),                               # SEQ_NV_REFINANCIACION
         (12,),                              # SEQ_NV_OBLIGACION
@@ -104,13 +104,12 @@ def test_crear_refinanciacion_manual_inserta_obligacion_y_refinanciacion():
     assert resultado["obligacion_original"]["estado_cierre"] == "02"
     assert resultado["obligacion_nueva"]["numero_obligacion"] == "REFI-1"
 
-    inserts = [
-        str(call.args[0])
-        for call in cursor.execute.call_args_list
-        if call.args and "INSERT INTO NEXOVOLT" in str(call.args[0])
-    ]
+    sqls = [str(call.args[0]) for call in cursor.execute.call_args_list if call.args]
+    inserts = [s for s in sqls if "INSERT INTO NEXOVOLT" in s]
+    updates = [s for s in sqls if "UPDATE NEXOVOLT.NV_OBLIGACION" in s]
     assert any("NV_OBLIGACION" in s for s in inserts)
-    assert any("NV_REFINANCIACION" in s and "'MANUAL'" in s for s in inserts)
+    assert any("NV_REFINANCIACION" in s and "'MANUAL'" in s and "SALDO_REFINANCIADO" in s for s in inserts)
+    assert any("CIERRE_DEFINITIVO" in s for s in updates)
 
 
 def test_crear_obligacion_no_encontrada_lanza_excepcion():
@@ -144,6 +143,25 @@ def test_post_obligacion_no_encontrada_responde_404():
         response = RefinanciacionesViewSet.as_view({"post": "create"})(request)
 
     assert response.status_code == 404
+
+
+def test_post_obligacion_eliminada_responde_409():
+    with patch(
+        "novedades.refinanciaciones_views.refinanciaciones.crear_refinanciacion",
+        side_effect=refinanciaciones.ObligacionEliminada("2255-7788"),
+    ):
+        request = APIRequestFactory().post(
+            "/api/refinanciaciones/",
+            {"obligacion_original_id": 11, "naturaleza": "01",
+             "numero_cuotas": 12, "fecha": "2026-09-28"},
+            format="json",
+        )
+        force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+        response = RefinanciacionesViewSet.as_view({"post": "create"})(request)
+
+    assert response.status_code == 409
+    assert response.data["code"] == "obligacion_eliminada"
+    assert "2255-7788" in response.data["detail"]
 
 
 def test_post_obligacion_cerrada_responde_409():
