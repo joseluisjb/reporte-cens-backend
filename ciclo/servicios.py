@@ -1379,6 +1379,88 @@ def obtener_obligacion(obligacion_id):
 _ESTADOS_CERRADOS = {"02", "07"}
 
 
+def _contar_en_reclamo():
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_RECLAMO WHERE ESTADO = 'EN_RECLAMO'"
+        )
+        return cursor.fetchone()[0]
+
+
+def _contar_novedades_pendientes():
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_NOVEDAD WHERE ESTADO = 'PENDIENTE'"
+        )
+        return cursor.fetchone()[0]
+
+
+def obtener_panel_resumen():
+    from cartera.servicios import listar_archivos
+    from parametros.servicios import datos_entidad
+
+    ultimo_corte = _obtener_ultimo_corte_ciclo()
+    en_reclamo = _contar_en_reclamo()
+    novedades_pendientes = _contar_novedades_pendientes()
+    entidad_con_marcador = datos_entidad()["con_marcador"]
+
+    if ultimo_corte is None:
+        return {
+            "fecha_ultimo_ciclo": None,
+            "total_obligaciones": 0,
+            "distribucion": [],
+            "ultimo_archivo": None,
+            "en_reclamo": en_reclamo,
+            "novedades_pendientes": novedades_pendientes,
+            "con_dos_o_mas_cuotas": 0,
+            "entidad_con_marcador": entidad_con_marcador,
+        }
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT FECHA_CORTE FROM NEXOVOLT.NV_CORTE WHERE CORTE_ID = %s",
+            [ultimo_corte],
+        )
+        row = cursor.fetchone()
+    fecha_ultimo_ciclo = fecha_str(row[0]) if row else None
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT rd.ESTADO_TU, COUNT(*) "
+            "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "WHERE rd.CORTE_ID = %s "
+            "GROUP BY rd.ESTADO_TU ORDER BY rd.ESTADO_TU",
+            [ultimo_corte],
+        )
+        estado_rows = cursor.fetchall()
+
+    total_obligaciones = sum(r[1] for r in estado_rows)
+    distribucion = [{"estado_tu": r[0], "cantidad": r[1]} for r in estado_rows]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE "
+            "WHERE CORTE_ID = %s AND NVL(CUOTAS_MORA, 0) >= 2 "
+            "AND ESTADO_TU NOT IN ('02', '07')",
+            [ultimo_corte],
+        )
+        con_dos_o_mas_cuotas = cursor.fetchone()[0]
+
+    archivos = listar_archivos()
+    ultimo_archivo = archivos[0] if archivos else None
+
+    return {
+        "fecha_ultimo_ciclo": fecha_ultimo_ciclo,
+        "total_obligaciones": total_obligaciones,
+        "distribucion": distribucion,
+        "ultimo_archivo": ultimo_archivo,
+        "en_reclamo": en_reclamo,
+        "novedades_pendientes": novedades_pendientes,
+        "con_dos_o_mas_cuotas": con_dos_o_mas_cuotas,
+        "entidad_con_marcador": entidad_con_marcador,
+    }
+
+
 def obtener_resumen_obligaciones():
     """Resumen de la cartera por estado y por cuotas en mora (RF19)."""
     ultimo_corte = _obtener_ultimo_corte_ciclo()

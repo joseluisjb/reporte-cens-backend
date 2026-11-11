@@ -198,6 +198,16 @@ class HomologacionEstadosView(APIView):
         return Response(HomologacionSerializer(servicios.listar_homologaciones(), many=True).data)
 
 
+class CatalogoView(APIView):
+    permission_classes = [EsAnalistaOAdministrador]
+
+    def get(self, request, nombre):
+        items = servicios.listar_catalogo(nombre)
+        if items is None:
+            return Response({"detail": "Catálogo no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(items)
+
+
 class HomologacionEstadoView(APIView):
     """Actualizar la homologación de un estado del SAC (RF48). Solo el Administrador."""
 

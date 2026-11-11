@@ -505,6 +505,60 @@ def validar_homologacion(accion, estado_tu, estados):
     return {}
 
 
+_CATALOGOS_BD = {
+    "naturalezas-reestructuracion": (
+        "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_NATURALEZA_REESTR ORDER BY CODIGO"
+    ),
+    "motivos-eliminacion": (
+        "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_MOTIVO_ELIMINACION ORDER BY CODIGO"
+    ),
+    "tipologias-reclamo": (
+        "SELECT CODIGO, DESCRIPCION, CONFIRMADO FROM NEXOVOLT.NV_TIPOLOGIA_RECLAMO ORDER BY CODIGO"
+    ),
+}
+# Tablas del Manual Sector Real v34: los códigos los fija TransUnion, así que van confirmados.
+# Qué modos usa CENS en la práctica es otra pregunta (hoy 01 en los pagos y 16 en las refinanciaciones).
+_MODOS_EXTINCION = (  # Tabla 10, Modo de extinción
+    ("01", "Voluntario"),
+    ("02", "Proceso ejecutivo"),
+    ("03", "Mandatoria de pago"),
+    ("04", "Proceso ejecutivo con excepción"),
+    ("05", "Prescripción"),
+    ("07", "Dación en pago (solo aplica para créditos de vivienda)"),
+    ("11", "Novación"),
+    ("12", "Transacción"),
+    ("13", "Compensación"),
+    ("14", "Confusión"),
+    ("15", "Remisión"),
+    ("16", "Refinanciación"),
+    ("17", "Dada en cesión"),
+)
+_TIPOS_PAGO = (  # Tabla 15, Tipo de pago
+    ("01", "Voluntario"),
+    ("02", "No voluntario"),
+)
+_CATALOGOS_FIJOS = {
+    "modos-extincion": [
+        {"codigo": c, "descripcion": d, "confirmado": True} for c, d in _MODOS_EXTINCION
+    ],
+    "tipos-pago": [
+        {"codigo": c, "descripcion": d, "confirmado": True} for c, d in _TIPOS_PAGO
+    ],
+}
+
+
+def listar_catalogo(nombre):
+    """Items de un catálogo por nombre. None si el nombre no existe."""
+    if nombre in _CATALOGOS_FIJOS:
+        return _CATALOGOS_FIJOS[nombre]
+    sql = _CATALOGOS_BD.get(nombre)
+    if sql is None:
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        return [{"codigo": r[0], "descripcion": r[1], "confirmado": r[2] == "S"} for r in cursor.fetchall()]
+
+
 def actualizar_homologacion(estado_sac, accion, estado_tu, confirmado=False, usuario=None):
     """Reemplaza la acción, el estado y si CENS lo confirmó. La prioridad no se cambia aquí."""
     if not _leer_homologaciones(estado_sac):

@@ -18,7 +18,8 @@ class ReclamoSerializer(serializers.Serializer):
     fecha_radicacion = serializers.CharField()
     observacion = serializers.CharField(allow_null=True)
     estado = serializers.ChoiceField(choices=["EN_RECLAMO", "CERRADO"])
-    radicado_en_tu = serializers.BooleanField()
+    marcacion_generada = serializers.BooleanField()
+    desmarcacion_generada = serializers.BooleanField()
     fecha_limite_respuesta = serializers.CharField(allow_null=True)
     vencido = serializers.BooleanField()
     resultado = serializers.CharField(allow_null=True)
@@ -67,11 +68,4 @@ class ReclamoCerrarSerializer(serializers.Serializer):
         value = value.strip()
         if not value:
             raise serializers.ValidationError("Registra el resultado del reclamo.")
-        return value
-
-    def validate_observacion_cierre(self, value):
-        if value and value.strip():
-            raise serializers.ValidationError(
-                "La base actual solo almacena el resultado del reclamo."
-            )
         return value

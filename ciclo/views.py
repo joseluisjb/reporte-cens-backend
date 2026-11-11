@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.formatos import fecha_str
 from config.paginacion import parsear_paginacion
 from usuarios.permisos import EsAnalista
 from ciclo import servicios
@@ -15,6 +16,16 @@ from ciclo.serializers import (
     ObligacionDetalleSerializer,
     ResumenObligacionesSerializer,
 )
+
+
+def _descripcion_evento(evento, nombres):
+    """Nombre del estado (Tabla 4b, leído de NV_ESTADO_TU) y, si hay mora, días y cuotas."""
+    nombre = nombres.get(evento["estado_tu"], evento["estado_tu"])
+    dias = evento.get("dias_mora")
+    if dias and int(dias) > 0:
+        cuotas = evento.get("cuotas_mora") or 0
+        return f"{nombre} · {int(dias)} días en mora, {int(cuotas)} cuotas"
+    return nombre
 
 
 class MatrizEstadosView(APIView):
@@ -123,6 +134,28 @@ class ObligacionesViewSet(viewsets.ViewSet):
         resultado = servicios.obtener_resumen_obligaciones()
         return Response(ResumenObligacionesSerializer(resultado).data)
 
+    @action(detail=True, methods=["get"], url_path="linea-tiempo")
+    def linea_tiempo(self, request, pk=None):
+        from historial.servicios import linea_tiempo_deudor, ObligacionNoEncontrada
+        from parametros.servicios import listar_estados_tu
+        try:
+            eventos = linea_tiempo_deudor(int(pk))
+        except ObligacionNoEncontrada:
+            return Response(
+                {"detail": "Obligación no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        nombres = {e["codigo"]: e["nombre"] for e in listar_estados_tu()}
+        return Response([
+            {
+                "fecha": fecha_str(e["fecha_corte"]),
+                "estado_tu": e["estado_tu"],
+                "edad_mora": e["edad_mora"] or "00",
+                "descripcion": _descripcion_evento(e, nombres),
+            }
+            for e in eventos
+        ])
+
     def retrieve(self, request, pk=None):
         try:
             obl = servicios.obtener_obligacion(int(pk))
@@ -132,3 +165,10 @@ class ObligacionesViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(ObligacionDetalleSerializer(obl).data)
+
+
+class PanelView(APIView):
+    permission_classes = [EsAnalista]
+
+    def get(self, request):
+        return Response(servicios.obtener_panel_resumen())

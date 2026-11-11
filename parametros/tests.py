@@ -1144,3 +1144,15 @@ def test_put_homologacion_estado_vacio_se_toma_como_nulo():
         "fecha_actualizacion": None}) as actualizar:
         _peticion_homologacion(HomologacionEstadoView, "put", "ADMINISTRADOR", {"accion": "CIERRE", "estado_tu": ""}, estado_sac="F")
     assert actualizar.call_args.args == ("F", "CIERRE", None, False)
+
+
+def test_los_sql_de_rf48_usan_las_mismas_columnas_que_el_servicio():
+    # El servicio, el script 12a y su verificación deben nombrar igual las columnas de NV_ESTADO_TU.
+    from pathlib import Path
+
+    carpeta = Path(servicios.__file__).parent / "sql"
+    codigo, nombre = servicios._COL_ESTADO_TU["codigo"], servicios._COL_ESTADO_TU["nombre"]
+    script = (carpeta / "12a_rf48_homologacion_estados.sql").read_text(encoding="utf-8")
+    verificacion = (carpeta / "verificacion_12a_rf48_homologacion_estados.sql").read_text(encoding="utf-8")
+    assert f"WHEN {codigo} IN" in script
+    assert f"SELECT {codigo}, {nombre}, ES_CIERRE" in verificacion
