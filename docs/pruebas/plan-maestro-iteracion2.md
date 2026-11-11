@@ -1,6 +1,6 @@
 # Plan maestro de pruebas — Iteración 2
 
-**NexoVolt · HU-B (ciclo de vida y estados) y HU-C (reporte, reclamos y novedades) · Responsable: Santiago (Líder de QA) · Versión 1, 09/11/2026**
+**NexoVolt · HU-B (ciclo de vida y estados) y HU-C (reporte, reclamos y novedades) · Responsable: Santiago (Líder de QA) · Versión 2, 10/11/2026**
 
 Este plan dice qué se prueba en la Iteración 2, quién lo prueba, con qué datos y cuándo un RF se da por aceptado. Los casos salen de los «Listo cuando» de cada ficha (`docs/instrucciones/Distribucion_RF_Iteracion2_resumen_RF_y_prompts_v2.md`) y de los RF corregidos (`docs/iteracion2/RF_ITERACION2.md`). Los datos son **ficticios**: ningún dato de CENS aparece aquí.
 
@@ -102,38 +102,42 @@ Cada defecto se reporta así: código, RF y caso (`CP-B-nn`/`CP-C-nn`), entrada,
 
 La Matriz de la p. 40 tiene 400 casillas: 10 estados de origen × con o sin mora × 10 estados de destino × con o sin mora. Se prueba en dos partes:
 
-1. **En el CI** (`tests/test_matriz_estados.py`, 16 pruebas): compara casilla por casilla la transcripción del Manual (`docs/iteracion2/MATRIZ_ESTADOS_SERVICIOS.md`) con la constante `MX` del mockup v3, comprueba que el ciclo lee bien las 400 (`ciclo.servicios._transicion_permitida`), que 02 y 07 no tienen salidas y las casillas que nombran las fichas (RF12, RF14, RF15, RF45, RF46). Resultado del 09/11/2026: **400 de 400 coinciden**.
-2. **En Oracle de desarrollo** (`config/sql/verificacion_matriz_transiciones.sql`): compara `NV_TRANSICION_ESTADO` con las 400 casillas esperadas. La primera consulta da el resumen (coinciden, difieren, faltan, sobran y porcentaje de aciertos); la segunda lista cada casilla distinta para reportarla como DF. Se corre después del script 12. Hoy la tabla solo trae la regla «02 y 07 no aceptan cambios», así que el resultado esperado antes del script 12 es un porcentaje bajo con casi todo en `FALTA_EN_TABLA`.
+1. **En el CI** (`tests/test_matriz_estados.py`): compara casilla por casilla la transcripción del Manual (`docs/iteracion2/MATRIZ_ESTADOS_SERVICIOS.md`) con la constante `MX` del mockup v3, comprueba que el ciclo lee bien las 400 (`ciclo.servicios._transicion_permitida`), que 02 y 07 no tienen salidas y las casillas que nombran las fichas (RF12, RF14, RF15, RF45, RF46). Resultado del 09/11/2026: **400 de 400 coinciden**.
+2. **En Oracle de desarrollo** (`config/sql/verificacion_matriz_transiciones.sql`): compara `NV_TRANSICION_ESTADO` con las 400 casillas esperadas. La primera consulta da el resumen (coinciden, difieren, faltan, sobran y porcentaje de aciertos); la segunda lista cada casilla distinta para reportarla como DF. Usa las columnas reales del script base 01 (`ESTADO_ORIGEN`, `MORA_ORIGEN` en `M`/`N`, `ESTADO_DESTINO`, `MORA_DESTINO`, `PERMITIDO`) y filtra `TIPO_CARTERA = 2`. Se corre después de `config/sql/12_matriz_transiciones_servicios.sql`; el resultado esperado es 400 de 400 (100 %).
 
 La prueba del CI también vigila que el SQL de verificación no se separe de la Matriz.
 
-## 7. Estado al 09/11/2026
+## 7. Estado al 10/11/2026
 
-Revisado contra `dev` de los dos repos.
+Revisado contra `dev` de los dos repos. Ya existen en `dev`: el script 12 (matriz completa), los datos de prueba v2 (`extraccion/sql/03_datos_prueba_v2.sql`, con su README) y el script 12a de RF48. El script 10 (columnas, catálogos y marcadores `XXX` de la entidad) todavía no existe.
 
-| RF | Base de datos | Backend | Pantalla | Pruebas independientes que ya se pueden hacer | Bloqueo |
-|---|---|---|---|---|---|
-| RF10–RF17, RF19 | Vistas 16–18 y scripts 13–15 en `dev` | En `dev` | 9 y 10 en `dev` | Backend (cursor simulado) y frontend (mocks) | Aceptación y SQL: datos v2 y scripts 10 y 12 |
-| RF18 | Script 11 en `dev` | **No existe** (Santiago) | 11 en `dev` | Frontend (mocks) | Backend: falta el número de proceso de la nueva obligación en `POST /refinanciaciones/` y `GET /catalogos/` |
-| RF20–RF22, RF51–RF53 | Vistas 17 y 18 en `dev` | **No existe** (Dilan) | 12 en `dev` | Frontend (mocks); SQL de las vistas cuando haya datos v2 | Backend del generador y de las validaciones |
-| RF23 | Script 11 en `dev` | Fusionado en **`main`, no en `dev`** | 13 **no existe** (Omar) | Ninguna | Llevar el backend a `dev` y la pantalla 13 |
-| RF24, RF50 | Script 11 en `dev` | En `dev` | 14 en `dev` | Backend y frontend | Aceptación: datos v2 |
-| RF45–RF47, RF49 | Vistas en `dev` | En `dev` | 9 y 10 en `dev` | Backend y frontend | Aceptación: datos v2 |
-| RF48 | **Script 12 no existe** (Clara) | **No existe** (Santiago) | 16 en `dev` | Frontend (mocks) | Columnas `USADO` y `ACCION` del script 12 |
-| RF54 | Script 11 en `dev` | En `dev` | 12 en `dev` | Backend y frontend | Aceptación: datos v2 |
-| RF55 | Script 11 en `dev` | Rama sin fusionar (Clara) | 14 en `dev` | Frontend (mocks) | Revisión y fusión del backend |
-| RF57 | Usa `NV_PARAMETRO` (marcadores del script 10 pendientes) | En `dev` | 15 en `dev` | Backend y frontend | Prueba contra Oracle |
+| RF | Backend | Pantalla | Pruebas independientes | Pendiente |
+|---|---|---|---|---|
+| RF10–RF17, RF19, RF45–RF47, RF49 | En `dev` | 9 y 10 en `dev` | Backend, frontend y aceptación (con los datos v2 en Oracle de desarrollo) | — |
+| RF18 | En `dev` (PR #82) | 11 en `dev` | Backend, frontend y aceptación | — |
+| RF20, RF51 | Rama `feature/RF20-RF51-archivo-plano` (Dilan), **sin fusionar** | 12 en `dev` | Frontend (mocks) | Fusión del backend |
+| RF21, RF22, RF52, RF53 | Rama `feature/RF21-RF22-RF52-RF53-validacion-corte` (Dilan), **sin fusionar**; vista 17 en `dev` | 12 en `dev` | Frontend (mocks); SQL de la vista 17 | Fusión del backend; OBS-05 |
+| RF23 | En `dev` | 13 en `dev` (PR #61) | Backend, frontend y aceptación | — |
+| RF24, RF50, RF54, RF55 | En `dev` | 12 y 14 en `dev` | Backend, frontend y aceptación | — |
+| RF48 | En `dev` (PR #57) | 16 en `dev` | Backend y frontend | Aplicar el script 12a en Oracle de desarrollo y revisar OBS-06 |
+| RF57 | En `dev` | 15 en `dev` | Backend, frontend y aceptación | Marcadores `XXX` del script 10 (mientras tanto el backend trata `PENDIENTE`/`PEND` como marcador) |
 
 ## 8. Observaciones para revisar
 
 No son defectos confirmados: se registran para que el dueño los mire antes de la prueba independiente.
 
-| N.º | Observación | Dueño |
-|---|---|---|
-| OBS-01 | Las consultas del ciclo a `NV_TRANSICION_ESTADO` no filtran por tipo de cartera. Si el script 12 carga también Comercio en la misma tabla, el ciclo mezclaría las dos matrices. Confirmar el esquema de la tabla al escribir el script 12 | Clara · José Luis |
-| OBS-02 | El backend de RF23 (PR #53) se fusionó en `main` y no en `dev`: `dev` no tiene reclamos y `main` no tiene RF45, RF57 ni el contrato 0.9.3 | Clara · Johan |
-| OBS-03 | El catálogo `NV_NATURALEZA_REESTR` del script 11 carga 01, 02, 03 y 99 con `CONFIRMADO = 'N'`. Confirmar que los códigos salen de la Tabla 11 del Manual; si no, no deben cargarse | Angel · Santiago |
-| OBS-04 | Los scripts 10 y 12 todavía no existen; sin ellos no hay marcadores `XXX` de la entidad, ni la matriz completa, ni la homologación con acción | Clara |
+| N.º | Observación | Dueño | Estado |
+|---|---|---|---|
+| OBS-01 | Las consultas del ciclo a `NV_TRANSICION_ESTADO` no filtraban por tipo de cartera y usaban columnas que no existen en la tabla | Johan | **Resuelta** en el PR #75 (columnas reales y `TIPO_CARTERA = 2`) |
+| OBS-02 | El backend de RF23 (PR #53) se fusionó en `main` y no en `dev` | Clara · Johan | **Resuelta**: RF23 está en `dev` |
+| OBS-03 | El catálogo `NV_NATURALEZA_REESTR` del script 11 carga 01, 02, 03 y 99 con `CONFIRMADO = 'N'`. Confirmar que los códigos salen de la Tabla 11 del Manual; si no, no deben cargarse | Angel · Santiago | Abierta |
+| OBS-04 | El script 10 no existe: no hay marcadores `XXX` de la entidad ni las columnas nuevas de `NV_REPORTE_DETALLE` y `NV_OBLIGACION` que asume la ficha | Clara | Abierta (el script 12 ya existe) |
+| OBS-05 | La regla `ESTADO_SIN_HOMOLOGAR` de `V_VALIDACION_CORTE` (script 17) revisa el estado ya calculado (`NV_REPORTE_DETALLE.ESTADO_TU`) contra `NV_ESTADO_TU`, no el estado del crédito en el SAC contra `NV_HOMOLOGA_ESTADO`. Un crédito en B o D sin homologar no la dispara, y la ficha RF48 pide que bloquee la obligación (E13, CP-B-55) | Angel | Abierta |
+| OBS-06 | Con el script 12a, F pasa a `ACCION = CIERRE` con `ESTADO_TU` nulo. Las vistas que viven solo en Oracle (`V_CREDITO_REPORTABLE`, `V_OBLIGACION_SAC`, `V_CALCULO_CORTE`) deben leer la acción y no `ESTADO_TU = '02'`, o los créditos en F quedan sin estado | Clara · José Luis | Abierta |
+
+### Limitaciones conocidas del mock del frontend
+
+- **Ciclo simulado:** `POST /ciclos/` reemplaza `db.obligaciones` con la foto fija del 2026-10-31, que reutiliza los ids 13 a 15. Una refinanciación registrada a mano antes del ciclo se pierde en el mock (con el backend real no pasa). Está en `reporte-cens-frontend/docs/GUIA_EQUIPO.md` («Límite del mock del ciclo»); la prueba independiente de CP-B-37 escribe ese comportamiento y avisa si cambia.
 
 ## 9. Trazabilidad RF a casos
 
