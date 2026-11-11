@@ -171,7 +171,7 @@ def linea_tiempo_deudor(obligacion_id):
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_CORTE c ON rd.CORTE_ID = c.CORTE_ID "
             "WHERE rd.OBLIGACION_ID = %s AND c.ESTADO != 'ANULADO' "
-            "ORDER BY c.FECHA_CORTE",
+            "ORDER BY c.FECHA_CORTE DESC",
             [obligacion_id],
         )
         filas = cursor.fetchall()
