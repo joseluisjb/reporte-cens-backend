@@ -16,10 +16,10 @@
    verificarla esta config/sql/verificacion_matriz_transiciones.sql.
 
    ANTES DE EJECUTAR
-     a. Correr la seccion 0 de verificacion_12a_rf48_homologacion_estados.sql y
-        confirmar que la columna del codigo en NV_ESTADO_TU se llama ESTADO_TU y la
-        del nombre DESCRIPCION. Si se llaman distinto, cambiarlas aqui y en
-        parametros/servicios.py (constantes _COL_ESTADO_TU).
+     a. En NV_ESTADO_TU el codigo es CODIGO_ESTADO y el nombre NOMBRE (script base
+        01, confirmado el 10/11/2026). Si la base cambia, actualizarlos aqui, en
+        verificacion_12a_rf48_homologacion_estados.sql y en parametros/servicios.py
+        (constante _COL_ESTADO_TU). La seccion 0 de la verificacion los lista.
      b. Revisar las vistas que viven solo en Oracle (V_CREDITO_REPORTABLE,
         V_OBLIGACION_SAC, V_CALCULO_CORTE): si alguna toma el estado de F de
         NV_HOMOLOGA_ESTADO.ESTADO_TU = 02, debe pasar a leer ACCION = CIERRE. Si no,
