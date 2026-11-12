@@ -208,6 +208,17 @@ def _setup_ciclo(
     ]
 
 
+# Casillas S de cierre por pago total del Manual (v34 p. 40): destino 02/07 sin mora.
+_MATRIZ_CIERRES = [
+    ('01', 'N', '02', 'N'),
+    ('01', 'S', '02', 'N'),
+    ('08', 'N', '02', 'N'),
+    ('08', 'S', '02', 'N'),
+    ('03', 'S', '07', 'N'),
+    ('06', 'S', '07', 'N'),
+]
+
+
 # ── Casos RF10 ────────────────────────────────────────────────────────────────
 
 def test_ciclo_obligacion_nueva_al_dia():
@@ -1112,6 +1123,7 @@ def test_rf17_ciclo_cubre_saldo_cierra_rf12():
         edad_anterior="01",
         estado_anterior="01",
         mora_anterior=140000,
+        matriz=_MATRIZ_CIERRES,
     )
 
     with _patch_ciclo(mock_conn):
@@ -1655,3 +1667,148 @@ def test_rf49_al_dia_exigibilidad_nula():
 
     assert result["fecha_exigibilidad"] is None
     assert result["anios_mora"] is None
+
+
+# ── DF-01 · Cierre por pago total según la Matriz (RF12, RF15) ───────────────
+
+def _ciclo_cierre(estado_anterior, mora_anterior, matriz=_MATRIZ_CIERRES):
+    """Ejecuta el ciclo con una obligación (no primer reporte) que paga todo."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (90, "01", 0, "00", "Titular Cierre", "2250-9001",
+         0, None, 100000, 0, date(2026, 10, 20), 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior=estado_anterior,
+        mora_anterior=mora_anterior,
+        matriz=matriz,
+    )
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+    sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
+    return resultado, sqls
+
+
+def _hay_713(sqls):
+    return any(
+        "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in s and "CAMBIO_ESTADO_INVALIDO" in s
+        for s in sqls
+    )
+
+
+def test_df01_cierre_desde_03_sin_mora_anterior_da_713():
+    """CP-B-25: 03 sin mora → 07 no está en la Matriz (03-n → 07-n = N)."""
+    resultado, sqls = _ciclo_cierre("03", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "713"
+    assert r["estado_anterior"] == "03"
+    assert r["estado_calculado"] == "07"
+    assert "sin mora" in r["motivo"]
+    assert _hay_713(sqls)
+    # No se ejecutó el UPDATE de cierre (_cerrar_obligacion) sobre el detalle.
+    assert not any(
+        "UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "EDAD_MORA = '00'" in s for s in sqls
+    )
+    assert len(resultado["transiciones"]) == 0
+
+
+def test_df01_cierre_desde_03_con_mora_anterior_cierra_en_07():
+    """CP-B-23: 03 con mora → 07 sí está permitido (RF15)."""
+    resultado, sqls = _ciclo_cierre("03", 150000)
+    assert resultado["cierres"] == 1
+    assert resultado["rechazados"] == 0
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "07"
+    assert t["reglas"][0]["rf"] == "RF15"
+    assert not _hay_713(sqls)
+
+
+def test_df01_cierre_desde_06_sin_mora_anterior_da_713():
+    resultado, sqls = _ciclo_cierre("06", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    assert resultado["rechazos"][0]["codigo"] == "713"
+    assert resultado["rechazos"][0]["estado_calculado"] == "07"
+    assert _hay_713(sqls)
+
+
+def test_df01_cierre_desde_06_con_mora_cierra_en_07():
+    resultado, sqls = _ciclo_cierre("06", 80000)
+    assert resultado["cierres"] == 1
+    assert resultado["transiciones"][0]["estado_nuevo"] == "07"
+    assert resultado["transiciones"][0]["reglas"][0]["rf"] == "RF15"
+    assert not _hay_713(sqls)
+
+
+def test_df01_cierre_desde_01_sin_mora_cierra_en_02():
+    """CP-B-24: 01 sin mora → 02 (RF12)."""
+    resultado, sqls = _ciclo_cierre("01", 0)
+    assert resultado["cierres"] == 1
+    assert resultado["transiciones"][0]["estado_nuevo"] == "02"
+    assert resultado["transiciones"][0]["reglas"][0]["rf"] == "RF12"
+    assert not _hay_713(sqls)
+
+
+def test_df01_cierre_desde_04_da_713():
+    """CP-B-13: Suspendida no puede cerrarse por pago total."""
+    resultado, sqls = _ciclo_cierre("04", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    assert resultado["rechazos"][0]["codigo"] == "713"
+    assert resultado["rechazos"][0]["estado_calculado"] == "02"
+    assert _hay_713(sqls)
+
+
+def test_df01_cierre_consulta_la_matriz():
+    """Con la Matriz vacía, hasta un 01 que paga todo da 713: la decisión sale de la Matriz."""
+    resultado, sqls = _ciclo_cierre("01", 0, matriz=[])
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    assert resultado["rechazos"][0]["codigo"] == "713"
+    assert _hay_713(sqls)
+
+
+def _matriz_manual_como_filas():
+    from tests.test_matriz_estados import MANUAL
+    return [
+        (desde, "S" if mora_desde else "N", hacia, "S" if mora_hacia else "N")
+        for (desde, mora_desde, hacia, mora_hacia), valor in MANUAL.items()
+        if valor == "S"
+    ]
+
+
+@pytest.mark.parametrize("con_mora", [False, True])
+@pytest.mark.parametrize(
+    "origen", ["01", "04", "08", "06", "03", "10", "11", "12"]
+)
+def test_df01_cierre_sigue_la_matriz_completa_del_manual(origen, con_mora):
+    from tests.test_matriz_estados import MANUAL
+    destino = "07" if origen in ("03", "06") else "02"
+    casilla = MANUAL[(origen, con_mora, destino, False)]
+    resultado, sqls = _ciclo_cierre(
+        origen, 100000 if con_mora else 0, matriz=_matriz_manual_como_filas()
+    )
+    if casilla == "S":
+        assert resultado["cierres"] == 1
+        assert resultado["rechazados"] == 0
+        assert resultado["transiciones"][0]["estado_nuevo"] == destino
+        assert not _hay_713(sqls)
+    else:
+        assert resultado["cierres"] == 0
+        assert resultado["rechazados"] == 1
+        assert resultado["rechazos"][0]["codigo"] == "713"
+        assert _hay_713(sqls)
+
+
+@pytest.mark.parametrize("origen", ["02", "07"])
+def test_df01_cierre_desde_02_y_07_se_conserva_sin_transicion(origen):
+    resultado, sqls = _ciclo_cierre(origen, 0, matriz=_matriz_manual_como_filas())
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 0
+    assert not _hay_713(sqls)

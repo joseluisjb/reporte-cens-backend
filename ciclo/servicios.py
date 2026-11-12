@@ -54,9 +54,8 @@ _ESTADOS_VALIDOS = {"01", "02", "03", "04", "06", "07", "08", "10", "11", "12"}
 _MODOS_EXTINCION = {"01": "Voluntario"}
 _TIPOS_PAGO = {"01": "Voluntario"}
 
-_ESTADOS_CIERRE_SALDADA = {"01", "08"}
-_ESTADOS_CIERRE_RECUPERADA = {"03", "06"}
-_ESTADOS_CIERRE_INVALIDO = {"04", "10", "11", "12"}
+# Estados de origen cuyo cierre por pago total es Cartera Recuperada (07).
+_ESTADOS_ORIGEN_RECUPERADA = {"03", "06"}
 
 
 # ── Validación 881 (primer reporte) ──────────────────────────────────────────
@@ -514,79 +513,67 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                 })
 
             elif valor_saldo_int == 0 and fecha_ultimo_pago is not None:
-                # RF12/RF15: cierre por pago total
-                if estado_anterior in _ESTADOS_CIERRE_SALDADA:
-                    # RF12: Vigente/Inactivo → Saldada (02)
-                    _cerrar_obligacion(
-                        corte_id, obligacion_id, "02", fecha_ultimo_pago, "01", "01"
-                    )
-                    n_cierres += 1
-                    rf_texto = "RF12 · Pago total: Saldada"
-                    filas_insert_trans.append((
-                        corte_id, obligacion_id, estado_anterior, "02",
-                        edad_mora or "00", "00",
-                        "N", "N",
-                        "RF12", rf_texto, "N",
-                    ))
-                    transiciones_data.append({
-                        "obligacion_id": obligacion_id,
-                        "numero_obligacion": numero_obl,
-                        "nombre_titular": nombre_titular,
-                        "estado_anterior": estado_anterior,
-                        "estado_nuevo": "02",
-                        "edad_anterior": edad_mora or "00",
-                        "edad_nueva": "00",
-                        "primer_reporte": False,
-                        "requiere_revision": False,
-                        "reglas": [{"rf": "RF12", "texto": rf_texto, "por_confirmar": False}],
-                    })
-
-                elif estado_anterior in _ESTADOS_CIERRE_RECUPERADA:
-                    # RF15: Dudoso/Castigada → Cartera Recuperada (07)
-                    _cerrar_obligacion(
-                        corte_id, obligacion_id, "07", fecha_ultimo_pago, "01", "01"
-                    )
-                    n_cierres += 1
-                    rf_texto = "RF15 · Pago total: Cartera Recuperada"
-                    filas_insert_trans.append((
-                        corte_id, obligacion_id, estado_anterior, "07",
-                        edad_mora or "00", "00",
-                        "N", "N",
-                        "RF15", rf_texto, "N",
-                    ))
-                    transiciones_data.append({
-                        "obligacion_id": obligacion_id,
-                        "numero_obligacion": numero_obl,
-                        "nombre_titular": nombre_titular,
-                        "estado_anterior": estado_anterior,
-                        "estado_nuevo": "07",
-                        "edad_anterior": edad_mora or "00",
-                        "edad_nueva": "00",
-                        "primer_reporte": False,
-                        "requiere_revision": False,
-                        "reglas": [{"rf": "RF15", "texto": rf_texto, "por_confirmar": False}],
-                    })
-
-                elif estado_anterior in _ESTADOS_CIERRE_INVALIDO:
-                    # 713: la Matriz no permite el cierre
-                    _insertar_inconsistencia_713(
-                        corte_id, obligacion_id,
-                        f"Cambio de estado inválido: {estado_anterior} → 02 "
-                        f"con saldo en cero (713).",
-                    )
-                    rechazos.append({
-                        "obligacion_id": obligacion_id,
-                        "numero_obligacion": numero_obl,
-                        "nombre_titular": nombre_titular,
-                        "estado_anterior": estado_anterior,
-                        "estado_calculado": "02",
-                        "codigo": "713",
-                        "motivo": "Cambio de estado inválido (713): la Matriz no permite el cierre.",
-                    })
-
-                else:
-                    # Estado anterior no conocido o ya cerrado → RF11
-                    pass
+                # RF12/RF15: cierre por pago total. El destino candidato es 07
+                # desde 03/06 (RF15) y 02 en los demás casos (RF12); si la Matriz
+                # (Manual v34 p. 40) no permite el origen (con o sin mora del
+                # último corte enviado) → destino sin mora, es inconsistencia 713.
+                # Sin estado anterior o ya cerrada (02/07): sin transición (RF11).
+                if estado_anterior is not None and estado_anterior not in ("02", "07"):
+                    destino = "07" if estado_anterior in _ESTADOS_ORIGEN_RECUPERADA else "02"
+                    con_mora_anterior = mora_anterior > 0
+                    if _transicion_permitida(
+                        matriz, estado_anterior, con_mora_anterior, destino, False
+                    ):
+                        _cerrar_obligacion(
+                            corte_id, obligacion_id, destino, fecha_ultimo_pago, "01", "01"
+                        )
+                        n_cierres += 1
+                        if destino == "07":
+                            rf_codigo = "RF15"
+                            rf_texto = "RF15 · Pago total: Cartera Recuperada"
+                        else:
+                            rf_codigo = "RF12"
+                            rf_texto = "RF12 · Pago total: Saldada"
+                        filas_insert_trans.append((
+                            corte_id, obligacion_id, estado_anterior, destino,
+                            edad_mora or "00", "00",
+                            "N", "N",
+                            rf_codigo, rf_texto, "N",
+                        ))
+                        transiciones_data.append({
+                            "obligacion_id": obligacion_id,
+                            "numero_obligacion": numero_obl,
+                            "nombre_titular": nombre_titular,
+                            "estado_anterior": estado_anterior,
+                            "estado_nuevo": destino,
+                            "edad_anterior": edad_mora or "00",
+                            "edad_nueva": "00",
+                            "primer_reporte": False,
+                            "requiere_revision": False,
+                            "reglas": [{"rf": rf_codigo, "texto": rf_texto, "por_confirmar": False}],
+                        })
+                    else:
+                        origen = (
+                            f"{estado_anterior} "
+                            f"{'en mora' if con_mora_anterior else 'sin mora'}"
+                        )
+                        _insertar_inconsistencia_713(
+                            corte_id, obligacion_id,
+                            f"Cambio de estado inválido: {origen} → {destino} "
+                            f"con saldo en cero (713).",
+                        )
+                        rechazos.append({
+                            "obligacion_id": obligacion_id,
+                            "numero_obligacion": numero_obl,
+                            "nombre_titular": nombre_titular,
+                            "estado_anterior": estado_anterior,
+                            "estado_calculado": destino,
+                            "codigo": "713",
+                            "motivo": (
+                                f"Cambio de estado inválido (713): la Matriz no "
+                                f"permite pasar de {origen} a {destino}."
+                            ),
+                        })
 
             else:
                 # ── RF46: Normalización sin pago total ───────────────────────
