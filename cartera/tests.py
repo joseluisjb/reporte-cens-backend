@@ -623,7 +623,7 @@ def test_rf49_validar_corte_bloquea_exigibilidad_futura():
         (
             "FECHA_EXIGIBILIDAD_FUTURA",
             "CORRECTIVA",
-            "La fecha de exigibilidad es posterior a la fecha del sistema (RF49).",
+            "La fecha de exigibilidad es posterior a la fecha del sistema.",
             7,
             "2259-1092",
         ),

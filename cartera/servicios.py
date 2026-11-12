@@ -290,7 +290,7 @@ def _registrar_estados_sin_homologar(corte_id):
             "SELECT %s, v.OBLIGACION_ID, 'ESTADO_SIN_HOMOLOGAR', 'CORRECTIVA', "
             "'Obligacion ' || NVL(o.NUMERO_OBLIGACION_TU, v.NUMERO_OBLIGACION_PROPUESTO) "
             "|| ': el estado ' || NVL(v.ESTADO_SAC, '(vacio)') || ' del SAC no esta homologado "
-            "y la obligacion no entra al corte. Homologuelo (RF48) y vuelva a generar el corte.', %s "
+            "y la obligacion no entra al corte. Homologuelo y vuelva a generar el corte.', %s "
             "FROM NEXOVOLT.V_CALCULO_CORTE v "
             "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = v.OBLIGACION_ID "
             "WHERE v.CORTE_ID = %s "
@@ -504,7 +504,7 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
 _REGLAS = {
     "ACTUALIZACION_MENSUAL": ("Actualización mensual del corte", ["RF10", "RF11"], None),
     "OMISION_VS_ULTIMO_CORTE": ("Obligaciones del último corte", ["RF21"], None),
-    "CIERRE_INCOMPLETO": ("Campos de cierre (RF22)", ["RF22"], None),
+    "CIERRE_INCOMPLETO": ("Campos de cierre", ["RF22"], None),
     "SIN_IDENTIFICACION": ("Identificación del titular", ["RF53"], "numero_identificacion"),
     "SIN_NOMBRE": ("Nombre del titular", ["RF53"], "nombre_titular"),
     "SIN_NUMERO_OBLIGACION": ("Número de obligación asignado", ["RF53"], "numero_obligacion"),
@@ -524,8 +524,8 @@ _REGLAS = {
     "SALDO_MAYOR_VALOR_INICIAL": ("Saldo frente al valor inicial", ["RF52"], "valor_saldo"),
     "VALOR_FUERA_DE_RANGO": ("Valores entre $10.000 y $99 millones", ["RF51"], "valor_saldo"),
     "EDAD_ALTA_SIN_EXIGIBILIDAD": ("Edad 12 a 14 con fecha de exigibilidad", ["RF49"], "fecha_limite_pago"),
-    "VALORES_EN_MILES": ("Valores en miles de pesos (RF51)", ["RF51"], None),
-    "ENTIDAD_CON_MARCADOR": ("Datos de la entidad (RF57)", ["RF57"], None),
+    "VALORES_EN_MILES": ("Valores en miles de pesos", ["RF51"], None),
+    "ENTIDAD_CON_MARCADOR": ("Datos de la entidad", ["RF57"], None),
 }
 # CIERRE_INCOMPLETO dice en el mensaje qué falló (script 17, regla 14).
 _CAMPO_CIERRE = (
@@ -535,8 +535,7 @@ _CAMPO_CIERRE = (
 )
 _REGLAS_DEL_CICLO = ("PRIMER_REPORTE_INVALIDO", "CAMBIO_ESTADO_INVALIDO")
 _DETALLE_MILES = (
-    "Los valores se reportan en miles de pesos, como enteros. "
-    "Regla de redondeo por confirmar con TransUnion."
+    "Los valores se reportan en miles de pesos, como enteros."
 )
 
 
@@ -676,7 +675,7 @@ def _detalle(regla, items):
     if regla == "ESTADO_SIN_HOMOLOGAR" and items:
         return (
             f"{len(items)} obligación(es) con un estado sin homologar: "
-            "homologue el estado del SAC (RF48) y vuelva a generar el corte."
+            "homologue el estado del SAC y vuelva a generar el corte."
         )
     if not items:
         return "Sin observaciones."
