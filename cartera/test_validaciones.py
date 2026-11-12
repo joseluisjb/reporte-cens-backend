@@ -334,7 +334,7 @@ def _fila_sin_homologar(obligacion_id=None, numero=None):
     return (
         "ESTADO_SIN_HOMOLOGAR", "CORRECTIVA",
         "Obligacion 2260-0001: el estado B del SAC no esta homologado y la obligacion no entra al corte. "
-        "Homologuelo (RF48) y vuelva a generar el corte.",
+        "Homologuelo y vuelva a generar el corte.",
         obligacion_id, numero,
     )
 
@@ -386,7 +386,7 @@ def test_cp_b_55_validaciones_cuenta_las_obligaciones_sin_homologar():
     assert resultado["puede_generar"] is False
     assert regla["detalle"] == (
         "2 obligación(es) con un estado sin homologar: "
-        "homologue el estado del SAC (RF48) y vuelva a generar el corte."
+        "homologue el estado del SAC y vuelva a generar el corte."
     )
 
 
