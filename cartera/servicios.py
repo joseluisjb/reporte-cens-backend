@@ -764,8 +764,6 @@ _PATRONES_TIPO_ARCHIVO = [
     (re.compile(r"^Esta_Inco_", re.IGNORECASE), "ESTADISTICOS"),
     (re.compile(r"^est\.", re.IGNORECASE), "ESTADISTICOS"),
     (re.compile(r"^norep\.", re.IGNORECASE), "NOREP"),
-    (re.compile(r"^radicacion_", re.IGNORECASE), "RADICACION"),
-    (re.compile(r"^cierre_reclamo_", re.IGNORECASE), "CIERRE_RECLAMO"),
 ]
 
 
