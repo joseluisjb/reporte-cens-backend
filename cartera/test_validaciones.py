@@ -193,7 +193,7 @@ def _detalle_obligacion(valor_inicial, saldo, mora):
         None, None, None, "N", FECHA_CORTE,
         "N", 4, 0, "N", "N",
     )
-    conexion, _ = _conexion([(5,), fila], [])
+    conexion, _ = _conexion([(5,), fila, None, None], [])
     with patch("ciclo.servicios.connection", conexion):
         return ciclo_servicios.obtener_obligacion(24)
 

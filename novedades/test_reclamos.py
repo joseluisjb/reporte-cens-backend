@@ -155,7 +155,7 @@ def test_post_tipologia_invalida_responde_400():
 def test_post_reclamo_abierto_responde_409_en_espanol():
     with patch(
         "novedades.reclamos_views.reclamos.crear_reclamo",
-        side_effect=reclamos.ObligacionConReclamoAbierto,
+        side_effect=reclamos.ObligacionConReclamoAbierto("2260-5543"),
     ):
         request = APIRequestFactory().post(
             "/api/reclamos/",
@@ -170,7 +170,7 @@ def test_post_reclamo_abierto_responde_409_en_espanol():
         response = ReclamosViewSet.as_view({"post": "create"})(request)
 
     assert response.status_code == 409
-    assert response.data["detail"] == "La obligación ya tiene un reclamo abierto."
+    assert response.data["detail"] == "La obligación 2260-5543 ya tiene un reclamo abierto."
 
 
 def test_cierre_anterior_a_radicacion_responde_400_por_campo():
