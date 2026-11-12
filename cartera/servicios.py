@@ -206,7 +206,12 @@ def _insertar_reporte_detalle():
         "VALOR_CUOTA, LINEA_CREDITO, OBLIGACION_REFINANCIADA, CORREO, CELULAR, "
         "VALOR_REAL_PAGADO, ESTADO_SAC, N_CREDITOS, DIAS_MORA, ORIGEN_DIAS_MORA, FECHA_ULTIMO_PAGO, "
         "NVL(CADUCADO, 'N'), ATRASOS_PERMITIDOS "
-        "FROM NEXOVOLT.V_CALCULO_CORTE WHERE INCLUIR = 'S'"
+        "FROM NEXOVOLT.V_CALCULO_CORTE v WHERE v.INCLUIR = 'S' "
+        # RF18: la obligacion nueva de una refinanciacion comparte cliente y proceso con la
+        # original, asi que la vista la trae siempre. No entra a un corte anterior a la fecha
+        # de la refinanciacion: en ese corte la original sigue abierta y saldria duplicada.
+        "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_REFINANCIACION r "
+        "WHERE r.OBLIGACION_NUEVA_ID = v.OBLIGACION_ID AND r.FECHA > v.FECHA_CORTE)"
     )
     with connection.cursor() as cursor:
         cursor.execute(sql)
