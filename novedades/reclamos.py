@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -265,6 +265,8 @@ def cerrar_reclamo(reclamo_id, data, usuario=None):
             if row is None:
                 raise ReclamoNoEncontrado()
             fecha_radicacion, estado = row
+            if isinstance(fecha_radicacion, datetime):
+                fecha_radicacion = fecha_radicacion.date()
             if estado != "EN_RECLAMO":
                 raise ReclamoYaCerrado()
             if data["fecha_cierre"] < fecha_radicacion:
