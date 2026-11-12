@@ -121,8 +121,25 @@ def _linea(**cambios):
 
 
 def test_en_mora_reporta_la_fecha_de_exigibilidad():
-    linea = _linea(VALOR_MORA=170_000, EDAD_MORA="02", FECHA_LIMITE_PAGO=date(2026, 8, 12))
+    # 49 días de mora al corte 30/09 -> la cuota impaga más antigua venció el 12/08.
+    linea = _linea(VALOR_MORA=170_000, EDAD_MORA="02", DIAS_MORA=49)
     assert _campo(linea, "fecha_exigibilidad") == "20260812"
+
+
+def test_cp_b_57_exigibilidad_es_la_cuota_impaga_mas_antigua_no_la_ultima_factura():
+    """Dos cuotas sin pagar (14/08 y 14/09), corte 30/09: campo 18 = 20260814, campo 6 intacto."""
+    linea = _linea(
+        VALOR_MORA=140_000, EDAD_MORA="01", DIAS_MORA=47, CUOTAS_MORA=2,
+        FECHA_LIMITE_PAGO=date(2026, 10, 14),
+    )
+    assert linea[149:157] == "20260814"
+    assert _campo(linea, "fecha_exigibilidad") == "20260814"
+    assert _campo(linea, "fecha_limite_pago") == "20261014"
+
+
+def test_sin_dias_de_mora_la_fecha_de_exigibilidad_va_vacia():
+    linea = _linea(VALOR_MORA=170_000, EDAD_MORA="02", DIAS_MORA=None)
+    assert _campo(linea, "fecha_exigibilidad") == " " * 8
 
 
 @pytest.mark.parametrize("cambios", [
@@ -131,7 +148,8 @@ def test_en_mora_reporta_la_fecha_de_exigibilidad():
     {"VALOR_MORA": 5_000, "EDAD_MORA": "00"},  # edad normal: TransUnion no la tendría en cuenta
 ])
 def test_sin_mora_la_fecha_de_exigibilidad_va_vacia(cambios):
-    assert _campo(_linea(**cambios), "fecha_exigibilidad") == " " * 8
+    # Con DIAS_MORA informado: lo que apaga el campo es la mora o la edad 00, no la falta de días.
+    assert _campo(_linea(DIAS_MORA=20, **cambios), "fecha_exigibilidad") == " " * 8
 
 
 def test_anios_en_mora_solo_con_edad_14():

@@ -422,7 +422,7 @@ _REGLAS = {
     "SIN_ESTADO": ("Estado TransUnion", ["RF53"], "estado"),
     "SIN_EDAD": ("Edad de mora", ["RF53"], "edad_mora"),
     "FECHA_CORTE_NO_POSTERIOR": ("Fecha de corte posterior al último enviado", ["RF53"], None),
-    "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha límite de pago no futura", ["RF49", "RF53"], "fecha_limite_pago"),
+    "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha de exigibilidad no futura", ["RF49", "RF53"], "fecha_limite_pago"),
     "SIN_FECHA_LIMITE_PAGO": ("Fecha límite de pago", ["RF49", "RF53"], "fecha_limite_pago"),
     "ESTADO_SIN_HOMOLOGAR": ("Estado homologado en el catálogo TransUnion", ["RF48", "RF53"], "estado"),
     "EDAD_SIN_VALOR_MORA": ("Edad de mora con valor de mora (regla 707)", ["RF19", "RF53"], "valor_mora"),
@@ -1121,7 +1121,7 @@ _COLUMNAS_TIPO2 = (
     "NOMBRE_TITULAR", "FECHA_LIMITE_PAGO", "CALIDAD", "ESTADO_TU", "EDAD_MORA", "ANIOS_MORA",
     "FECHA_INICIO", "FECHA_PAGO", "MODO_EXTINCION", "TIPO_PAGO", "PERIODICIDAD", "CUOTAS_MORA",
     "VALOR_INICIAL", "VALOR_MORA", "VALOR_SALDO", "VALOR_CUOTA", "OBLIGACION_REFINANCIADA",
-    "CORREO", "CELULAR", "VALOR_REAL_PAGADO", "ELIMINADA",
+    "CORREO", "CELULAR", "VALOR_REAL_PAGADO", "ELIMINADA", "DIAS_MORA",
 )
 # Los datos del titular se toman de NV_REPORTE_DETALLE (V_REPORTE_TU v2 aún no los expone).
 _SQL_OBLIGACIONES_ARCHIVO = (
@@ -1130,7 +1130,7 @@ _SQL_OBLIGACIONES_ARCHIVO = (
     "TRUNC(NVL(rd.DIAS_MORA, 0) / 365), rd.FECHA_INICIO, rd.FECHA_PAGO, rd.MODO_EXTINCION, "
     "rd.TIPO_PAGO, rd.PERIODICIDAD, rd.CUOTAS_MORA, rd.VALOR_INICIAL, rd.VALOR_MORA, "
     "rd.VALOR_SALDO, rd.VALOR_CUOTA, rd.OBLIGACION_REFINANCIADA, rd.CORREO, rd.CELULAR, "
-    "rd.VALOR_REAL_PAGADO, NVL(o.ELIMINADA, 'N') "
+    "rd.VALOR_REAL_PAGADO, NVL(o.ELIMINADA, 'N'), rd.DIAS_MORA "
     "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
     "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
     "WHERE rd.CORTE_ID = %s ORDER BY o.NUMERO_OBLIGACION_TU"

@@ -411,6 +411,24 @@ def test_rf11_ciclo_47_dias_edad_01():
     assert "01" in t["reglas"][0]["texto"]
 
 
+def test_rf11_texto_cita_la_fecha_de_la_cuota_mas_antigua():
+    """El texto de la regla usa corte - dias (31/10 - 78 = 14/08), no la fecha límite de la factura."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (21, "01", 100000, "02", "Hotel Mirador", "2258-7732",
+         78, date(2026, 12, 14), 0, 0, None),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="01")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    texto = resultado["transiciones"][0]["reglas"][0]["texto"]
+    assert "78 días desde la cuota más antigua sin pagar (2026-08-14)" in texto
+    assert "2026-12-14" not in texto
+
+
 def test_rf11_ciclo_salto_mayor_tramo_requiere_revision():
     """Edad pasa de 00 a 03 en un corte → requiere_revision=True, edad calculada no cambia."""
     mock_conn, mock_cursor = _mock_conn_multiple()
@@ -1593,13 +1611,16 @@ def test_rf47_obtener_obligacion_sin_pago_mora_es_none():
 # ── Casos RF49 ────────────────────────────────────────────────────────────────
 
 def test_rf49_fecha_exigibilidad_cuota_antigua():
-    """Dos cuotas sin pagar; la más antigua del 14/08 → fecha_exigibilidad = '2026-08-14'."""
+    """Dos cuotas sin pagar; la más antigua del 14/08 → fecha_exigibilidad = '2026-08-14'.
+
+    Ahora sale de FECHA_CORTE (31/10) - DIAS_MORA (78), no de FECHA_LIMITE_PAGO.
+    """
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),
         (
             60, "2272-6001", "Empresa Solar", "5566778899",
-            "03", "02", 75, 2,
+            "03", "02", 78, 2,
             140000, 500000,
             "N", "N", "N", None,
             date(2026, 1, 31), 800000, 70000, date(2026, 8, 14),
@@ -1620,6 +1641,31 @@ def test_rf49_fecha_exigibilidad_cuota_antigua():
 
     assert result["fecha_exigibilidad"] == "2026-08-14"
     assert result["valor_mora"] == 140000
+
+
+def test_rf49_exigibilidad_ignora_la_fecha_limite_de_la_ultima_factura():
+    """La fecha límite (última factura, futura) no es la exigibilidad: manda corte - dias."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            63, "2272-6004", "Empresa Solar", "5566778899",
+            "03", "02", 78, 2,
+            140000, 500000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 800000, 70000, date(2026, 12, 14),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0, "N", "N",
+        ),
+        None,
+        None,
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(63)
+
+    assert result["fecha_exigibilidad"] == "2026-08-14"
 
 
 def test_rf49_anios_mora_edad_14_800_dias():

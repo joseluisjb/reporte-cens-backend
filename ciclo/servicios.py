@@ -2,6 +2,7 @@ import logging
 
 from django.db import connection, transaction
 
+from cartera.archivo_plano import fecha_exigibilidad
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str
 from usuarios.models import Usuario
@@ -979,7 +980,10 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     )
 
                 if regla_rf == "RF11":
-                    fecha_fl = fecha_str(fecha_limite_pago) if fecha_limite_pago else "sin fecha"
+                    fecha_antigua = (
+                        fecha_exigibilidad(fecha_corte, dias_mora_int) if dias_mora_int > 0 else None
+                    )
+                    fecha_fl = fecha_str(fecha_antigua) if fecha_antigua else "sin fecha"
                     regla_texto = (
                         f"RF11 · {dias_mora_int} días desde la cuota más antigua "
                         f"sin pagar ({fecha_fl}): edad {old_edad} → {new_edad}"
@@ -1563,7 +1567,12 @@ def obtener_obligacion(obligacion_id):
         "valor_inicial": int(row[15]) if row[15] is not None else None,
         "valor_cuota": int(row[16]) if row[16] is not None else 0,
         "valor_cuota_antes_cierre": None,
-        "fecha_exigibilidad": fecha_str(row[17]) if (row[8] is not None and int(row[8]) > 0) else None,
+        "fecha_exigibilidad": fecha_str(
+            fecha_exigibilidad(fecha_corte_bd, row[6])
+            if (row[8] is not None and int(row[8]) > 0 and edad_mora != "00"
+                and fecha_corte_bd is not None)
+            else None
+        ),
         "atrasos_permitidos": atrasos_permitidos,
         "cuotas_atrasadas": int(row[7]) if row[7] is not None else 0,
         "cierre": cierre,

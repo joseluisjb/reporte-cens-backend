@@ -3,7 +3,7 @@
 Estructura del Manual del sector real v34, págs. 44-52 (Tabla 1, Tabla 2 columna «Sector Real
 servicios» y registro tipo 9). Funciones puras: no leen la base de datos.
 """
-from datetime import date
+from datetime import date, timedelta
 
 CODIFICACION = "cp1252"
 FIN_DE_LINEA = "\r\n"
@@ -203,18 +203,35 @@ def _formatear(campo, longitud, formato, valor, divisor):
     return texto.ljust(longitud)
 
 
-def _datos_rf49(obligacion):
+def fecha_exigibilidad(fecha_corte, dias_mora):
+    """Vencimiento de la cuota impaga más antigua: fecha de corte menos los días de mora.
+
+    V_CALCULO_CORTE calcula DIAS_MORA contra el vencimiento de la cuota impaga más antigua (la
+    N-ésima factura vencida más reciente, con N igual a las cuotas en mora). Sin días de mora
+    calculados no hay fecha.
+    """
+    if fecha_corte is None or dias_mora is None:
+        return None
+    return fecha_corte - timedelta(days=int(dias_mora))
+
+
+def _datos_rf49(obligacion, fecha_corte=None):
     """Fecha de exigibilidad y años en mora del registro tipo 2 (RF49).
 
-    - Fecha de exigibilidad (campo 18): la fecha límite de pago de la cuota impaga más antigua, solo si
-      la obligación tiene valor de mora y edad de mora mayores a cero; al día va vacía (Manual p. 20:
-      con edad 00 TransUnion no la tiene en cuenta y genera una alerta).
+    - Fecha de exigibilidad (campo 18): la fecha en que entró en mora la obligación que no ha
+      recibido pago, es decir el vencimiento de la cuota impaga más antigua (Manual v34 p. 14). Se
+      calcula como fecha de corte menos DIAS_MORA, no con la fecha límite de pago, que es la de la
+      última factura emitida (campo 6). Solo se reporta si la obligación tiene valor de mora y edad
+      de mora mayores a cero; al día va vacía (Manual p. 20: con edad 00 TransUnion no la tiene en
+      cuenta y genera una alerta).
     - Años en mora (campo 14): solo para la edad de mora 14 (Manual p. 13).
     """
     edad = str(obligacion.get("EDAD_MORA") or "").strip().zfill(2)
     en_mora = (obligacion.get("VALOR_MORA") or 0) > 0 and edad != "00"
     return {
-        "FECHA_EXIGIBILIDAD": obligacion.get("FECHA_LIMITE_PAGO") if en_mora else None,
+        "FECHA_EXIGIBILIDAD": (
+            fecha_exigibilidad(fecha_corte, obligacion.get("DIAS_MORA")) if en_mora else None
+        ),
         "ANIOS_MORA": obligacion.get("ANIOS_MORA") if edad == "14" else None,
     }
 
@@ -256,7 +273,7 @@ def armar_archivo(cabecera, obligaciones, divisor, longitud_tipo2):
     errores = []
     lineas = [armar_registro(REGISTRO_1, {**cabecera, "tipo_registro": 1})]
     for obligacion in obligaciones:
-        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion),
+        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion, cabecera.get("fecha_corte")),
                  **_datos_rf18(obligacion), "tipo_registro": 2}
         try:
             lineas.append(armar_registro(REGISTRO_2, datos, divisor, longitud_tipo2))
