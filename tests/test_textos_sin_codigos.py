@@ -129,3 +129,75 @@ def test_el_detector_encuentra_los_casos_conocidos():
     )
     lineas = sorted(i.split(":")[1] for i in _infracciones(fuente))
     assert lineas == ["1", "2", "3", "4"]
+
+
+# ── Jerga del manual y del equipo ─────────────────────────────────────────────
+# Segunda vigilancia: referencias al manual, códigos de error/regla, «SAC»,
+# «relleno» y estados en mayúsculas dentro de frases que ve el usuario.
+
+JERGA = (
+    re.compile(r"Tabla \d"),
+    re.compile(r"Manual,? p"),
+    re.compile(r"\bp\. ?\d"),
+    re.compile(r"\b[Ee]rror \d{3}\b"),
+    re.compile(r"\bregla \d{3}\b"),
+    re.compile(r"\bSAC\b"),
+    re.compile(r"\bMatriz\b"),
+    re.compile(r"\brelleno\b"),
+    re.compile(r"estado (BORRADOR|VALIDADO|ENVIADO)"),
+    re.compile(r"\[\s*'"),
+)
+MARCAS_SQL = ("SELECT", "INSERT", "UPDATE", "DELETE", "FROM", "WHERE", "JOIN", "NEXOVOLT.", "SAC.", "NVL(", "||")
+
+
+def _es_prosa(texto):
+    """Frase para una persona: con un espacio y alguna minúscula, y que no sea SQL."""
+    if " " not in texto or not re.search(r"[a-záéíóúñ]", texto):
+        return False
+    return not any(marca in texto for marca in MARCAS_SQL)
+
+
+def _infracciones_jerga(fuente, nombre="<modulo>"):
+    arbol = ast.parse(fuente)
+    return [
+        f"{nombre}:{linea}: {texto!r}"
+        for linea, texto in _textos(arbol)
+        if _es_prosa(texto) and any(p.search(texto) for p in JERGA)
+    ]
+
+
+def test_los_textos_de_pantalla_no_llevan_jerga_del_manual():
+    encontrados = []
+    for ruta in _modulos():
+        fuente = ruta.read_text(encoding="utf-8")
+        encontrados += _infracciones_jerga(fuente, ruta.relative_to(RAIZ).as_posix())
+    assert not encontrados, "Textos con jerga:\n" + "\n".join(encontrados)
+
+
+def test_el_detector_de_jerga_distingue_casos():
+    malos = [
+        'a = "Estado no válido. Usa un código de la Tabla 4b."',
+        'b = "No reconocido (Manual, p. 43)."',
+        'c = "Archivo fuera de rango (p. 38-39)"',
+        'd = f"Error 713: no permite pasar de {x}"',
+        'e = "Cambio inválido (regla 713) en el corte"',
+        'f = "Crédito caducado en el SAC sin mora"',
+        'g = "la Matriz no permite el cambio"',
+        'h = "datos con relleno (XXX)"',
+        'i = "El corte no está en estado BORRADOR."',
+        'j = "Usuario actualizado: [\'nombre\']"',
+    ]
+    for fuente in malos:
+        assert len(_infracciones_jerga(fuente)) == 1, fuente
+    buenos = [
+        'a = "SELECT ESTADO_SAC FROM NEXOVOLT.NV_X WHERE A = 1"',
+        "b = \"'Obligacion ' || o.NUMERO || ' ya no viene del SAC'\"",
+        'c = {"regla": "CAMBIO_ESTADO_INVALIDO", "estado": "BORRADOR"}',
+        'd = "SAC"',
+        'e = "El corte no está en borrador."',
+        'f = "TransUnion no acepta pasar de Vigente a Castigada"',
+        'logger.info("Error 713 en el corte %s", 1)\n',
+        'def f():\n    """Ver Manual, p. 43 y la Tabla 4b."""\n',
+    ]
+    for fuente in buenos:
+        assert _infracciones_jerga(fuente) == [], fuente

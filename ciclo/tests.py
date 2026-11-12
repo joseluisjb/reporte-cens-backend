@@ -1781,7 +1781,7 @@ def test_df01_cierre_desde_03_sin_mora_anterior_da_713():
     assert r["codigo"] == "713"
     assert r["estado_anterior"] == "03"
     assert r["estado_calculado"] == "07"
-    assert "sin mora" in r["motivo"]
+    assert r["motivo"] == "TransUnion no acepta pasar de Dudoso recaudo a Castigada recuperada"
     assert _hay_713(sqls)
     # No se ejecutó el UPDATE de cierre (_cerrar_obligacion) sobre el detalle.
     assert not any(
@@ -1958,7 +1958,7 @@ def test_df03_original_en_03_sin_mora_da_713():
     r = resultado["rechazos"][0]
     assert r["codigo"] == "713"
     assert r["estado_calculado"] == "07"
-    assert "refinanciación" in r["motivo"]
+    assert r["motivo"] == "TransUnion no acepta pasar de Dudoso recaudo a Castigada recuperada"
     assert _hay_713(_sqls(llamadas))
     assert not any("MODO_EXTINCION = '16'" in s for s in _sqls(llamadas))
 
@@ -2022,3 +2022,10 @@ def test_df03_limpiar_no_anula_filas_fuera_de_v_calculo_corte():
     sql, params = recalculo[0].args
     assert "AND EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v2" in sql
     assert params == [1, 1, 1]
+
+
+def test_713_rechazo_dice_que_transunion_no_acepta_el_cambio_con_nombres():
+    resultado, _ = _ciclo_cierre("03", 0)
+    assert resultado["rechazos"][0]["motivo"] == (
+        "TransUnion no acepta pasar de Dudoso recaudo a Castigada recuperada"
+    )

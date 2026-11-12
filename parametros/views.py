@@ -151,7 +151,7 @@ class GrupoConceptoViewSet(viewsets.ViewSet):
             servicios.eliminar_grupo(pk_int)
         except servicios.GrupoEnUso:
             return Response(
-                {"detail": "El grupo está asociado a un corte en estado BORRADOR."},
+                {"detail": "El grupo está asociado a un corte en borrador."},
                 status=status.HTTP_409_CONFLICT,
             )
         except servicios.GrupoNoEncontrado:
@@ -226,7 +226,7 @@ class HomologacionEstadoView(APIView):
                 usuario=request.user,
             )
         except servicios.EstadoSacNoEncontrado:
-            return Response({"detail": "Estado del SAC no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Estado del sistema comercial no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.HomologacionInvalida as exc:
             return Response(exc.errores, status=status.HTTP_400_BAD_REQUEST)
         return Response(HomologacionSerializer(homologacion).data)

@@ -200,8 +200,10 @@ def test_post_transicion_no_permitida_responde_409_con_mensaje_713():
 
     assert response.status_code == 409
     assert response.data["code"] == "transicion_no_permitida"
-    assert "04" in response.data["detail"]
-    assert "713" in response.data["detail"]
+    assert response.data["detail"] == (
+        "TransUnion no acepta pasar de Suspendida a Saldada. "
+        "Consulta con CENS cómo tratar esta obligación antes de refinanciarla."
+    )
 
 
 def test_post_naturaleza_invalida_responde_400():

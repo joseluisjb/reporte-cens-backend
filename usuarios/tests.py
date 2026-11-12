@@ -455,3 +455,29 @@ def test_crear_fallo_correo_devuelve_502(mock_crear):
     resp = GestionUsuariosView.as_view()(request)
     assert resp.status_code == 502
     assert "detail" in resp.data
+
+
+@patch("usuarios.views.registrar_auditoria")
+@patch("usuarios.views.servicios.crear_usuario")
+def test_crear_registra_el_rol_con_su_nombre_legible(mock_crear, mock_audit):
+    mock_crear.return_value = _usuario_mock()
+    request = factory.post(
+        "/api/users/",
+        {"nombre": "Carlos Ruiz", "email": "nuevo@test.com", "rol": "ANALISTA_CARTERA"},
+        format="json",
+    )
+    force_authenticate(request, user=_admin())
+    GestionUsuariosView.as_view()(request)
+    assert mock_audit.call_args.args[3] == "Usuario nuevo@test.com creado con rol Analista de Cartera"
+
+
+@patch("usuarios.views.registrar_auditoria")
+@patch("usuarios.views.servicios.actualizar_usuario")
+def test_patch_registra_los_campos_con_etiquetas_legibles(mock_actualizar, mock_audit):
+    mock_actualizar.return_value = _usuario_mock(pk=10)
+    request = factory.patch(
+        "/api/users/10/", {"nombre": "Nuevo", "is_active": True}, format="json"
+    )
+    force_authenticate(request, user=_admin())
+    GestionUsuarioDetalleView.as_view()(request, pk=10)
+    assert mock_audit.call_args.args[3] == "Usuario nuevo@test.com actualizado: nombre y estado"

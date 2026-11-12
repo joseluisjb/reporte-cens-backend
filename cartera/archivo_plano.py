@@ -194,7 +194,7 @@ def _formatear(campo, longitud, formato, valor, divisor):
     except UnicodeEncodeError:
         raise CampoInvalido(
             "CAMPO_TIPO_INVALIDO", campo,
-            f"El campo {campo} tiene caracteres que no existen en Windows-1252.",
+            f"El campo {campo} tiene caracteres que TransUnion no acepta.",
         )
     if formato in ("NUM", "MIL", "IDE"):
         return texto.rjust(longitud, "0")

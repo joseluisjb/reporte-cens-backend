@@ -121,7 +121,7 @@ def test_cp_a_18_no_se_registra_el_envio_de_un_corte_sin_validar():
     )
 
     assert response.status_code == 409
-    assert "VALIDADO" in response.data["detail"]
+    assert "todavía no está validado" in response.data["detail"]
 
 
 def test_cp_a_18_la_fecha_de_envio_no_puede_ser_anterior_al_corte():

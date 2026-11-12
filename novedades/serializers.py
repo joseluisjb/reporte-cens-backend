@@ -45,7 +45,7 @@ class NovedadCreateSerializer(serializers.Serializer):
     def validate(self, data):
         if data.get("tipo") == "ELIMINACION" and not data.get("motivo_eliminacion"):
             raise serializers.ValidationError(
-                {"motivo_eliminacion": "Selecciona el motivo de la eliminación (Tabla 28)."}
+                {"motivo_eliminacion": "Selecciona el motivo de la eliminación."}
             )
         return data
 

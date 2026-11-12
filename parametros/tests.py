@@ -1030,11 +1030,11 @@ def test_listar_homologaciones_pone_el_nombre_de_quien_la_cambio():
     (None, None, {"accion": ["Elige cómo se reporta el estado: como estado de TransUnion o como cierre."]}),
     ("OTRA", "01", {"accion": ["Elige cómo se reporta el estado: como estado de TransUnion o como cierre."]}),
     ("ESTADO", None, {"estado_tu": ["Selecciona el estado de TransUnion."]}),
-    ("ESTADO", "05", {"estado_tu": ["Ese estado no está en la Tabla 4b de TransUnion."]}),
-    ("ESTADO", "08", {"estado_tu": ["El estado 08 · Inactivo no se usa en CENS: elige un estado en uso."]}),
-    ("ESTADO", "04", {"estado_tu": ["El estado 04 · Suspendida por la entidad no se usa en CENS: elige un estado en uso."]}),
-    ("ESTADO", "02", {"estado_tu": ["Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior."]}),
-    ("ESTADO", "07", {"estado_tu": ["Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior."]}),
+    ("ESTADO", "05", {"estado_tu": ["Ese estado no existe en TransUnion."]}),
+    ("ESTADO", "08", {"estado_tu": ["El estado Inactivo no se usa en CENS: elige un estado en uso."]}),
+    ("ESTADO", "04", {"estado_tu": ["El estado Suspendida por la entidad no se usa en CENS: elige un estado en uso."]}),
+    ("ESTADO", "02", {"estado_tu": ["Saldada y Castigada recuperada se asignan con «Cierre», según el estado anterior."]}),
+    ("ESTADO", "07", {"estado_tu": ["Saldada y Castigada recuperada se asignan con «Cierre», según el estado anterior."]}),
     ("CIERRE", "02", {"estado_tu": ["Un estado que cierra el crédito no lleva estado de TransUnion."]}),
 ])
 def test_validar_homologacion(accion, estado_tu, esperado):
@@ -1120,7 +1120,7 @@ def test_put_homologacion_analista_403():
 
 
 def test_put_homologacion_estado_no_usado_400_por_campo():
-    errores = {"estado_tu": ["El estado 08 · Inactivo no se usa en CENS: elige un estado en uso."]}
+    errores = {"estado_tu": ["El estado Inactivo no se usa en CENS: elige un estado en uso."]}
     with patch("parametros.views.servicios.actualizar_homologacion", side_effect=servicios.HomologacionInvalida(errores)):
         response = _peticion_homologacion(
             HomologacionEstadoView, "put", "ADMINISTRADOR", {"accion": "ESTADO", "estado_tu": "08"}, estado_sac="A",
@@ -1135,7 +1135,7 @@ def test_put_homologacion_estado_sac_inexistente_404():
             HomologacionEstadoView, "put", "ADMINISTRADOR", {"accion": "CIERRE", "estado_tu": None}, estado_sac="Z",
         )
     assert response.status_code == 404
-    assert response.data == {"detail": "Estado del SAC no encontrado."}
+    assert response.data == {"detail": "Estado del sistema comercial no encontrado."}
 
 
 def test_put_homologacion_estado_vacio_se_toma_como_nulo():

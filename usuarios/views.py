@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.texto import unir_en_espanol
 from usuarios.auditoria import registrar_auditoria
 from usuarios.autenticacion import LimiteInicioSesion, LimiteInicioSesionPorCorreo, LimiteRecuperacion
 from usuarios.permisos import EsAdministrador
@@ -148,13 +149,16 @@ class GestionUsuariosView(APIView):
             )
         registrar_auditoria(
             "CREAR", "USUARIO", usuario.pk,
-            f"Usuario {usuario.email} creado con rol {usuario.rol}",
+            f"Usuario {usuario.email} creado con rol {usuario.get_rol_display()}",
             request.user.pk,
         )
         return Response(
             {"user": UsuarioSerializer(usuario).data, "temporary_password": None},
             status=status.HTTP_201_CREATED,
         )
+
+
+_ETIQUETAS_CAMPOS = {"email": "correo", "is_active": "estado"}
 
 
 class GestionUsuarioDetalleView(APIView):
@@ -184,7 +188,7 @@ class GestionUsuarioDetalleView(APIView):
         accion = "EDITAR" if activo is None else ("ACTIVAR" if activo else "DESACTIVAR")
         registrar_auditoria(
             accion, "USUARIO", usuario.pk,
-            f"Usuario {usuario.email} actualizado: {list(serializer.validated_data)}",
+            f"Usuario {usuario.email} actualizado: {unir_en_espanol(_ETIQUETAS_CAMPOS.get(c, c) for c in serializer.validated_data)}",
             request.user.pk,
         )
         return Response(UsuarioSerializer(usuario).data)
