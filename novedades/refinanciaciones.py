@@ -140,7 +140,7 @@ def crear_refinanciacion(data, usuario=None):
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT o.CLIENTE_ID, o.NUMERO_PROCESO, o.NUMERO_OBLIGACION_TU, "
-                "o.CIERRE_DEFINITIVO, o.ELIMINADA "
+                "o.CIERRE_DEFINITIVO, o.ELIMINADA, o.FECHA_INICIO "
                 "FROM NEXOVOLT.NV_OBLIGACION o "
                 "WHERE o.OBLIGACION_ID = %s FOR UPDATE",
                 [obligacion_id],
@@ -148,12 +148,36 @@ def crear_refinanciacion(data, usuario=None):
             row = cursor.fetchone()
             if row is None:
                 raise ObligacionNoEncontrada()
-            cliente_id, numero_proceso, numero_obligacion, cierre_definitivo, eliminada = row
+            cliente_id, numero_proceso, numero_obligacion, cierre_definitivo, eliminada, fecha_inicio = row
 
             if eliminada == "S":
                 raise ObligacionEliminada(numero_obligacion)
             if cierre_definitivo == "S":
                 raise ObligacionCerrada(numero_obligacion)
+
+            if fecha_inicio is not None:
+                if hasattr(fecha_inicio, "date"):
+                    fecha_inicio = fecha_inicio.date()
+                if fecha < fecha_inicio:
+                    raise ValueError(
+                        f"La fecha no puede ser anterior al ingreso de la obligación "
+                        f"({fecha_str(fecha_inicio)})."
+                    )
+
+            cursor.execute(
+                "SELECT MAX(FECHA_CORTE) FROM NEXOVOLT.NV_CORTE "
+                "WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')",
+            )
+            fecha_corte_row = cursor.fetchone()
+            fecha_ultimo_enviado = fecha_corte_row[0] if fecha_corte_row else None
+            if fecha_ultimo_enviado is not None:
+                if hasattr(fecha_ultimo_enviado, "date"):
+                    fecha_ultimo_enviado = fecha_ultimo_enviado.date()
+                if fecha < fecha_ultimo_enviado:
+                    raise ValueError(
+                        f"La fecha no puede ser anterior al último corte enviado "
+                        f"({fecha_str(fecha_ultimo_enviado)})."
+                    )
 
             cursor.execute(
                 "SELECT ESTADO_TU, VALOR_SALDO FROM NEXOVOLT.NV_REPORTE_DETALLE "

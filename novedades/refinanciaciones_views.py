@@ -78,6 +78,11 @@ class RefinanciacionesViewSet(viewsets.ViewSet):
                 {"naturaleza": ["Selecciona la naturaleza de la reestructuración."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except ValueError as exc:
+            return Response(
+                {"fecha": [str(exc)]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(
             RefinanciacionSerializer(resultado).data, status=status.HTTP_201_CREATED
         )

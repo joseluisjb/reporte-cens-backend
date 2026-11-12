@@ -78,12 +78,13 @@ def test_listar_refinanciaciones_vacio():
 def test_crear_refinanciacion_manual_inserta_obligacion_y_refinanciacion():
     conn, cursor = _mock_conn()
     cursor.fetchone.side_effect = [
-        (5001, 99, "2255-7788", "N", "N"),  # obligación
-        ("01", 4380000),                     # último estado reportado + saldo
-        ("REESTRUCTURACION VOLUNTARIA",),    # naturaleza
-        (1,),                               # SEQ_NV_REFINANCIACION
-        (12,),                              # SEQ_NV_OBLIGACION
-        _FILA_REFINANCIACION,               # obtener_refinanciacion
+        (5001, 99, "2255-7788", "N", "N", date(2026, 1, 1)),  # obligación + FECHA_INICIO
+        (None,),                                               # MAX FECHA_CORTE (sin corte enviado)
+        ("01", 4380000),                                       # último estado reportado + saldo
+        ("REESTRUCTURACION VOLUNTARIA",),                      # naturaleza
+        (1,),                                                  # SEQ_NV_REFINANCIACION
+        (12,),                                                 # SEQ_NV_OBLIGACION
+        _FILA_REFINANCIACION,                                  # obtener_refinanciacion
     ]
 
     with patch("novedades.refinanciaciones.connection", conn), \
@@ -233,6 +234,67 @@ def test_post_cuotas_fuera_de_rango_responde_400():
 
     assert response.status_code == 400
     assert "numero_cuotas" in response.data
+
+
+def test_fecha_anterior_al_ingreso_lanza_error():
+    """fecha antes de FECHA_INICIO → ValueError con texto que menciona ingreso."""
+    conn, cursor = _mock_conn()
+    cursor.fetchone.side_effect = [
+        (5001, 99, "2255-7788", "N", "N", date(2026, 10, 1)),  # ingresó el 01/10/2026
+        (None,),                                                 # sin corte enviado
+    ]
+    with patch("novedades.refinanciaciones.connection", conn), \
+         patch("novedades.refinanciaciones.transaction.atomic", _noop_atomic):
+        try:
+            refinanciaciones.crear_refinanciacion(
+                {"obligacion_original_id": 11, "naturaleza": "01",
+                 "numero_cuotas": 12, "fecha": date(2026, 9, 28)},
+            )
+        except ValueError as exc:
+            assert "ingreso" in str(exc).lower()
+        else:
+            raise AssertionError("Debía lanzarse ValueError.")
+
+
+def test_fecha_anterior_a_corte_enviado_lanza_error():
+    """fecha antes del último corte enviado → ValueError con texto que menciona corte enviado."""
+    conn, cursor = _mock_conn()
+    cursor.fetchone.side_effect = [
+        (5001, 99, "2255-7788", "N", "N", date(2026, 1, 1)),  # ingresó en enero
+        (date(2026, 10, 31),),                                  # último corte enviado: 31/10/2026
+    ]
+    with patch("novedades.refinanciaciones.connection", conn), \
+         patch("novedades.refinanciaciones.transaction.atomic", _noop_atomic):
+        try:
+            refinanciaciones.crear_refinanciacion(
+                {"obligacion_original_id": 11, "naturaleza": "01",
+                 "numero_cuotas": 12, "fecha": date(2026, 9, 28)},
+            )
+        except ValueError as exc:
+            assert "corte enviado" in str(exc).lower()
+        else:
+            raise AssertionError("Debía lanzarse ValueError.")
+
+
+def test_post_fecha_invalida_responde_400_por_campo():
+    """ValueError en crear_refinanciacion → 400 con key 'fecha'."""
+    with patch(
+        "novedades.refinanciaciones_views.refinanciaciones.crear_refinanciacion",
+        side_effect=ValueError(
+            "La fecha no puede ser anterior al ingreso de la obligación (2026-10-01)."
+        ),
+    ):
+        request = APIRequestFactory().post(
+            "/api/refinanciaciones/",
+            {"obligacion_original_id": 11, "naturaleza": "01",
+             "numero_cuotas": 12, "fecha": "2026-09-28"},
+            format="json",
+        )
+        force_authenticate(request, user=usuario_con_rol("ANALISTA_CARTERA"))
+        response = RefinanciacionesViewSet.as_view({"post": "create"})(request)
+
+    assert response.status_code == 400
+    assert "fecha" in response.data
 
 
 def test_administrador_no_puede_acceder_a_refinanciaciones():
