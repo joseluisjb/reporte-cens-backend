@@ -2,6 +2,7 @@ import logging
 
 from django.db import connection, transaction
 
+from cartera.archivo_plano import fecha_exigibilidad
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str
 from usuarios.models import Usuario
@@ -54,9 +55,8 @@ _ESTADOS_VALIDOS = {"01", "02", "03", "04", "06", "07", "08", "10", "11", "12"}
 _MODOS_EXTINCION = {"01": "Voluntario"}
 _TIPOS_PAGO = {"01": "Voluntario"}
 
-_ESTADOS_CIERRE_SALDADA = {"01", "08"}
-_ESTADOS_CIERRE_RECUPERADA = {"03", "06"}
-_ESTADOS_CIERRE_INVALIDO = {"04", "10", "11", "12"}
+# Estados de origen cuyo cierre por pago total es Cartera Recuperada (07).
+_ESTADOS_ORIGEN_RECUPERADA = {"03", "06"}
 
 
 # ── Validación 881 (primer reporte) ──────────────────────────────────────────
@@ -132,8 +132,10 @@ def _limpiar_ciclo_anterior(corte_id):
             "  FROM NEXOVOLT.V_CALCULO_CORTE v "
             "  WHERE v.OBLIGACION_ID = rd.OBLIGACION_ID AND v.CORTE_ID = %s"
             ") "
-            "WHERE rd.CORTE_ID = %s",
-            [corte_id, corte_id],
+            "WHERE rd.CORTE_ID = %s "
+            "AND EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v2 "
+            "WHERE v2.OBLIGACION_ID = rd.OBLIGACION_ID AND v2.CORTE_ID = %s)",
+            [corte_id, corte_id, corte_id],
         )
         cursor.execute(
             "UPDATE NEXOVOLT.NV_REPORTE_DETALLE "
@@ -141,6 +143,86 @@ def _limpiar_ciclo_anterior(corte_id):
             "WHERE CORTE_ID = %s",
             [corte_id],
         )
+
+
+_COLUMNAS_COPIADAS_ORIGINAL = (
+    "TIPO_ID_TU, NUMERO_IDENTIFICACION, NOMBRE_TITULAR, FECHA_LIMITE_PAGO, CODIGO_SUCURSAL, "
+    "CALIDAD, TIPO_CARTERA, ESTADO_TU, EDAD_MORA, FECHA_INICIO, PERIODICIDAD, CUOTAS_MORA, "
+    "VALOR_INICIAL, VALOR_MORA, VALOR_SALDO, VALOR_CUOTA, LINEA_CREDITO, "
+    "OBLIGACION_REFINANCIADA, CORREO, CELULAR"
+)
+_COLUMNAS_COPIADAS_ORIGINAL_2 = (
+    "ESTADO_SAC, N_CREDITOS, DIAS_MORA, ORIGEN_DIAS_MORA, FECHA_ULTIMO_PAGO, "
+    "ATRASOS_PERMITIDOS"
+)
+
+
+def _incluir_originales_refinanciadas(corte_id, fecha_corte):
+    """
+    RF18 paso 2 / RF21 / MJ-08: agrega al corte la obligacion ORIGINAL de cada
+    refinanciacion registrada hasta la fecha de corte que aun no reporto su cierre.
+
+    Al registrar la refinanciacion la original queda con CIERRE_DEFINITIVO = 'S',
+    asi que V_CALCULO_CORTE puede dejar de traerla y saldria sin reportar el cierre
+    (02/07 con modo de extincion 16). Por eso se copia su fila del ultimo corte
+    enviado, sin filtrar por CIERRE_DEFINITIVO a proposito. El resto de campos de
+    cierre (FECHA_PAGO, MODO_EXTINCION, TIPO_PAGO) los pone el ciclo.
+    """
+    columnas = _COLUMNAS_COPIADAS_ORIGINAL + ", " + _COLUMNAS_COPIADAS_ORIGINAL_2
+    columnas_ant = ", ".join(f"ant.{c.strip()}" for c in columnas.split(","))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE "
+            f"(CORTE_ID, OBLIGACION_ID, {columnas}, VALOR_REAL_PAGADO, CADUCADO) "
+            f"SELECT %s, vu.OBLIGACION_ID, {columnas_ant}, 0, NVL(ant.CADUCADO, 'N') "
+            "FROM NEXOVOLT.V_ULTIMO_REPORTE vu "
+            "JOIN NEXOVOLT.NV_REPORTE_DETALLE ant "
+            "  ON ant.CORTE_ID = vu.CORTE_ID AND ant.OBLIGACION_ID = vu.OBLIGACION_ID "
+            "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = vu.OBLIGACION_ID "
+            "WHERE vu.ESTADO_TU NOT IN ('02', '07') "
+            "AND NVL(o.ELIMINADA, 'N') = 'N' "
+            "AND vu.OBLIGACION_ID IN ("
+            "  SELECT r.OBLIGACION_ORIGEN_ID FROM NEXOVOLT.NV_REFINANCIACION r "
+            "  WHERE r.FECHA <= %s"
+            ") "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+            "  WHERE rd.CORTE_ID = %s AND rd.OBLIGACION_ID = vu.OBLIGACION_ID"
+            ")",
+            [corte_id, fecha_corte, corte_id],
+        )
+        agregadas = cursor.rowcount
+        if agregadas and agregadas > 0:
+            cursor.execute(
+                "UPDATE NEXOVOLT.NV_CORTE SET TOTAL_REGISTROS = ("
+                "SELECT COUNT(*) FROM NEXOVOLT.NV_REPORTE_DETALLE WHERE CORTE_ID = %s"
+                ") WHERE CORTE_ID = %s",
+                [corte_id, corte_id],
+            )
+
+
+def _marcar_reestructuradas(corte_id):
+    """RF18 / CP-B-37: la obligacion nueva de una refinanciacion lleva 01 en todos los cortes."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_REPORTE_DETALLE SET OBLIGACION_REFINANCIADA = '01' "
+            "WHERE CORTE_ID = %s AND OBLIGACION_ID IN ("
+            "SELECT OBLIGACION_NUEVA_ID FROM NEXOVOLT.NV_REFINANCIACION)",
+            [corte_id],
+        )
+
+
+def _cargar_refinanciaciones(fecha_corte):
+    """{OBLIGACION_ORIGEN_ID: FECHA} de las refinanciaciones hasta la fecha de corte (RF18)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT OBLIGACION_ORIGEN_ID, FECHA FROM NEXOVOLT.NV_REFINANCIACION "
+            "WHERE FECHA <= %s ORDER BY FECHA DESC, REFINANCIACION_ID DESC",
+            [fecha_corte],
+        )
+        rows = cursor.fetchall()
+    # Orden descendente: la ultima asignacion que queda es la de menor FECHA.
+    return {r[0]: r[1] for r in rows}
 
 
 def _cargar_obligaciones_corte(corte_id):
@@ -285,6 +367,36 @@ def _cerrar_obligacion(corte_id, obligacion_id, estado_cierre, fecha_pago, modo_
         )
 
 
+def _cerrar_por_refinanciacion(corte_id, obligacion_id, destino, fecha_refinanciacion):
+    """RF18: cierra la original con modo de extincion 16 (Refinanciacion) y saldo en cero."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE NEXOVOLT.NV_REPORTE_DETALLE "
+            "SET ESTADO_TU = %s, EDAD_MORA = '00', VALOR_MORA = 0, "
+            "CUOTAS_MORA = 0, VALOR_CUOTA = 0, VALOR_SALDO = 0, "
+            "FECHA_PAGO = %s, MODO_EXTINCION = '16', TIPO_PAGO = '01' "
+            "WHERE CORTE_ID = %s AND OBLIGACION_ID = %s",
+            [destino, fecha_refinanciacion, corte_id, obligacion_id],
+        )
+
+
+def _rechazar_cierre_713(
+    corte_id, obligacion_id, numero_obl, nombre_titular,
+    estado_anterior, destino, mensaje, motivo,
+):
+    """Registra la inconsistencia 713 de un cierre y devuelve el dict del rechazo."""
+    _insertar_inconsistencia_713(corte_id, obligacion_id, mensaje)
+    return {
+        "obligacion_id": obligacion_id,
+        "numero_obligacion": numero_obl,
+        "nombre_titular": nombre_titular,
+        "estado_anterior": estado_anterior,
+        "estado_calculado": destino,
+        "codigo": "713",
+        "motivo": motivo,
+    }
+
+
 def _registrar_pago_mora(corte_id, obligacion_id, fecha_pago, modo_ext, tipo_pago):
     """RF47: registra fecha_pago, modo_extincion y tipo_pago sin cambiar el estado."""
     with connection.cursor() as cursor:
@@ -421,11 +533,14 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
         _verificar_fecha_posterior(fecha_corte)
         corte_id = _obtener_corte_borrador(fecha_corte)
         _limpiar_ciclo_anterior(corte_id)
+        _incluir_originales_refinanciadas(corte_id, fecha_corte)
+        _marcar_reestructuradas(corte_id)
 
         filas = _cargar_obligaciones_corte(corte_id)
         datos_previos = _cargar_datos_previos(corte_id)
         matriz = _cargar_transiciones_permitidas()
         marcas_castigo = _cargar_marcas_castigo(corte_id)
+        refinanciaciones = _cargar_refinanciaciones(fecha_corte)
 
         transiciones_data = []
         rechazos = []
@@ -513,80 +628,109 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     ],
                 })
 
-            elif valor_saldo_int == 0 and fecha_ultimo_pago is not None:
-                # RF12/RF15: cierre por pago total
-                if estado_anterior in _ESTADOS_CIERRE_SALDADA:
-                    # RF12: Vigente/Inactivo → Saldada (02)
-                    _cerrar_obligacion(
-                        corte_id, obligacion_id, "02", fecha_ultimo_pago, "01", "01"
+            elif obligacion_id in refinanciaciones and estado_anterior not in (None, "02", "07"):
+                # RF18: la original de una refinanciacion se cierra con modo de
+                # extincion 16: 07 si estaba en 03/06, 02 en los demas casos. Se
+                # valida con la Matriz igual que el cierre por pago total (DF-01).
+                destino = "07" if estado_anterior in _ESTADOS_ORIGEN_RECUPERADA else "02"
+                con_mora_anterior = mora_anterior > 0
+                if _transicion_permitida(
+                    matriz, estado_anterior, con_mora_anterior, destino, False
+                ):
+                    _cerrar_por_refinanciacion(
+                        corte_id, obligacion_id, destino, refinanciaciones[obligacion_id]
                     )
                     n_cierres += 1
-                    rf_texto = "RF12 · Pago total: Saldada"
+                    rf_texto = (
+                        f"RF18 · Refinanciación: cierre en {destino} "
+                        f"({'Cartera Recuperada' if destino == '07' else 'Saldada'}) "
+                        f"con modo de extinción 16"
+                    )
                     filas_insert_trans.append((
-                        corte_id, obligacion_id, estado_anterior, "02",
+                        corte_id, obligacion_id, estado_anterior, destino,
                         edad_mora or "00", "00",
                         "N", "N",
-                        "RF12", rf_texto, "N",
+                        "RF18", rf_texto, "N",
                     ))
                     transiciones_data.append({
                         "obligacion_id": obligacion_id,
                         "numero_obligacion": numero_obl,
                         "nombre_titular": nombre_titular,
                         "estado_anterior": estado_anterior,
-                        "estado_nuevo": "02",
+                        "estado_nuevo": destino,
                         "edad_anterior": edad_mora or "00",
                         "edad_nueva": "00",
                         "primer_reporte": False,
                         "requiere_revision": False,
-                        "reglas": [{"rf": "RF12", "texto": rf_texto, "por_confirmar": False}],
+                        "reglas": [{"rf": "RF18", "texto": rf_texto, "por_confirmar": False}],
                     })
-
-                elif estado_anterior in _ESTADOS_CIERRE_RECUPERADA:
-                    # RF15: Dudoso/Castigada → Cartera Recuperada (07)
-                    _cerrar_obligacion(
-                        corte_id, obligacion_id, "07", fecha_ultimo_pago, "01", "01"
-                    )
-                    n_cierres += 1
-                    rf_texto = "RF15 · Pago total: Cartera Recuperada"
-                    filas_insert_trans.append((
-                        corte_id, obligacion_id, estado_anterior, "07",
-                        edad_mora or "00", "00",
-                        "N", "N",
-                        "RF15", rf_texto, "N",
-                    ))
-                    transiciones_data.append({
-                        "obligacion_id": obligacion_id,
-                        "numero_obligacion": numero_obl,
-                        "nombre_titular": nombre_titular,
-                        "estado_anterior": estado_anterior,
-                        "estado_nuevo": "07",
-                        "edad_anterior": edad_mora or "00",
-                        "edad_nueva": "00",
-                        "primer_reporte": False,
-                        "requiere_revision": False,
-                        "reglas": [{"rf": "RF15", "texto": rf_texto, "por_confirmar": False}],
-                    })
-
-                elif estado_anterior in _ESTADOS_CIERRE_INVALIDO:
-                    # 713: la Matriz no permite el cierre
-                    _insertar_inconsistencia_713(
-                        corte_id, obligacion_id,
-                        f"Cambio de estado inválido: {estado_anterior} → 02 "
-                        f"con saldo en cero (713).",
-                    )
-                    rechazos.append({
-                        "obligacion_id": obligacion_id,
-                        "numero_obligacion": numero_obl,
-                        "nombre_titular": nombre_titular,
-                        "estado_anterior": estado_anterior,
-                        "estado_calculado": "02",
-                        "codigo": "713",
-                        "motivo": "Cambio de estado inválido (713): la Matriz no permite el cierre.",
-                    })
-
                 else:
-                    # Estado anterior no conocido o ya cerrado → RF11
-                    pass
+                    origen = (
+                        f"{estado_anterior} "
+                        f"{'en mora' if con_mora_anterior else 'sin mora'}"
+                    )
+                    rechazos.append(_rechazar_cierre_713(
+                        corte_id, obligacion_id, numero_obl, nombre_titular,
+                        estado_anterior, destino,
+                        f"Cambio de estado inválido: {origen} → {destino} "
+                        f"por refinanciación (713).",
+                        f"Cambio de estado inválido (713): la Matriz no permite "
+                        f"cerrar por refinanciación desde {origen}.",
+                    ))
+
+            elif valor_saldo_int == 0 and fecha_ultimo_pago is not None:
+                # RF12/RF15: cierre por pago total. El destino candidato es 07
+                # desde 03/06 (RF15) y 02 en los demás casos (RF12); si la Matriz
+                # (Manual v34 p. 40) no permite el origen (con o sin mora del
+                # último corte enviado) → destino sin mora, es inconsistencia 713.
+                # Sin estado anterior o ya cerrada (02/07): sin transición (RF11).
+                if estado_anterior is not None and estado_anterior not in ("02", "07"):
+                    destino = "07" if estado_anterior in _ESTADOS_ORIGEN_RECUPERADA else "02"
+                    con_mora_anterior = mora_anterior > 0
+                    if _transicion_permitida(
+                        matriz, estado_anterior, con_mora_anterior, destino, False
+                    ):
+                        _cerrar_obligacion(
+                            corte_id, obligacion_id, destino, fecha_ultimo_pago, "01", "01"
+                        )
+                        n_cierres += 1
+                        if destino == "07":
+                            rf_codigo = "RF15"
+                            rf_texto = "RF15 · Pago total: Cartera Recuperada"
+                        else:
+                            rf_codigo = "RF12"
+                            rf_texto = "RF12 · Pago total: Saldada"
+                        filas_insert_trans.append((
+                            corte_id, obligacion_id, estado_anterior, destino,
+                            edad_mora or "00", "00",
+                            "N", "N",
+                            rf_codigo, rf_texto, "N",
+                        ))
+                        transiciones_data.append({
+                            "obligacion_id": obligacion_id,
+                            "numero_obligacion": numero_obl,
+                            "nombre_titular": nombre_titular,
+                            "estado_anterior": estado_anterior,
+                            "estado_nuevo": destino,
+                            "edad_anterior": edad_mora or "00",
+                            "edad_nueva": "00",
+                            "primer_reporte": False,
+                            "requiere_revision": False,
+                            "reglas": [{"rf": rf_codigo, "texto": rf_texto, "por_confirmar": False}],
+                        })
+                    else:
+                        origen = (
+                            f"{estado_anterior} "
+                            f"{'en mora' if con_mora_anterior else 'sin mora'}"
+                        )
+                        rechazos.append(_rechazar_cierre_713(
+                            corte_id, obligacion_id, numero_obl, nombre_titular,
+                            estado_anterior, destino,
+                            f"Cambio de estado inválido: {origen} → {destino} "
+                            f"con saldo en cero (713).",
+                            f"Cambio de estado inválido (713): la Matriz no "
+                            f"permite pasar de {origen} a {destino}.",
+                        ))
 
             else:
                 # ── RF46: Normalización sin pago total ───────────────────────
@@ -836,7 +980,10 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     )
 
                 if regla_rf == "RF11":
-                    fecha_fl = fecha_str(fecha_limite_pago) if fecha_limite_pago else "sin fecha"
+                    fecha_antigua = (
+                        fecha_exigibilidad(fecha_corte, dias_mora_int) if dias_mora_int > 0 else None
+                    )
+                    fecha_fl = fecha_str(fecha_antigua) if fecha_antigua else "sin fecha"
                     regla_texto = (
                         f"RF11 · {dias_mora_int} días desde la cuota más antigua "
                         f"sin pagar ({fecha_fl}): edad {old_edad} → {new_edad}"
@@ -1420,7 +1567,12 @@ def obtener_obligacion(obligacion_id):
         "valor_inicial": int(row[15]) if row[15] is not None else None,
         "valor_cuota": int(row[16]) if row[16] is not None else 0,
         "valor_cuota_antes_cierre": None,
-        "fecha_exigibilidad": fecha_str(row[17]) if (row[8] is not None and int(row[8]) > 0) else None,
+        "fecha_exigibilidad": fecha_str(
+            fecha_exigibilidad(fecha_corte_bd, row[6])
+            if (row[8] is not None and int(row[8]) > 0 and edad_mora != "00"
+                and fecha_corte_bd is not None)
+            else None
+        ),
         "atrasos_permitidos": atrasos_permitidos,
         "cuotas_atrasadas": int(row[7]) if row[7] is not None else 0,
         "cierre": cierre,
