@@ -156,6 +156,8 @@ def _setup_ciclo(
     mora_anterior=0,
     matriz=None,
     marcas_castigo=None,
+    refinanciaciones=None,
+    filas_agregadas=0,
 ):
     """
     Monta el mock_cursor con respuestas para ejecutar_ciclo.
@@ -166,7 +168,10 @@ def _setup_ciclo(
        valor_saldo, fecha_ultimo_pago)
 
     marcas_castigo: lista de obligacion_ids con marca de castigo (RF45).
+    refinanciaciones: lista de (obligacion_origen_id, fecha) de NV_REFINANCIACION (RF18).
+    filas_agregadas: rowcount del INSERT de originales refinanciadas (RF18 paso 2).
     """
+    mock_cursor.rowcount = filas_agregadas
     fecha_corte_bd = date(2026, 10, 31)
 
     mock_cursor.fetchone.side_effect = [
@@ -204,8 +209,20 @@ def _setup_ciclo(
         datos_previos,        # _cargar_datos_previos
         matriz or [],         # _cargar_transiciones_permitidas
         castigo_rows,         # _cargar_marcas_castigo (RF45)
+        list(refinanciaciones or []),  # _cargar_refinanciaciones (RF18)
         [],                   # RF13 MOVIMIENTO_POSTERIOR query
     ]
+
+
+# Casillas S de cierre por pago total del Manual (v34 p. 40): destino 02/07 sin mora.
+_MATRIZ_CIERRES = [
+    ('01', 'N', '02', 'N'),
+    ('01', 'S', '02', 'N'),
+    ('08', 'N', '02', 'N'),
+    ('08', 'S', '02', 'N'),
+    ('03', 'S', '07', 'N'),
+    ('06', 'S', '07', 'N'),
+]
 
 
 # ── Casos RF10 ────────────────────────────────────────────────────────────────
@@ -392,6 +409,24 @@ def test_rf11_ciclo_47_dias_edad_01():
     assert "47" in t["reglas"][0]["texto"]
     assert "00" in t["reglas"][0]["texto"]
     assert "01" in t["reglas"][0]["texto"]
+
+
+def test_rf11_texto_cita_la_fecha_de_la_cuota_mas_antigua():
+    """El texto de la regla usa corte - dias (31/10 - 78 = 14/08), no la fecha límite de la factura."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (21, "01", 100000, "02", "Hotel Mirador", "2258-7732",
+         78, date(2026, 12, 14), 0, 0, None),
+    ]
+    _setup_ciclo(mock_conn, mock_cursor, obligaciones=obligaciones,
+                 es_primer_reporte=False, edad_anterior="01")
+
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+
+    texto = resultado["transiciones"][0]["reglas"][0]["texto"]
+    assert "78 días desde la cuota más antigua sin pagar (2026-08-14)" in texto
+    assert "2026-12-14" not in texto
 
 
 def test_rf11_ciclo_salto_mayor_tramo_requiere_revision():
@@ -1112,6 +1147,7 @@ def test_rf17_ciclo_cubre_saldo_cierra_rf12():
         edad_anterior="01",
         estado_anterior="01",
         mora_anterior=140000,
+        matriz=_MATRIZ_CIERRES,
     )
 
     with _patch_ciclo(mock_conn):
@@ -1575,13 +1611,16 @@ def test_rf47_obtener_obligacion_sin_pago_mora_es_none():
 # ── Casos RF49 ────────────────────────────────────────────────────────────────
 
 def test_rf49_fecha_exigibilidad_cuota_antigua():
-    """Dos cuotas sin pagar; la más antigua del 14/08 → fecha_exigibilidad = '2026-08-14'."""
+    """Dos cuotas sin pagar; la más antigua del 14/08 → fecha_exigibilidad = '2026-08-14'.
+
+    Ahora sale de FECHA_CORTE (31/10) - DIAS_MORA (78), no de FECHA_LIMITE_PAGO.
+    """
     mock_conn, mock_cursor = _mock_conn_multiple()
     mock_cursor.fetchone.side_effect = [
         (1,),
         (
             60, "2272-6001", "Empresa Solar", "5566778899",
-            "03", "02", 75, 2,
+            "03", "02", 78, 2,
             140000, 500000,
             "N", "N", "N", None,
             date(2026, 1, 31), 800000, 70000, date(2026, 8, 14),
@@ -1602,6 +1641,31 @@ def test_rf49_fecha_exigibilidad_cuota_antigua():
 
     assert result["fecha_exigibilidad"] == "2026-08-14"
     assert result["valor_mora"] == 140000
+
+
+def test_rf49_exigibilidad_ignora_la_fecha_limite_de_la_ultima_factura():
+    """La fecha límite (última factura, futura) no es la exigibilidad: manda corte - dias."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    mock_cursor.fetchone.side_effect = [
+        (1,),
+        (
+            63, "2272-6004", "Empresa Solar", "5566778899",
+            "03", "02", 78, 2,
+            140000, 500000,
+            "N", "N", "N", None,
+            date(2026, 1, 31), 800000, 70000, date(2026, 12, 14),
+            None, None, None, "N", date(2026, 10, 31),
+            "N", 0, 0, "N", "N",
+        ),
+        None,
+        None,
+    ]
+    mock_cursor.fetchall.return_value = []
+
+    with patch("ciclo.servicios.connection", mock_conn):
+        result = servicios.obtener_obligacion(63)
+
+    assert result["fecha_exigibilidad"] == "2026-08-14"
 
 
 def test_rf49_anios_mora_edad_14_800_dias():
@@ -1655,3 +1719,286 @@ def test_rf49_al_dia_exigibilidad_nula():
 
     assert result["fecha_exigibilidad"] is None
     assert result["anios_mora"] is None
+
+
+# ── DF-01 · Cierre por pago total según la Matriz (RF12, RF15) ───────────────
+
+def _ciclo_cierre(estado_anterior, mora_anterior, matriz=_MATRIZ_CIERRES):
+    """Ejecuta el ciclo con una obligación (no primer reporte) que paga todo."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (90, "01", 0, "00", "Titular Cierre", "2250-9001",
+         0, None, 100000, 0, date(2026, 10, 20), 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior=estado_anterior,
+        mora_anterior=mora_anterior,
+        matriz=matriz,
+    )
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+    sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
+    return resultado, sqls
+
+
+def _hay_713(sqls):
+    return any(
+        "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in s and "CAMBIO_ESTADO_INVALIDO" in s
+        for s in sqls
+    )
+
+
+def test_df01_cierre_desde_03_sin_mora_anterior_da_713():
+    """CP-B-25: 03 sin mora → 07 no está en la Matriz (03-n → 07-n = N)."""
+    resultado, sqls = _ciclo_cierre("03", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "713"
+    assert r["estado_anterior"] == "03"
+    assert r["estado_calculado"] == "07"
+    assert "sin mora" in r["motivo"]
+    assert _hay_713(sqls)
+    # No se ejecutó el UPDATE de cierre (_cerrar_obligacion) sobre el detalle.
+    assert not any(
+        "UPDATE NEXOVOLT.NV_REPORTE_DETALLE" in s and "EDAD_MORA = '00'" in s for s in sqls
+    )
+    assert len(resultado["transiciones"]) == 0
+
+
+def test_df01_cierre_desde_03_con_mora_anterior_cierra_en_07():
+    """CP-B-23: 03 con mora → 07 sí está permitido (RF15)."""
+    resultado, sqls = _ciclo_cierre("03", 150000)
+    assert resultado["cierres"] == 1
+    assert resultado["rechazados"] == 0
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "07"
+    assert t["reglas"][0]["rf"] == "RF15"
+    assert not _hay_713(sqls)
+
+
+def test_df01_cierre_desde_06_sin_mora_anterior_da_713():
+    resultado, sqls = _ciclo_cierre("06", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    assert resultado["rechazos"][0]["codigo"] == "713"
+    assert resultado["rechazos"][0]["estado_calculado"] == "07"
+    assert _hay_713(sqls)
+
+
+def test_df01_cierre_desde_06_con_mora_cierra_en_07():
+    resultado, sqls = _ciclo_cierre("06", 80000)
+    assert resultado["cierres"] == 1
+    assert resultado["transiciones"][0]["estado_nuevo"] == "07"
+    assert resultado["transiciones"][0]["reglas"][0]["rf"] == "RF15"
+    assert not _hay_713(sqls)
+
+
+def test_df01_cierre_desde_01_sin_mora_cierra_en_02():
+    """CP-B-24: 01 sin mora → 02 (RF12)."""
+    resultado, sqls = _ciclo_cierre("01", 0)
+    assert resultado["cierres"] == 1
+    assert resultado["transiciones"][0]["estado_nuevo"] == "02"
+    assert resultado["transiciones"][0]["reglas"][0]["rf"] == "RF12"
+    assert not _hay_713(sqls)
+
+
+def test_df01_cierre_desde_04_da_713():
+    """CP-B-13: Suspendida no puede cerrarse por pago total."""
+    resultado, sqls = _ciclo_cierre("04", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    assert resultado["rechazos"][0]["codigo"] == "713"
+    assert resultado["rechazos"][0]["estado_calculado"] == "02"
+    assert _hay_713(sqls)
+
+
+def test_df01_cierre_consulta_la_matriz():
+    """Con la Matriz vacía, hasta un 01 que paga todo da 713: la decisión sale de la Matriz."""
+    resultado, sqls = _ciclo_cierre("01", 0, matriz=[])
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    assert resultado["rechazos"][0]["codigo"] == "713"
+    assert _hay_713(sqls)
+
+
+def _matriz_manual_como_filas():
+    from tests.test_matriz_estados import MANUAL
+    return [
+        (desde, "S" if mora_desde else "N", hacia, "S" if mora_hacia else "N")
+        for (desde, mora_desde, hacia, mora_hacia), valor in MANUAL.items()
+        if valor == "S"
+    ]
+
+
+@pytest.mark.parametrize("con_mora", [False, True])
+@pytest.mark.parametrize(
+    "origen", ["01", "04", "08", "06", "03", "10", "11", "12"]
+)
+def test_df01_cierre_sigue_la_matriz_completa_del_manual(origen, con_mora):
+    from tests.test_matriz_estados import MANUAL
+    destino = "07" if origen in ("03", "06") else "02"
+    casilla = MANUAL[(origen, con_mora, destino, False)]
+    resultado, sqls = _ciclo_cierre(
+        origen, 100000 if con_mora else 0, matriz=_matriz_manual_como_filas()
+    )
+    if casilla == "S":
+        assert resultado["cierres"] == 1
+        assert resultado["rechazados"] == 0
+        assert resultado["transiciones"][0]["estado_nuevo"] == destino
+        assert not _hay_713(sqls)
+    else:
+        assert resultado["cierres"] == 0
+        assert resultado["rechazados"] == 1
+        assert resultado["rechazos"][0]["codigo"] == "713"
+        assert _hay_713(sqls)
+
+
+@pytest.mark.parametrize("origen", ["02", "07"])
+def test_df01_cierre_desde_02_y_07_se_conserva_sin_transicion(origen):
+    resultado, sqls = _ciclo_cierre(origen, 0, matriz=_matriz_manual_como_filas())
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 0
+    assert not _hay_713(sqls)
+
+
+# ── DF-03 · Refinanciación: cierre de la original y marca de la nueva (RF18) ──
+
+_FECHA_REFINANCIACION = date(2026, 10, 15)
+
+
+def _ciclo_refinanciada(
+    estado_anterior, mora_anterior, matriz=_MATRIZ_CIERRES,
+    refinanciaciones=((90, _FECHA_REFINANCIACION),), filas_agregadas=0,
+):
+    """Ejecuta el ciclo con una original refinanciada que sigue con saldo en el SAC."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (90, "01", 0, "00", "Titular Refi", "2250-9002",
+         0, None, 0, 500000, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior=estado_anterior,
+        mora_anterior=mora_anterior,
+        matriz=matriz,
+        refinanciaciones=refinanciaciones,
+        filas_agregadas=filas_agregadas,
+    )
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+    return resultado, mock_cursor.execute.call_args_list
+
+
+def _sqls(llamadas):
+    return [str(c.args[0]) for c in llamadas if c.args]
+
+
+def test_df03_original_en_01_cierra_en_02_con_modo_16():
+    """CP-B-33: la original en 01 se cierra en 02 con modo de extinción 16."""
+    resultado, llamadas = _ciclo_refinanciada("01", 0)
+    assert resultado["cierres"] == 1
+    assert resultado["rechazados"] == 0
+    t = resultado["transiciones"][0]
+    assert (t["estado_anterior"], t["estado_nuevo"]) == ("01", "02")
+    assert t["reglas"][0]["rf"] == "RF18"
+    cierres = [
+        c for c in llamadas
+        if c.args and "MODO_EXTINCION = '16'" in str(c.args[0])
+    ]
+    assert len(cierres) == 1
+    sql, params = cierres[0].args
+    assert "VALOR_SALDO = 0" in sql
+    assert "FECHA_PAGO = %s" in sql
+    assert params == ["02", _FECHA_REFINANCIACION, 1, 90]
+
+
+def test_df03_original_en_03_en_mora_cierra_en_07_con_modo_16():
+    """CP-B-34 / CP-B-26: 03 en mora se cierra en 07 con modo 16."""
+    resultado, llamadas = _ciclo_refinanciada("03", 150000)
+    assert resultado["cierres"] == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "07"
+    assert t["reglas"][0]["rf"] == "RF18"
+    cierres = [c for c in llamadas if c.args and "MODO_EXTINCION = '16'" in str(c.args[0])]
+    assert cierres[0].args[1][0] == "07"
+
+
+def test_df03_original_en_03_sin_mora_da_713():
+    resultado, llamadas = _ciclo_refinanciada("03", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "713"
+    assert r["estado_calculado"] == "07"
+    assert "refinanciación" in r["motivo"]
+    assert _hay_713(_sqls(llamadas))
+    assert not any("MODO_EXTINCION = '16'" in s for s in _sqls(llamadas))
+
+
+def test_df03_refinanciacion_posterior_al_corte_no_cierra():
+    """Una refinanciación con FECHA > fecha de corte no entra en el dict: flujo normal."""
+    resultado, llamadas = _ciclo_refinanciada("01", 0, refinanciaciones=())
+    assert resultado["cierres"] == 0
+    assert not any("MODO_EXTINCION = '16'" in s for s in _sqls(llamadas))
+    consulta = [
+        c for c in llamadas
+        if c.args and "SELECT OBLIGACION_ORIGEN_ID, FECHA" in str(c.args[0])
+    ][0]
+    assert "FECHA <= %s" in consulta.args[0]
+    assert consulta.args[1] == [_FECHA_VALIDA]
+
+
+def test_df03_ciclo_incluye_la_original_que_falta_en_el_corte():
+    """MJ-08: se agrega la original aunque V_CALCULO_CORTE ya no la traiga."""
+    _, llamadas = _ciclo_refinanciada("01", 0, filas_agregadas=1)
+    inserts = [
+        c for c in llamadas
+        if c.args and str(c.args[0]).startswith("INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE")
+    ]
+    assert len(inserts) == 1
+    sql, params = inserts[0].args
+    assert "V_ULTIMO_REPORTE" in sql
+    assert "NOT EXISTS" in sql
+    assert "NV_REFINANCIACION" in sql
+    assert "CIERRE_DEFINITIVO" not in sql
+    assert params == [1, _FECHA_VALIDA, 1]
+    assert any("UPDATE NEXOVOLT.NV_CORTE SET TOTAL_REGISTROS" in s for s in _sqls(llamadas))
+
+
+def test_df03_ciclo_sin_originales_nuevas_no_toca_total_registros():
+    _, llamadas = _ciclo_refinanciada("01", 0, filas_agregadas=0)
+    assert not any(
+        "UPDATE NEXOVOLT.NV_CORTE SET TOTAL_REGISTROS" in s for s in _sqls(llamadas)
+    )
+
+
+def test_df03_ciclo_marca_la_nueva_como_reestructurada():
+    """CP-B-37: la nueva lleva OBLIGACION_REFINANCIADA = '01' en cada corte."""
+    _, llamadas = _ciclo_refinanciada("01", 0)
+    marcas = [
+        c for c in llamadas
+        if c.args and "SET OBLIGACION_REFINANCIADA = '01'" in str(c.args[0])
+    ]
+    assert len(marcas) == 1
+    assert "OBLIGACION_NUEVA_ID" in marcas[0].args[0]
+    assert marcas[0].args[1] == [1]
+
+
+def test_df03_limpiar_no_anula_filas_fuera_de_v_calculo_corte():
+    _, llamadas = _ciclo_refinanciada("01", 0)
+    recalculo = [
+        c for c in llamadas
+        if c.args and "SET (rd.ESTADO_TU, rd.EDAD_MORA" in str(c.args[0])
+    ]
+    assert len(recalculo) == 1
+    sql, params = recalculo[0].args
+    assert "AND EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v2" in sql
+    assert params == [1, 1, 1]

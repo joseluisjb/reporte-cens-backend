@@ -212,6 +212,91 @@ def _insertar_reporte_detalle():
         cursor.execute(sql)
 
 
+# Candidatas a arrastrar: abiertas en el ultimo corte enviado (misma definicion que la
+# regla 15 de V_VALIDACION_CORTE y que _activas_del_ultimo_enviado), sin fila en
+# V_CALCULO_CORTE para el corte nuevo y que aun no estan en el. Requiere 2 parametros: corte_id.
+_SQL_ARRASTRE_CANDIDATAS = (
+    "FROM NEXOVOLT.NV_REPORTE_DETALLE ant "
+    "JOIN (SELECT CORTE_ID, FECHA_CORTE FROM NEXOVOLT.NV_CORTE "
+    "WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS') "
+    "ORDER BY FECHA_CORTE DESC FETCH FIRST 1 ROW ONLY) ult ON ult.CORTE_ID = ant.CORTE_ID "
+    "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = ant.OBLIGACION_ID "
+    "WHERE ant.ESTADO_TU NOT IN ('02', '07') "
+    "AND NVL(o.ELIMINADA, 'N') = 'N' "
+    "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v "
+    "WHERE v.CORTE_ID = %s AND v.OBLIGACION_ID = ant.OBLIGACION_ID) "
+    "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+    "WHERE rd.CORTE_ID = %s AND rd.OBLIGACION_ID = ant.OBLIGACION_ID)"
+)
+
+
+def _arrastrar_abiertas_del_ultimo_enviado(corte_id):
+    """
+    RF21 / DF-04 (CP-C-08): el corte incluye las obligaciones del ultimo corte enviado
+    que no estan cerradas ni eliminadas. Si una de ellas ya no viene del SAC (no tiene
+    ninguna fila en V_CALCULO_CORTE), se arrastra al corte nuevo con los datos del
+    reporte enviado, sin cambiar su estado, y deja una advertencia INFORMATIVA.
+
+    Las que siguen en V_CALCULO_CORTE, incluso con INCLUIR = 'N' (por ejemplo con estado
+    sin homologar), NO se arrastran: siguen bloqueando por OMISION_VS_ULTIMO_CORTE.
+    Una original refinanciada arrastrada aqui la cierra luego el ciclo, porque
+    _incluir_originales_refinanciadas omite las filas que ya estan en el corte.
+    """
+    from ciclo.servicios import _COLUMNAS_COPIADAS_ORIGINAL, _COLUMNAS_COPIADAS_ORIGINAL_2
+
+    columnas = _COLUMNAS_COPIADAS_ORIGINAL + ", " + _COLUMNAS_COPIADAS_ORIGINAL_2
+    columnas_ant = ", ".join(f"ant.{c.strip()}" for c in columnas.split(","))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
+            "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
+            "SELECT %s, ant.OBLIGACION_ID, 'OMISION_VS_ULTIMO_CORTE', 'INFORMATIVA', "
+            "'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' ya no viene del SAC: se arrastro con "
+            "los datos del corte enviado del ' || TO_CHAR(ult.FECHA_CORTE, 'YYYY-MM-DD') || "
+            "'. Revise si sigue abierta.', %s "
+            + _SQL_ARRASTRE_CANDIDATAS,
+            [corte_id, ahora_para_bd(), corte_id, corte_id],
+        )
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE "
+            f"(CORTE_ID, OBLIGACION_ID, {columnas}, VALOR_REAL_PAGADO, CADUCADO) "
+            f"SELECT %s, ant.OBLIGACION_ID, {columnas_ant}, 0, NVL(ant.CADUCADO, 'N') "
+            + _SQL_ARRASTRE_CANDIDATAS,
+            [corte_id, corte_id, corte_id],
+        )
+
+
+def _registrar_estados_sin_homologar(corte_id):
+    """
+    RF48 / DF-05 (CP-B-55): una obligacion del SAC cuyo estado no esta homologado
+    (sin fila en NV_HOMOLOGA_ESTADO para su tipo de cartera y estado, o con ACCION nula)
+    no llega a NV_REPORTE_DETALLE, asi que la regla 21 de la vista nunca la ve. Se deja
+    una inconsistencia CORRECTIVA por obligacion para que el corte quede bloqueado.
+
+    Es una foto a proposito, tomada al generar el corte: V_CALCULO_CORTE solo tiene el
+    corte en BORRADOR y, si alguien homologa sin regenerar, la obligacion seguiria
+    faltando. _limpiar_corte borra estas filas al regenerar y el ciclo solo borra 881/713.
+    Un estado con ACCION = 'CIERRE' y ESTADO_TU nulo (p. ej. F) esta homologado y no se marca.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
+            "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
+            "SELECT %s, v.OBLIGACION_ID, 'ESTADO_SIN_HOMOLOGAR', 'CORRECTIVA', "
+            "'Obligacion ' || NVL(o.NUMERO_OBLIGACION_TU, v.NUMERO_OBLIGACION_PROPUESTO) "
+            "|| ': el estado ' || NVL(v.ESTADO_SAC, '(vacio)') || ' del SAC no esta homologado "
+            "y la obligacion no entra al corte. Homologuelo (RF48) y vuelva a generar el corte.', %s "
+            "FROM NEXOVOLT.V_CALCULO_CORTE v "
+            "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = v.OBLIGACION_ID "
+            "WHERE v.CORTE_ID = %s "
+            "AND NVL(o.ELIMINADA, 'N') = 'N' "
+            "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_HOMOLOGA_ESTADO h "
+            "WHERE h.TIPO_CARTERA = v.TIPO_CARTERA AND h.ESTADO_SAC = v.ESTADO_SAC "
+            "AND h.ACCION IS NOT NULL)",
+            [corte_id, ahora_para_bd(), corte_id],
+        )
+
+
 def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por=None):
     with connection.cursor() as cursor:
         cursor.execute(
@@ -317,6 +402,8 @@ def generar_corte(fecha_corte, grupo_id=None, usuario=None):
 
         _insertar_obligaciones_nuevas()
         _insertar_reporte_detalle()
+        _arrastrar_abiertas_del_ultimo_enviado(corte_id)
+        _registrar_estados_sin_homologar(corte_id)
         return _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por)
 
 
@@ -422,7 +509,7 @@ _REGLAS = {
     "SIN_ESTADO": ("Estado TransUnion", ["RF53"], "estado"),
     "SIN_EDAD": ("Edad de mora", ["RF53"], "edad_mora"),
     "FECHA_CORTE_NO_POSTERIOR": ("Fecha de corte posterior al último enviado", ["RF53"], None),
-    "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha límite de pago no futura", ["RF49", "RF53"], "fecha_limite_pago"),
+    "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha de exigibilidad no futura", ["RF49", "RF53"], "fecha_limite_pago"),
     "SIN_FECHA_LIMITE_PAGO": ("Fecha límite de pago", ["RF49", "RF53"], "fecha_limite_pago"),
     "ESTADO_SIN_HOMOLOGAR": ("Estado homologado en el catálogo TransUnion", ["RF48", "RF53"], "estado"),
     "EDAD_SIN_VALOR_MORA": ("Edad de mora con valor de mora (regla 707)", ["RF19", "RF53"], "valor_mora"),
@@ -458,8 +545,10 @@ def _campo_de(regla, mensaje):
 def _evaluar_reglas(corte_id):
     """Resultados de las reglas del Manual para el corte, sin cambiar nada (RF53).
 
-    Une V_VALIDACION_CORTE, los cambios de estado que la Matriz rechazó en el ciclo (713)
-    y la actualización mensual pendiente.
+    Une V_VALIDACION_CORTE, los cambios de estado que la Matriz rechazó en el ciclo (713),
+    las advertencias de arrastre de obligaciones del último corte (DF-04), los estados
+    del SAC sin homologar registrados al generar el corte (DF-05) y la
+    actualización mensual pendiente.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -477,7 +566,9 @@ def _evaluar_reglas(corte_id):
             "SELECT i.REGLA, i.SEVERIDAD, i.MENSAJE, i.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU "
             "FROM NEXOVOLT.NV_INCONSISTENCIA i "
             "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = i.OBLIGACION_ID "
-            "WHERE i.CORTE_ID = %s AND i.REGLA = 'CAMBIO_ESTADO_INVALIDO'",
+            "WHERE i.CORTE_ID = %s AND (i.REGLA = 'CAMBIO_ESTADO_INVALIDO' "
+            "OR (i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA') "
+            "OR (i.REGLA = 'ESTADO_SIN_HOMOLOGAR' AND i.SEVERIDAD = 'CORRECTIVA'))",
             [corte_id, corte_id],
         )
         filas = cursor.fetchall()
@@ -568,7 +659,20 @@ def _detalle(regla, items):
         return _DETALLE_MILES
     if regla == "OMISION_VS_ULTIMO_CORTE":
         activas = _activas_del_ultimo_enviado()
-        return f"{activas - len(items)} de {activas} obligaciones activas del último corte incluidas."
+        omitidas = sum(1 for i in items if i["severidad"] == "CORRECTIVA")
+        arrastradas = len(items) - omitidas
+        texto = f"{activas - omitidas} de {activas} obligaciones activas del último corte incluidas."
+        if arrastradas:
+            texto += (
+                f" {arrastradas} arrastrada(s) con los datos del último corte enviado "
+                "porque ya no vienen del SAC; revíselas."
+            )
+        return texto
+    if regla == "ESTADO_SIN_HOMOLOGAR" and items:
+        return (
+            f"{len(items)} obligación(es) con un estado sin homologar: "
+            "homologue el estado del SAC (RF48) y vuelva a generar el corte."
+        )
     if not items:
         return "Sin observaciones."
     if all(i["obligacion_id"] is None for i in items):
@@ -583,7 +687,7 @@ def _nivel(regla, items):
         return "ok"
     if regla == "ENTIDAD_CON_MARCADOR":
         return "advertencia"
-    return "correctiva" if items[0]["severidad"] == "CORRECTIVA" else "informativa"
+    return "correctiva" if any(i["severidad"] == "CORRECTIVA" for i in items) else "informativa"
 
 
 def validaciones_corte(corte_id):
@@ -1121,7 +1225,7 @@ _COLUMNAS_TIPO2 = (
     "NOMBRE_TITULAR", "FECHA_LIMITE_PAGO", "CALIDAD", "ESTADO_TU", "EDAD_MORA", "ANIOS_MORA",
     "FECHA_INICIO", "FECHA_PAGO", "MODO_EXTINCION", "TIPO_PAGO", "PERIODICIDAD", "CUOTAS_MORA",
     "VALOR_INICIAL", "VALOR_MORA", "VALOR_SALDO", "VALOR_CUOTA", "OBLIGACION_REFINANCIADA",
-    "CORREO", "CELULAR", "VALOR_REAL_PAGADO", "ELIMINADA",
+    "CORREO", "CELULAR", "VALOR_REAL_PAGADO", "ELIMINADA", "DIAS_MORA",
 )
 # Los datos del titular se toman de NV_REPORTE_DETALLE (V_REPORTE_TU v2 aún no los expone).
 _SQL_OBLIGACIONES_ARCHIVO = (
@@ -1130,7 +1234,7 @@ _SQL_OBLIGACIONES_ARCHIVO = (
     "TRUNC(NVL(rd.DIAS_MORA, 0) / 365), rd.FECHA_INICIO, rd.FECHA_PAGO, rd.MODO_EXTINCION, "
     "rd.TIPO_PAGO, rd.PERIODICIDAD, rd.CUOTAS_MORA, rd.VALOR_INICIAL, rd.VALOR_MORA, "
     "rd.VALOR_SALDO, rd.VALOR_CUOTA, rd.OBLIGACION_REFINANCIADA, rd.CORREO, rd.CELULAR, "
-    "rd.VALOR_REAL_PAGADO, NVL(o.ELIMINADA, 'N') "
+    "rd.VALOR_REAL_PAGADO, NVL(o.ELIMINADA, 'N'), rd.DIAS_MORA "
     "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
     "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID "
     "WHERE rd.CORTE_ID = %s ORDER BY o.NUMERO_OBLIGACION_TU"
@@ -1168,6 +1272,45 @@ def _leer_obligaciones_archivo(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(_SQL_OBLIGACIONES_ARCHIVO, [corte_id])
         return [dict(zip(_COLUMNAS_TIPO2, fila)) for fila in cursor.fetchall()]
+
+
+def _reestructuraciones(filas):
+    """{obligacion_nueva_id: (naturaleza, n)} a partir de (origen_id, nueva_id, naturaleza).
+
+    n es la profundidad de la cadena de refinanciaciones (RF18, campo 46): la nueva de una
+    refinanciacion cuya original fue a su vez la nueva de otra cuenta 2, y asi. Se calcula en
+    Python y esta protegida contra ciclos. La naturaleza es la de la refinanciacion de la nueva.
+    """
+    origen_de = {}
+    for origen_id, nueva_id, naturaleza in filas:
+        origen_de.setdefault(nueva_id, (origen_id, naturaleza))
+    resultado = {}
+    for nueva_id, (_, naturaleza) in origen_de.items():
+        visitadas, actual, n = {nueva_id}, nueva_id, 0
+        while actual in origen_de:
+            origen_id = origen_de[actual][0]
+            n += 1
+            if origen_id in visitadas:
+                break
+            visitadas.add(origen_id)
+            actual = origen_id
+        resultado[nueva_id] = (naturaleza, n)
+    return resultado
+
+
+def _completar_reestructuraciones(filas):
+    """Agrega NATURALEZA_REESTR y N_REESTRUCTURACIONES (campos 45 y 46) a cada obligacion."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT OBLIGACION_ORIGEN_ID, OBLIGACION_NUEVA_ID, NATURALEZA "
+            "FROM NEXOVOLT.NV_REFINANCIACION ORDER BY REFINANCIACION_ID"
+        )
+        vinculos = _reestructuraciones(cursor.fetchall())
+    for fila in filas:
+        naturaleza, n = vinculos.get(fila["OBLIGACION_ID"], (None, 0))
+        fila["NATURALEZA_REESTR"] = naturaleza
+        fila["N_REESTRUCTURACIONES"] = n
+    return filas
 
 
 def _fila_a_archivo(fila, nombres, longitud_tipo2):
@@ -1243,7 +1386,7 @@ def generar_archivo(corte_id, usuario=None):
         "codigo_sucursal": entidad["codigo_sucursal"],
         "fecha_corte": fecha_corte,
     }
-    filas = _leer_obligaciones_archivo(corte_id)
+    filas = _completar_reestructuraciones(_leer_obligaciones_archivo(corte_id))
     reportadas = [f for f in filas if f["ELIMINADA"] != "S"]
     contenido, errores = armar_archivo(
         cabecera, reportadas, int(params.get("DIVISOR_VALORES") or 1000), _longitud_tipo2()

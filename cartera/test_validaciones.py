@@ -209,3 +209,192 @@ def test_valor_inicial_saldo_mora_y_cuota_por_separado():
 def test_saldo_mayor_al_valor_inicial_es_advertencia():
     detalle = _detalle_obligacion(1_000_000, 1_276_016, 0)
     assert detalle["advertencias"][0]["regla"] == "SALDO_MAYOR_VALOR_INICIAL"
+
+
+# ── DF-04 · arrastre de abiertas del último corte enviado (RF21, CP-C-08) ──────
+
+_FECHA_GEN = date(2026, 10, 10)
+_OMISION_ARRASTRADA = (
+    "OMISION_VS_ULTIMO_CORTE", "INFORMATIVA",
+    "Obligacion 2241-3302 ya no viene del SAC: se arrastro con los datos del corte enviado del 2026-09-30. "
+    "Revise si sigue abierta.",
+    9, "2241-3302",
+)
+
+
+def _generar_corte_capturando_sql():
+    conexion, cursor = _conexion(
+        [(None,), None, None, (1,), (5, _FECHA_GEN), (0,)], []
+    )
+    llamadas = []
+    cursor.execute.side_effect = lambda sql, params=None: llamadas.append((sql, params))
+    with patch("cartera.servicios.connection", conexion), \
+         patch("cartera.servicios.transaction.atomic", _sin_transaccion), \
+         patch("cartera.servicios._todos_los_conceptos_reportables", return_value=[30]):
+        servicios.generar_corte(fecha_corte=date(2026, 9, 30))
+    return llamadas
+
+
+def test_cp_c_08_generar_corte_arrastra_las_abiertas_del_ultimo_enviado():
+    """CP-C-08 / DF-04: la abierta que ya no viene del SAC entra al corte con los datos del enviado."""
+    llamadas = _generar_corte_capturando_sql()
+    sqls = [s for s, _ in llamadas]
+    i_vista = next(i for i, s in enumerate(sqls) if "FROM NEXOVOLT.V_CALCULO_CORTE WHERE INCLUIR" in s)
+    i_aviso = next(i for i, s in enumerate(sqls) if "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in s)
+    i_arrastre = next(
+        i for i, s in enumerate(sqls) if "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE" in s and "ant." in s
+    )
+    i_total = next(i for i, s in enumerate(sqls) if "SET TOTAL_REGISTROS" in s)
+    assert i_vista < i_aviso < i_arrastre < i_total
+
+    sql, params = llamadas[i_arrastre]
+    assert "ant.ESTADO_TU" in sql and "ant.EDAD_MORA" in sql
+    assert "ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS')" in sql
+    assert "FETCH FIRST 1 ROW ONLY" in sql
+    assert "ant.ESTADO_TU NOT IN ('02', '07')" in sql
+    assert "NVL(o.ELIMINADA, 'N') = 'N'" in sql
+    assert "NOT EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v" in sql
+    assert "NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_REPORTE_DETALLE rd" in sql
+    assert params == [1, 1, 1]
+
+
+def test_cp_c_08_la_advertencia_va_primero_y_es_informativa():
+    """DF-04: el aviso INFORMATIVA de OMISION_VS_ULTIMO_CORTE se registra antes de las filas."""
+    llamadas = _generar_corte_capturando_sql()
+    sql, params = next((s, p) for s, p in llamadas if "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in s)
+    assert "'OMISION_VS_ULTIMO_CORTE', 'INFORMATIVA'" in sql
+    assert "ENVIADO_CON_INCONSISTENCIAS" in sql
+    assert params[0] == 1 and params[2:] == [1, 1]
+
+
+def test_cp_c_08_el_arrastre_copia_las_mismas_columnas_que_las_originales_refinanciadas():
+    """DF-04: la lista de columnas es la de DF-03 (ciclo), sin duplicarla."""
+    llamadas = _generar_corte_capturando_sql()
+    sql = next(s for s, _ in llamadas if "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE" in s and "ant." in s)
+    columnas = ciclo_servicios._COLUMNAS_COPIADAS_ORIGINAL + ", " + ciclo_servicios._COLUMNAS_COPIADAS_ORIGINAL_2
+    for columna in (c.strip() for c in columnas.split(",")):
+        assert columna in sql
+        assert f"ant.{columna}" in sql
+
+
+def test_cp_c_08_omision_informativa_sola_no_bloquea_y_se_informa():
+    """DF-04: una arrastrada sola da nivel informativa y deja generar si el corte esta VALIDADO."""
+    resultado, reglas = _validaciones([_OMISION_ARRASTRADA], estado="VALIDADO")
+    regla = reglas["OMISION_VS_ULTIMO_CORTE"]
+    assert regla["nivel"] == "informativa"
+    assert resultado["puede_generar"] is True
+    assert regla["detalle"] == (
+        "3 de 3 obligaciones activas del último corte incluidas. "
+        "1 arrastrada(s) con los datos del último corte enviado porque ya no vienen del SAC; revíselas."
+    )
+    assert regla["obligaciones"][0]["obligacion_id"] == 9
+    assert regla["obligaciones"][0]["mensaje"] == _OMISION_ARRASTRADA[2]
+
+
+def test_cp_c_08_omision_correctiva_despues_de_una_informativa_sigue_bloqueando():
+    """DF-04 / CP-C-10: si hay una omision CORRECTIVA mezclada, el nivel es correctiva."""
+    filas = [
+        _OMISION_ARRASTRADA,
+        ("OMISION_VS_ULTIMO_CORTE", "CORRECTIVA", "Omitida", 10, "2250-0987"),
+    ]
+    resultado, reglas = _validaciones(filas, estado="VALIDADO")
+    regla = reglas["OMISION_VS_ULTIMO_CORTE"]
+    assert regla["nivel"] == "correctiva"
+    assert resultado["puede_generar"] is False
+    assert regla["detalle"].startswith("2 de 3 obligaciones activas")
+
+
+def test_cp_c_08_validar_con_solo_la_arrastrada_pasa_a_validado_con_advertencia():
+    """DF-04: la arrastrada no bloquea la validacion y queda como advertencia."""
+    resultado, cursor = _validar([_OMISION_ARRASTRADA])
+    sqls = [c.args[0] for c in cursor.execute.call_args_list]
+    assert any("ESTADO = 'VALIDADO'" in s for s in sqls)
+    assert resultado["advertencias"][0]["regla"] == "OMISION_VS_ULTIMO_CORTE"
+    assert resultado["advertencias"][0]["numero_obligacion"] == "2241-3302"
+    assert cursor.executemany.call_args.args[1][0][:3] == (5, 9, "OMISION_VS_ULTIMO_CORTE")
+
+
+def test_cp_c_08_una_omision_correctiva_de_la_vista_sigue_bloqueando():
+    errores = _errores([("OMISION_VS_ULTIMO_CORTE", "CORRECTIVA", "Omitida", 9, "2241-3302")])
+    assert errores[0]["regla"] == "OMISION_VS_ULTIMO_CORTE"
+
+
+def test_cp_c_08_evaluar_reglas_lee_las_omisiones_informativas_de_nv_inconsistencia():
+    _, cursor = _validar([])
+    sql = next(
+        c.args[0] for c in cursor.execute.call_args_list if "NEXOVOLT.NV_INCONSISTENCIA i" in c.args[0]
+    )
+    assert "i.REGLA = 'CAMBIO_ESTADO_INVALIDO'" in sql
+    assert "i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'" in sql
+
+
+# ── DF-05 · estados del SAC sin homologar (RF48, CP-B-55) ──────────────────────
+
+def _fila_sin_homologar(obligacion_id=None, numero=None):
+    return (
+        "ESTADO_SIN_HOMOLOGAR", "CORRECTIVA",
+        "Obligacion 2260-0001: el estado B del SAC no esta homologado y la obligacion no entra al corte. "
+        "Homologuelo (RF48) y vuelva a generar el corte.",
+        obligacion_id, numero,
+    )
+
+
+def test_cp_b_55_generar_corte_registra_los_estados_sin_homologar():
+    """CP-B-55 / DF-05: una inconsistencia CORRECTIVA por obligacion con estado sin homologar."""
+    llamadas = _generar_corte_capturando_sql()
+    sqls = [s for s, _ in llamadas]
+    i_arrastre = next(
+        i for i, s in enumerate(sqls) if "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE" in s and "ant." in s
+    )
+    i_sin = next(i for i, s in enumerate(sqls) if "'ESTADO_SIN_HOMOLOGAR'" in s)
+    i_total = next(i for i, s in enumerate(sqls) if "SET TOTAL_REGISTROS" in s)
+    assert i_arrastre < i_sin < i_total
+
+    sql, params = llamadas[i_sin]
+    assert "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in sql
+    assert "'ESTADO_SIN_HOMOLOGAR', 'CORRECTIVA'" in sql
+    assert "FROM NEXOVOLT.V_CALCULO_CORTE v" in sql
+    assert "NEXOVOLT.NV_HOMOLOGA_ESTADO h" in sql
+    assert "h.ACCION IS NOT NULL" in sql
+    assert "NVL(o.ELIMINADA, 'N') = 'N'" in sql
+    assert params[0] == 1 and params[2] == 1
+
+
+def test_cp_b_55_no_marca_por_estado_tu_nulo_ni_motivo_de_exclusion():
+    """DF-05 / OBS-06: F con ACCION = CIERRE (ESTADO_TU nulo) esta homologado y no se marca."""
+    llamadas = _generar_corte_capturando_sql()
+    sql = next(s for s, _ in llamadas if "'ESTADO_SIN_HOMOLOGAR'" in s)
+    assert "ESTADO_TU IS NULL" not in sql
+    assert "MOTIVO_EXCLUSION" not in sql
+
+
+def test_cp_b_55_obligacion_nueva_sin_homologar_bloquea_la_validacion():
+    """DF-05: la obligacion nunca registrada (sin id ni numero) igual bloquea."""
+    errores = _errores([_fila_sin_homologar()])
+    assert errores == [{
+        "regla": "ESTADO_SIN_HOMOLOGAR", "mensaje": _fila_sin_homologar()[2],
+        "obligacion_id": None, "numero_obligacion": None, "campo": "estado",
+    }]
+
+
+def test_cp_b_55_validaciones_cuenta_las_obligaciones_sin_homologar():
+    """DF-05: nivel correctiva, no deja generar y el detalle cuenta las obligaciones."""
+    resultado, reglas = _validaciones([_fila_sin_homologar(), _fila_sin_homologar(4, "2260-0002")],
+                                      estado="VALIDADO")
+    regla = reglas["ESTADO_SIN_HOMOLOGAR"]
+    assert regla["nivel"] == "correctiva"
+    assert resultado["puede_generar"] is False
+    assert regla["detalle"] == (
+        "2 obligación(es) con un estado sin homologar: "
+        "homologue el estado del SAC (RF48) y vuelva a generar el corte."
+    )
+
+
+def test_cp_b_55_evaluar_reglas_lee_los_estados_sin_homologar_de_nv_inconsistencia():
+    """DF-05: la lectura de NV_INCONSISTENCIA incluye ESTADO_SIN_HOMOLOGAR CORRECTIVA y conserva DF-04."""
+    _, cursor = _validar([])
+    sql = next(
+        c.args[0] for c in cursor.execute.call_args_list if "NEXOVOLT.NV_INCONSISTENCIA i" in c.args[0]
+    )
+    assert "i.REGLA = 'ESTADO_SIN_HOMOLOGAR' AND i.SEVERIDAD = 'CORRECTIVA'" in sql
+    assert "i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'" in sql

@@ -3,7 +3,7 @@
 Estructura del Manual del sector real v34, págs. 44-52 (Tabla 1, Tabla 2 columna «Sector Real
 servicios» y registro tipo 9). Funciones puras: no leen la base de datos.
 """
-from datetime import date
+from datetime import date, timedelta
 
 CODIFICACION = "cp1252"
 FIN_DE_LINEA = "\r\n"
@@ -74,8 +74,8 @@ REGISTRO_2 = (
     ("42", "tipo_garantia", 276, 2, "NUM", None),
     ("43", "valor_garantia", 278, 12, "NUM", None),
     ("44", "obligacion_reestructurada", 290, 2, "NUM", "OBLIGACION_REFINANCIADA"),
-    ("45", "naturaleza_reestructuracion", 292, 2, "NUM", None),
-    ("46", "numero_reestructuraciones", 294, 3, "NUM", None),
+    ("45", "naturaleza_reestructuracion", 292, 2, "NUM", "NATURALEZA_REESTR"),  # RF18: ver _datos_rf18
+    ("46", "numero_reestructuraciones", 294, 3, "NUM", "N_REESTRUCTURACIONES"),  # RF18: ver _datos_rf18
     ("47", "clase_tarjeta", 297, 2, "NUM", None),
     ("48", "cheques_devueltos", 299, 4, "NUM", None),
     ("49", "categoria_servicios", 303, 2, "NUM", "categoria_servicios"),
@@ -203,19 +203,52 @@ def _formatear(campo, longitud, formato, valor, divisor):
     return texto.ljust(longitud)
 
 
-def _datos_rf49(obligacion):
+def fecha_exigibilidad(fecha_corte, dias_mora):
+    """Vencimiento de la cuota impaga más antigua: fecha de corte menos los días de mora.
+
+    V_CALCULO_CORTE calcula DIAS_MORA contra el vencimiento de la cuota impaga más antigua (la
+    N-ésima factura vencida más reciente, con N igual a las cuotas en mora). Sin días de mora
+    calculados no hay fecha.
+    """
+    if fecha_corte is None or dias_mora is None:
+        return None
+    return fecha_corte - timedelta(days=int(dias_mora))
+
+
+def _datos_rf49(obligacion, fecha_corte=None):
     """Fecha de exigibilidad y años en mora del registro tipo 2 (RF49).
 
-    - Fecha de exigibilidad (campo 18): la fecha límite de pago de la cuota impaga más antigua, solo si
-      la obligación tiene valor de mora y edad de mora mayores a cero; al día va vacía (Manual p. 20:
-      con edad 00 TransUnion no la tiene en cuenta y genera una alerta).
+    - Fecha de exigibilidad (campo 18): la fecha en que entró en mora la obligación que no ha
+      recibido pago, es decir el vencimiento de la cuota impaga más antigua (Manual v34 p. 14). Se
+      calcula como fecha de corte menos DIAS_MORA, no con la fecha límite de pago, que es la de la
+      última factura emitida (campo 6). Solo se reporta si la obligación tiene valor de mora y edad
+      de mora mayores a cero; al día va vacía (Manual p. 20: con edad 00 TransUnion no la tiene en
+      cuenta y genera una alerta).
     - Años en mora (campo 14): solo para la edad de mora 14 (Manual p. 13).
     """
     edad = str(obligacion.get("EDAD_MORA") or "").strip().zfill(2)
     en_mora = (obligacion.get("VALOR_MORA") or 0) > 0 and edad != "00"
     return {
-        "FECHA_EXIGIBILIDAD": obligacion.get("FECHA_LIMITE_PAGO") if en_mora else None,
+        "FECHA_EXIGIBILIDAD": (
+            fecha_exigibilidad(fecha_corte, obligacion.get("DIAS_MORA")) if en_mora else None
+        ),
         "ANIOS_MORA": obligacion.get("ANIOS_MORA") if edad == "14" else None,
+    }
+
+
+def _datos_rf18(obligacion):
+    """Naturaleza y numero de reestructuraciones del registro tipo 2 (RF18, campos 45 y 46).
+
+    Solo se reportan cuando la obligacion esta reestructurada (campo 44 = 01) y el numero de
+    reestructuraciones es mayor que cero; en los demas casos van en espacios.
+    """
+    reestructurada = (
+        obligacion.get("OBLIGACION_REFINANCIADA") == "01"
+        and (obligacion.get("N_REESTRUCTURACIONES") or 0) > 0
+    )
+    return {
+        "NATURALEZA_REESTR": obligacion.get("NATURALEZA_REESTR") if reestructurada else None,
+        "N_REESTRUCTURACIONES": obligacion.get("N_REESTRUCTURACIONES") if reestructurada else None,
     }
 
 
@@ -240,7 +273,8 @@ def armar_archivo(cabecera, obligaciones, divisor, longitud_tipo2):
     errores = []
     lineas = [armar_registro(REGISTRO_1, {**cabecera, "tipo_registro": 1})]
     for obligacion in obligaciones:
-        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion), "tipo_registro": 2}
+        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion, cabecera.get("fecha_corte")),
+                 **_datos_rf18(obligacion), "tipo_registro": 2}
         try:
             lineas.append(armar_registro(REGISTRO_2, datos, divisor, longitud_tipo2))
         except CampoInvalido as exc:

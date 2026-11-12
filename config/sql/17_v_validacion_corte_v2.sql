@@ -31,6 +31,20 @@
      - CUOTAS_PAGADAS no existe: condicion eliminada de CIERRE_INCOMPLETO.
        Cuando se agregue la columna, restaurar la condicion de RF22.
 
+   Correcciones (DF-02, 2026-11-11):
+     - La fecha de exigibilidad (RF49) es el vencimiento de la cuota impaga mas
+       antigua (Manual v34 p. 14), no FECHA_LIMITE_PAGO, que V_CALCULO_CORTE llena
+       con el vencimiento de la ultima factura emitida. Se calcula como
+       FECHA_CORTE - DIAS_MORA, el mismo calculo que usa V_CALCULO_CORTE para la
+       edad de mora, y solo si VALOR_MORA > 0 y EDAD_MORA > '00'.
+     - Regla 10 FECHA_EXIGIBILIDAD_FUTURA: compara esa fecha con SYSDATE (Manual
+       p. 20); ya no mira FECHA_LIMITE_PAGO, que puede ser futura sin ser un error.
+       Se agrega JOIN a NV_CORTE.
+     - Regla 19 EDAD_ALTA_SIN_EXIGIBILIDAD: dispara con edad 12 a 14, VALOR_MORA > 0 y
+       DIAS_MORA nulo (no se puede calcular la exigibilidad).
+     - NO esta verificado en Oracle. Hay que volver a aplicar este script
+       (CREATE OR REPLACE, repetible) y probar la consulta de verificacion.
+
    Reversa:
      DROP VIEW NEXOVOLT.V_VALIDACION_CORTE;
 
@@ -172,10 +186,14 @@ SELECT
     rd.OBLIGACION_ID,
     'FECHA_EXIGIBILIDAD_FUTURA' AS REGLA,
     'CORRECTIVA' AS SEVERIDAD,
-    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Fecha limite de pago (' || TO_CHAR(rd.FECHA_LIMITE_PAGO, 'YYYY-MM-DD') || ') no puede ser mayor a la fecha del sistema' AS MENSAJE
+    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Fecha de exigibilidad (' || TO_CHAR(TRUNC(c.FECHA_CORTE) - rd.DIAS_MORA, 'YYYY-MM-DD') || ') no puede ser mayor a la fecha del sistema' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
-WHERE rd.FECHA_LIMITE_PAGO > TRUNC(SYSDATE)
+JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID
+WHERE rd.VALOR_MORA > 0
+  AND rd.EDAD_MORA > '00'
+  AND rd.DIAS_MORA IS NOT NULL
+  AND TRUNC(c.FECHA_CORTE) - rd.DIAS_MORA > TRUNC(SYSDATE)
 
 UNION ALL
 
@@ -349,17 +367,18 @@ WHERE rd.VALOR_SALDO > 99000000
 
 UNION ALL
 
--- 19. EDAD_ALTA_SIN_EXIGIBILIDAD (INFORMATIVA, RF49)
+-- 19. EDAD_ALTA_SIN_EXIGIBILIDAD (INFORMATIVA, RF49, Manual p. 20 literal a)
 SELECT
     rd.CORTE_ID,
     rd.OBLIGACION_ID,
     'EDAD_ALTA_SIN_EXIGIBILIDAD' AS REGLA,
     'INFORMATIVA' AS SEVERIDAD,
-    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Edad ' || rd.EDAD_MORA || ' sin fecha limite de pago reportada' AS MENSAJE
+    'Obligacion ' || o.NUMERO_OBLIGACION_TU || ': Edad ' || rd.EDAD_MORA || ' sin fecha de exigibilidad (dias de mora sin calcular)' AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
 JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = rd.OBLIGACION_ID
 WHERE rd.EDAD_MORA IN ('12', '13', '14')
-  AND rd.FECHA_LIMITE_PAGO IS NULL
+  AND rd.VALOR_MORA > 0
+  AND rd.DIAS_MORA IS NULL
 
 UNION ALL
 
