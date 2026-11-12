@@ -1002,7 +1002,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
 def listar_ciclos():
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT ci.CORTE_ID, c.FECHA_CORTE, ci.FECHA_EJEC, ci.USUARIO_ID, "
+            "SELECT ci.CORTE_ID, c.FECHA_CORTE, CAST(ci.FECHA_EJEC AS TIMESTAMP), ci.USUARIO_ID, "
             "ci.PRIMER_REPORTE, ci.CAMBIOS_ESTADO, ci.CIERRES, ci.RECHAZADOS "
             "FROM NEXOVOLT.NV_CICLO ci "
             "JOIN NEXOVOLT.NV_CORTE c ON ci.CORTE_ID = c.CORTE_ID "
@@ -1017,7 +1017,7 @@ def listar_ciclos():
 def obtener_ciclo(corte_id):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT ci.CORTE_ID, c.FECHA_CORTE, ci.FECHA_EJEC, ci.USUARIO_ID, "
+            "SELECT ci.CORTE_ID, c.FECHA_CORTE, CAST(ci.FECHA_EJEC AS TIMESTAMP), ci.USUARIO_ID, "
             "ci.PRIMER_REPORTE, ci.CAMBIOS_ESTADO, ci.CIERRES, ci.RECHAZADOS, "
             "ci.CON_PAGOS, ci.A_DUDOSO, ci.A_CASTIGADA, ci.NORMALIZADAS "
             "FROM NEXOVOLT.NV_CICLO ci "
