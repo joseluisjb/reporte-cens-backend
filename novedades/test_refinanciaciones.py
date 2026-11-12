@@ -38,7 +38,7 @@ _FILA_REFINANCIACION = (
     1, date(2026, 9, 28), datetime(2026, 9, 28, 15, 20), "MANUAL",
     11, "2255-7788", "Inversiones Pamplona S.A.S.", "01",
     12, "REFI-1", "01", 1,
-    4380000, "01", "REESTRUCTURACION VOLUNTARIA", "N",
+    4380000, "01", "LEY 550", "S",
     36, "Juan Pérez",
 )
 
@@ -62,7 +62,7 @@ _REFINANCIACION = {
         "numero_reestructuraciones": 1,
     },
     "saldo_refinanciado": 4380000,
-    "naturaleza": {"codigo": "01", "descripcion": "REESTRUCTURACION VOLUNTARIA", "confirmado": False},
+    "naturaleza": {"codigo": "01", "descripcion": "LEY 550", "confirmado": True},
     "numero_cuotas": 36,
 }
 
@@ -81,7 +81,7 @@ def test_crear_refinanciacion_manual_inserta_obligacion_y_refinanciacion():
         (5001, 99, "2255-7788", "N", "N", date(2026, 1, 1)),  # obligación + FECHA_INICIO
         (None,),                                               # MAX FECHA_CORTE (sin corte enviado)
         ("01", 4380000),                                       # último estado reportado + saldo
-        ("REESTRUCTURACION VOLUNTARIA",),                      # naturaleza
+        ("LEY 550",),                    # naturaleza
         (1,),                                                  # SEQ_NV_REFINANCIACION
         (12,),                                                 # SEQ_NV_OBLIGACION
         _FILA_REFINANCIACION,                                  # obtener_refinanciacion
