@@ -395,10 +395,10 @@ EVENTO_HOMOLOGACION = "HOMOLOGACION_ACTUALIZADA"
 MSG_HOMOLOGACION = {
     "accion": "Elige cómo se reporta el estado: como estado de TransUnion o como cierre.",
     "estado_tu": "Selecciona el estado de TransUnion.",
-    "no_existe": "Ese estado no está en la Tabla 4b de TransUnion.",
-    "no_usado": "El estado {codigo} · {nombre} no se usa en CENS: elige un estado en uso.",
+    "no_existe": "Ese estado no existe en TransUnion.",
+    "no_usado": "El estado {nombre} no se usa en CENS: elige un estado en uso.",
     "cierre_con_estado": "Un estado que cierra el crédito no lleva estado de TransUnion.",
-    "estado_de_cierre": "Saldada (02) y Castigada recuperada (07) se asignan con «Cierre», según el estado anterior.",
+    "estado_de_cierre": "Saldada y Castigada recuperada se asignan con «Cierre», según el estado anterior.",
 }
 
 # Tipo de cartera de CENS (2 = servicios), desde NV_PARAMETRO.
@@ -501,7 +501,7 @@ def validar_homologacion(accion, estado_tu, estados):
     if estado_tu in ESTADOS_DE_CIERRE:
         return {"estado_tu": [MSG_HOMOLOGACION["estado_de_cierre"]]}
     if not estado["usado"]:
-        return {"estado_tu": [MSG_HOMOLOGACION["no_usado"].format(codigo=estado_tu, nombre=estado["nombre"])]}
+        return {"estado_tu": [MSG_HOMOLOGACION["no_usado"].format(nombre=estado["nombre"])]}
     return {}
 
 
@@ -580,7 +580,7 @@ def actualizar_homologacion(estado_sac, accion, estado_tu, confirmado=False, usu
         with tolerar_fallo_bitacora(EVENTO_HOMOLOGACION):
             registrar_bitacora(
                 EVENTO_HOMOLOGACION, "NV_HOMOLOGA_ESTADO", estado_sac,
-                f"Estado {estado_sac} del SAC → {destino}" + (" (confirmado)" if confirmado else ""),
+                f"Estado {estado_sac} del sistema comercial → {destino}" + (" (confirmado)" if confirmado else ""),
                 usuario=usuario,
             )
     return _leer_homologaciones(estado_sac)[0]

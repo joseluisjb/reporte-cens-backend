@@ -4,6 +4,7 @@ from django.db import connection, transaction
 
 from cartera.archivo_plano import fecha_exigibilidad
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
+from config.estados_tu import nombre_estado
 from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str
 from usuarios.models import Usuario
 
@@ -380,6 +381,14 @@ def _cerrar_por_refinanciacion(corte_id, obligacion_id, destino, fecha_refinanci
         )
 
 
+def _texto_cambio_no_aceptado(estado_desde, estado_hasta):
+    """Texto de la inconsistencia 713 con los nombres de los estados, sin códigos."""
+    return (
+        f"TransUnion no acepta pasar de {nombre_estado(estado_desde)} "
+        f"a {nombre_estado(estado_hasta)}"
+    )
+
+
 def _rechazar_cierre_713(
     corte_id, obligacion_id, numero_obl, nombre_titular,
     estado_anterior, destino, mensaje, motivo,
@@ -589,7 +598,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         "estado_anterior": None,
                         "estado_calculado": estado_tu,
                         "codigo": "881",
-                        "motivo": "Error 881: estado no permitido en primer reporte",
+                        "motivo": "TransUnion no acepta ese estado en el primer reporte",
                     })
                     continue
 
@@ -600,7 +609,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                 )
                 updates_revision.append((
                     "S" if requiere_revision else "N",
-                    "Vigente (01) sin mora en primer reporte; verificar si el crédito está caducado (RF14)." if requiere_revision else None,
+                    "Vigente sin mora en primer reporte; verificar si el crédito está caducado." if requiere_revision else None,
                     corte_id, obligacion_id,
                 ))
                 filas_insert_trans.append((
@@ -642,9 +651,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     )
                     n_cierres += 1
                     rf_texto = (
-                        f"RF18 · Refinanciación: cierre en {destino} "
-                        f"({'Cartera Recuperada' if destino == '07' else 'Saldada'}) "
-                        f"con modo de extinción 16"
+                        f"Refinanciación: se cierra como {nombre_estado(destino)}"
                     )
                     filas_insert_trans.append((
                         corte_id, obligacion_id, estado_anterior, destino,
@@ -665,17 +672,10 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         "reglas": [{"rf": "RF18", "texto": rf_texto, "por_confirmar": False}],
                     })
                 else:
-                    origen = (
-                        f"{estado_anterior} "
-                        f"{'en mora' if con_mora_anterior else 'sin mora'}"
-                    )
+                    texto_713 = _texto_cambio_no_aceptado(estado_anterior, destino)
                     rechazos.append(_rechazar_cierre_713(
                         corte_id, obligacion_id, numero_obl, nombre_titular,
-                        estado_anterior, destino,
-                        f"Cambio de estado inválido: {origen} → {destino} "
-                        f"por refinanciación (713).",
-                        f"Cambio de estado inválido (713): la Matriz no permite "
-                        f"cerrar por refinanciación desde {origen}.",
+                        estado_anterior, destino, texto_713, texto_713,
                     ))
 
             elif valor_saldo_int == 0 and fecha_ultimo_pago is not None:
@@ -696,10 +696,10 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         n_cierres += 1
                         if destino == "07":
                             rf_codigo = "RF15"
-                            rf_texto = "RF15 · Pago total: Cartera Recuperada"
+                            rf_texto = "Pago total: Castigada recuperada"
                         else:
                             rf_codigo = "RF12"
-                            rf_texto = "RF12 · Pago total: Saldada"
+                            rf_texto = "Pago total: Saldada"
                         filas_insert_trans.append((
                             corte_id, obligacion_id, estado_anterior, destino,
                             edad_mora or "00", "00",
@@ -719,17 +719,10 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             "reglas": [{"rf": rf_codigo, "texto": rf_texto, "por_confirmar": False}],
                         })
                     else:
-                        origen = (
-                            f"{estado_anterior} "
-                            f"{'en mora' if con_mora_anterior else 'sin mora'}"
-                        )
+                        texto_713 = _texto_cambio_no_aceptado(estado_anterior, destino)
                         rechazos.append(_rechazar_cierre_713(
                             corte_id, obligacion_id, numero_obl, nombre_titular,
-                            estado_anterior, destino,
-                            f"Cambio de estado inválido: {origen} → {destino} "
-                            f"con saldo en cero (713).",
-                            f"Cambio de estado inválido (713): la Matriz no "
-                            f"permite pasar de {origen} a {destino}.",
+                            estado_anterior, destino, texto_713, texto_713,
                         ))
 
             else:
@@ -745,8 +738,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     n_normalizadas += 1
                     n_cambios_estado += 1
                     rf46_texto = (
-                        "RF46 · Pagó la mora sin cancelar el saldo: vuelve a Vigente "
-                        "[por confirmar con CENS/TransUnion]"
+                        "Pagó la mora sin cancelar el saldo: vuelve a Vigente"
                     )
                     old_edad = edad_anterior or "00"
                     new_edad = edad_mora or "00"
@@ -757,13 +749,13 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     if fecha_ultimo_pago is not None:
                         requiere_revision_rf47 = False
                         rf47_texto = (
-                            "RF47 · Quedó al día: se reportan fecha de pago, "
+                            "Quedó al día: se reportan fecha de pago, "
                             "modo de extinción y tipo de pago"
                         )
                     else:
                         requiere_revision_rf47 = True
                         rf47_texto = (
-                            "RF47 · Quedó al día sin fecha de pago registrada; "
+                            "Quedó al día sin fecha de pago registrada; "
                             "requiere revisión para completar el reporte"
                         )
                         updates_revision.append((
@@ -818,8 +810,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         ):
                             _insertar_inconsistencia_713(
                                 corte_id, obligacion_id,
-                                f"RF45 · Cambio de estado inválido: la Matriz no permite "
-                                f"pasar de {estado_desde} a 06 (Castigada)",
+                                _texto_cambio_no_aceptado(estado_desde, "06"),
                             )
                             rechazos.append({
                                 "obligacion_id": obligacion_id,
@@ -828,10 +819,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                                 "estado_anterior": estado_anterior,
                                 "estado_calculado": "06",
                                 "codigo": "713",
-                                "motivo": (
-                                    f"RF45 · Error 713: la Matriz no permite pasar de "
-                                    f"{estado_desde} a 06 (Castigada)"
-                                ),
+                                "motivo": _texto_cambio_no_aceptado(estado_desde, "06"),
                             })
                             if estado_tu != estado_anterior:
                                 _actualizar_estado_obligacion(
@@ -846,13 +834,13 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             n_cambios_estado += 1
                             castigo_procesado = True
                             regla_rf = "RF45"
-                            regla_texto = "RF45 · CENS la castigó contablemente: Castigada"
+                            regla_texto = "CENS la castigó contablemente: Castigada"
                             regla_por_confirmar = False
                     else:
                         # Castigo sin mora: no se puede reportar 06; marcar para revisión
                         updates_revision.append((
                             "S",
-                            "RF45 · Castigo contable sin mora; verificar (RF45).",
+                            "Castigo contable sin mora; verificar.",
                             corte_id, obligacion_id,
                         ))
                         filas_insert_trans.append((
@@ -860,7 +848,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             edad_anterior or "00", edad_mora or "00",
                             "N", "S",
                             "RF45",
-                            "RF45 · Castigo contable sin mora; requiere revisión",
+                            "Castigo contable sin mora; requiere revisión",
                             "S",
                         ))
                         transiciones_data.append({
@@ -875,7 +863,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             "requiere_revision": True,
                             "reglas": [{
                                 "rf": "RF45",
-                                "texto": "RF45 · Castigo contable sin mora; requiere revisión",
+                                "texto": "Castigo contable sin mora; requiere revisión",
                                 "por_confirmar": True,
                             }],
                         })
@@ -892,8 +880,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             # 713: Matriz no permite el cambio
                             _insertar_inconsistencia_713(
                                 corte_id, obligacion_id,
-                                f"RF14 · Cambio de estado inválido: la Matriz no permite "
-                                f"pasar de {estado_anterior} a 03 (Dudoso Recaudo)",
+                                _texto_cambio_no_aceptado(estado_anterior, "03"),
                             )
                             rechazos.append({
                                 "obligacion_id": obligacion_id,
@@ -902,10 +889,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                                 "estado_anterior": estado_anterior,
                                 "estado_calculado": "03",
                                 "codigo": "713",
-                                "motivo": (
-                                    f"RF14 · Error 713: la Matriz no permite pasar de "
-                                    f"{estado_anterior} a 03 (Dudoso Recaudo)"
-                                ),
+                                "motivo": _texto_cambio_no_aceptado(estado_anterior, "03"),
                             })
                             # Revertir el estado calculado por la extracción
                             if estado_tu == '03':
@@ -920,7 +904,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             n_cambios_estado += 1
                             regla_rf = "RF14"
                             regla_texto = (
-                                f"RF14 · Crédito caducado en el SAC "
+                                f"Crédito caducado en el sistema comercial "
                                 f"({cuotas_mora_obl} cuotas en mora)"
                             )
                             regla_por_confirmar = True
@@ -928,7 +912,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                         # Caducado sin mora: marcar para revisión (no pasa a 03)
                         updates_revision.append((
                             "S",
-                            "Crédito caducado en el SAC sin mora; verificar si debe pasar a 03 (RF14).",
+                            "Crédito caducado en el sistema comercial sin mora; verificar si debe pasar a Dudoso recaudo.",
                             corte_id, obligacion_id,
                         ))
                         filas_insert_trans.append((
@@ -936,7 +920,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             edad_anterior or "00", edad_mora or "00",
                             "N", "S",
                             "RF14",
-                            "RF14 · Crédito caducado en el SAC sin mora; requiere revisión",
+                            "Crédito caducado en el sistema comercial sin mora; requiere revisión",
                             "S",
                         ))
                         transiciones_data.append({
@@ -951,7 +935,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                             "requiere_revision": True,
                             "reglas": [{
                                 "rf": "RF14",
-                                "texto": "RF14 · Crédito caducado en el SAC sin mora; requiere revisión",
+                                "texto": "Crédito caducado en el sistema comercial sin mora; requiere revisión",
                                 "por_confirmar": True,
                             }],
                         })
@@ -970,13 +954,13 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     requiere_revision = True
                     motivo_revision = (
                         f"La edad avanzó más de un tramo "
-                        f"(de {old_edad} a {new_edad}) (RF11)."
+                        f"(de {old_edad} a {new_edad})."
                     )
                 elif new_idx < old_idx and valor_pagado_int == 0:
                     requiere_revision = True
                     motivo_revision = (
                         f"La edad bajó de {old_edad} a {new_edad} "
-                        f"sin un abono en el periodo (RF11)."
+                        f"sin un abono en el periodo."
                     )
 
                 if regla_rf == "RF11":
@@ -985,7 +969,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     )
                     fecha_fl = fecha_str(fecha_antigua) if fecha_antigua else "sin fecha"
                     regla_texto = (
-                        f"RF11 · {dias_mora_int} días desde la cuota más antigua "
+                        f"{dias_mora_int} días desde la cuota más antigua "
                         f"sin pagar ({fecha_fl}): edad {old_edad} → {new_edad}"
                     )
 
@@ -1016,8 +1000,8 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     n_con_pagos += 1
                     fecha_fl = fecha_str(fecha_limite_pago) if fecha_limite_pago else "sin fecha"
                     rf17_texto = (
-                        f"RF17 · Pago de ${valor_pagado_int:,} aplicado a: "
-                        f"cuota {fecha_fl} [regla de imputación por confirmar, C-29]"
+                        f"Pago de ${valor_pagado_int:,} aplicado a: "
+                        f"cuota {fecha_fl}"
                     )
                     filas_insert_trans.append((
                         corte_id, obligacion_id, estado_anterior, nuevo_estado,
@@ -1042,13 +1026,13 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                     if fecha_ultimo_pago is not None:
                         requiere_revision_rf47 = False
                         rf47_texto = (
-                            "RF47 · Quedó al día: se reportan fecha de pago, "
+                            "Quedó al día: se reportan fecha de pago, "
                             "modo de extinción y tipo de pago"
                         )
                     else:
                         requiere_revision_rf47 = True
                         rf47_texto = (
-                            "RF47 · Quedó al día sin fecha de pago registrada; "
+                            "Quedó al día sin fecha de pago registrada; "
                             "requiere revisión para completar el reporte"
                         )
                         updates_revision[-1] = (
@@ -1095,7 +1079,7 @@ def ejecutar_ciclo(fecha_corte, usuario=None):
                 "requiere_revision": True,
                 "reglas": [{
                     "rf": "RF13",
-                    "texto": "Movimiento posterior al cierre: solo puede corregirse por rectificación (RF55).",
+                    "texto": "Movimiento posterior al cierre: solo puede corregirse por rectificación.",
                     "por_confirmar": False,
                 }],
             })
@@ -1256,7 +1240,7 @@ def obtener_ciclo(corte_id):
             "estado_anterior": None,
             "estado_calculado": estados_rechazados.get(r[0], ""),
             "codigo": "881",
-            "motivo": "Error 881: estado no permitido en primer reporte",
+            "motivo": "TransUnion no acepta ese estado en el primer reporte",
         }
         for r in rechazo_rows
     ]
@@ -1268,23 +1252,23 @@ def obtener_ciclo(corte_id):
 # Las reglas que dependen de CENS (C-29, C-53) o de TransUnion tienen por_confirmar=True.
 _POSIBLES_TRANSICIONES = {
     "01": [
-        {"rf": "RF12", "texto": "Pago total → 02 · Saldada", "por_confirmar": False},
-        {"rf": "RF14", "texto": "Crédito caducado en el SAC y con mora → 03 · Dudoso Recaudo", "por_confirmar": True},
-        {"rf": "RF45", "texto": "Castigo contable → 06 · Castigada", "por_confirmar": True},
+        {"rf": "RF12", "texto": "Pago total: pasa a Saldada", "por_confirmar": False},
+        {"rf": "RF14", "texto": "Crédito caducado con mora: pasa a Dudoso recaudo", "por_confirmar": True},
+        {"rf": "RF45", "texto": "Castigo contable: pasa a Castigada", "por_confirmar": True},
         {"rf": "RF47", "texto": "Pago de la mora (sin cierre)", "por_confirmar": True},
     ],
     "08": [
-        {"rf": "RF12", "texto": "Pago total → 02 · Saldada", "por_confirmar": False},
-        {"rf": "RF14", "texto": "Crédito caducado en el SAC y con mora → 03 · Dudoso Recaudo", "por_confirmar": True},
-        {"rf": "RF45", "texto": "Castigo contable → 06 · Castigada", "por_confirmar": True},
+        {"rf": "RF12", "texto": "Pago total: pasa a Saldada", "por_confirmar": False},
+        {"rf": "RF14", "texto": "Crédito caducado con mora: pasa a Dudoso recaudo", "por_confirmar": True},
+        {"rf": "RF45", "texto": "Castigo contable: pasa a Castigada", "por_confirmar": True},
     ],
     "03": [
-        {"rf": "RF15", "texto": "Pago total → 07 · Cartera Recuperada", "por_confirmar": False},
-        {"rf": "RF46", "texto": "Normalización → 01 · Vigente", "por_confirmar": True},
+        {"rf": "RF15", "texto": "Pago total: pasa a Castigada recuperada", "por_confirmar": False},
+        {"rf": "RF46", "texto": "Normalización: pasa a Vigente", "por_confirmar": True},
     ],
     "06": [
-        {"rf": "RF15", "texto": "Pago total → 07 · Cartera Recuperada", "por_confirmar": False},
-        {"rf": "RF46", "texto": "Normalización → 01 · Vigente", "por_confirmar": True},
+        {"rf": "RF15", "texto": "Pago total: pasa a Castigada recuperada", "por_confirmar": False},
+        {"rf": "RF46", "texto": "Normalización: pasa a Vigente", "por_confirmar": True},
     ],
 }
 
@@ -1517,9 +1501,9 @@ def obtener_obligacion(obligacion_id):
     if valor_real_pagado > 0 and fecha_corte_bd is not None:
         oldest_venc = cuotas_rows[0][0] if cuotas_rows else None
         if oldest_venc:
-            aplicado_a = f"Cuota del {fecha_str(oldest_venc)} [por confirmar, C-29]"
+            aplicado_a = f"Cuota del {fecha_str(oldest_venc)}"
         else:
-            aplicado_a = "por confirmar (C-29)"
+            aplicado_a = "Sin cuota asignada"
         pagos = [{
             "fecha_corte": fecha_str(fecha_corte_bd),
             "valor": valor_real_pagado,

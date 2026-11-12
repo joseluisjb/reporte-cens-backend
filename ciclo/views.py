@@ -124,7 +124,7 @@ class ObligacionesViewSet(viewsets.ViewSet):
             )
         except ValueError:
             return Response(
-                {"estado_tu": ["Estado no válido. Usa un código de la Tabla 4b."]},
+                {"estado_tu": ["Estado no válido."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

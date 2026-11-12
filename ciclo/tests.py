@@ -386,6 +386,13 @@ def _patch_ciclo(mock_conn):
         yield
 
 
+def _assert_textos_sin_codigos_internos(transicion):
+    """Los textos que ve el usuario no llevan códigos internos ni etiquetas de pendiente."""
+    for regla in transicion["reglas"]:
+        assert not regla["texto"].startswith("RF"), regla["texto"]
+        assert "por confirmar" not in regla["texto"].lower(), regla["texto"]
+
+
 def test_rf11_ciclo_47_dias_edad_01():
     """47 días de mora → Edad 01, RF11, primer_reporte=False."""
     mock_conn, mock_cursor = _mock_conn_multiple()
@@ -409,6 +416,7 @@ def test_rf11_ciclo_47_dias_edad_01():
     assert "47" in t["reglas"][0]["texto"]
     assert "00" in t["reglas"][0]["texto"]
     assert "01" in t["reglas"][0]["texto"]
+    _assert_textos_sin_codigos_internos(t)
 
 
 def test_rf11_texto_cita_la_fecha_de_la_cuota_mas_antigua():
@@ -450,6 +458,17 @@ def test_rf11_ciclo_salto_mayor_tramo_requiere_revision():
     sqls_em = [str(c.args[0]) for c in mock_cursor.executemany.call_args_list if c.args]
     rev_update = any("REQUIERE_REVISION" in s and "MOTIVO_REVISION" in s for s in sqls_em)
     assert rev_update, "Debe actualizar REQUIERE_REVISION y MOTIVO_REVISION en BD"
+
+    motivos = [
+        fila[1]
+        for c in mock_cursor.executemany.call_args_list
+        if c.args and "MOTIVO_REVISION" in str(c.args[0])
+        for fila in c.args[1]
+        if isinstance(fila[1], str)
+    ]
+    assert motivos, "Debe haber un motivo de revisión"
+    for motivo in motivos:
+        assert "RF" not in motivo and "por confirmar" not in motivo.lower(), motivo
 
 
 def test_rf11_ciclo_baja_sin_abono_requiere_revision():
@@ -1465,6 +1484,7 @@ def test_rf47_ciclo_queda_al_dia_reporta_pago():
     assert "RF47" in rfs
     rf47 = next(r for r in t["reglas"] if r["rf"] == "RF47")
     assert "fecha de pago" in rf47["texto"]
+    _assert_textos_sin_codigos_internos(t)
 
     sqls = [str(c.args[0]) for c in mock_cursor.execute.call_args_list if c.args]
     pago_mora_sql = any(
@@ -1564,7 +1584,7 @@ def test_rf47_obtener_obligacion_pago_mora_sin_fecha():
             51, "2271-5002", "Panadería Tres", "0987654321",
             "01", "00", 0, 0,
             0, 150000,
-            "N", "N", "S", "RF47 · Quedó al día sin fecha de pago registrada; requiere revisión para completar el reporte",
+            "N", "N", "S", "Quedó al día sin fecha de pago registrada; requiere revisión para completar el reporte",
             date(2026, 1, 31), 300000, 70000, None,
             None, "01", "01", "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
@@ -1761,7 +1781,7 @@ def test_df01_cierre_desde_03_sin_mora_anterior_da_713():
     assert r["codigo"] == "713"
     assert r["estado_anterior"] == "03"
     assert r["estado_calculado"] == "07"
-    assert "sin mora" in r["motivo"]
+    assert r["motivo"] == "TransUnion no acepta pasar de Dudoso recaudo a Castigada recuperada"
     assert _hay_713(sqls)
     # No se ejecutó el UPDATE de cierre (_cerrar_obligacion) sobre el detalle.
     assert not any(
@@ -1938,7 +1958,7 @@ def test_df03_original_en_03_sin_mora_da_713():
     r = resultado["rechazos"][0]
     assert r["codigo"] == "713"
     assert r["estado_calculado"] == "07"
-    assert "refinanciación" in r["motivo"]
+    assert r["motivo"] == "TransUnion no acepta pasar de Dudoso recaudo a Castigada recuperada"
     assert _hay_713(_sqls(llamadas))
     assert not any("MODO_EXTINCION = '16'" in s for s in _sqls(llamadas))
 
@@ -2002,3 +2022,10 @@ def test_df03_limpiar_no_anula_filas_fuera_de_v_calculo_corte():
     sql, params = recalculo[0].args
     assert "AND EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v2" in sql
     assert params == [1, 1, 1]
+
+
+def test_713_rechazo_dice_que_transunion_no_acepta_el_cambio_con_nombres():
+    resultado, _ = _ciclo_cierre("03", 0)
+    assert resultado["rechazos"][0]["motivo"] == (
+        "TransUnion no acepta pasar de Dudoso recaudo a Castigada recuperada"
+    )

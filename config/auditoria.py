@@ -13,6 +13,7 @@ from config.bitacora import (
     usuario_actual,
 )
 from config.paginacion import parsear_paginacion
+from config.texto import unir_en_espanol
 from usuarios.permisos import EsAdministrador
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,12 @@ CUERPO_LEIDO = {("POST", "auth-logout")}
 
 CAMPOS_EDITABLES = ("nombre", "descripcion", "observacion", "activo", "conceptos")
 
+ETIQUETAS_CAMPOS = {"descripcion": "descripción", "observacion": "observación", "activo": "estado"}
+
+
+def _etiqueta_campo(campo):
+    return ETIQUETAS_CAMPOS.get(campo, campo.replace("_", " "))
+
 MENSAJE_FECHA = "Usa una fecha válida (AAAA-MM-DD)."
 MENSAJE_USUARIO = "Indica el id numérico del usuario."
 
@@ -70,7 +77,7 @@ def _detalle(accion, cuerpo, datos):
         return DETALLES_FIJOS[accion]
     campos = [campo for campo in CAMPOS_EDITABLES if campo in cuerpo]
     if campos:
-        return f"Campos: {', '.join(campos)}"
+        return f"Se cambió: {unir_en_espanol(_etiqueta_campo(c) for c in campos)}"
     if datos.get("fecha_corte"):
         return f"Fecha de corte {str(datos['fecha_corte'])[:10]}"
     return ""

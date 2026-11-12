@@ -95,9 +95,9 @@ class GrupoConceptoActualizarSerializer(serializers.Serializer):
 # ── Datos de la entidad ante TransUnion (RF57) ────────────────────────────────
 
 MSG_ENTIDAD = {
-    "tipo_entidad": "El tipo de entidad debe tener 3 dígitos (o XXX mientras TransUnion no los asigne).",
-    "codigo_entidad": "El código de entidad debe tener 3 dígitos (o XXX mientras TransUnion no los asigne).",
-    "codigo_sucursal": "El código de sucursal debe tener 6 caracteres (o XXXXXX mientras TransUnion no los asigne).",
+    "tipo_entidad": "El tipo de entidad debe tener 3 dígitos.",
+    "codigo_entidad": "El código de entidad debe tener 3 dígitos.",
+    "codigo_sucursal": "El código de sucursal debe tener 6 caracteres.",
 }
 
 
