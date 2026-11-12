@@ -39,12 +39,12 @@ class ReporteViewSet(viewsets.ViewSet):
             )
         except ValueError:
             return Response(
-                {"detail": "Reporte no encontrado o no está en estado ENVIADO."},
+                {"detail": "Reporte no encontrado o todavía no se ha enviado."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         except servicios.ReporteNoEncontrado:
             return Response(
-                {"detail": "Reporte no encontrado o no está en estado ENVIADO."},
+                {"detail": "Reporte no encontrado o todavía no se ha enviado."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(resultado)

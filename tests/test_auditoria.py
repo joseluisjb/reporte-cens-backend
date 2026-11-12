@@ -37,7 +37,7 @@ FILA = (
     "CONCEPTO_CREADO",
     "creacion",
     "Parametrización",
-    "Campos: descripcion",
+    "Se cambió: descripción",
 )
 
 
@@ -200,7 +200,7 @@ def test_consultar_sin_filtros_ordena_por_fecha_descendente_y_pagina():
             "accion": "Concepto creado",
             "tipo_accion": "creacion",
             "modulo": "Parametrización",
-            "detalle": "Campos: descripcion",
+            "detalle": "Se cambió: descripción",
         }
     ]
 
@@ -467,7 +467,7 @@ def test_editar_concepto_registra_solo_nombres_de_campos_conocidos(administrador
         "CONCEPTO_EDITADO",
         "NV_CONCEPTO_REPORTABLE",
         "30",
-        "Campos: descripcion",
+        "Se cambió: descripción",
         usuario=administrador,
     )
     assert "Secreto123" not in repr(bitacora.call_args)
@@ -484,7 +484,7 @@ def test_desactivar_concepto_se_registra_como_desactivacion(administrador, bitac
         "CONCEPTO_DESACTIVADO",
         "NV_CONCEPTO_REPORTABLE",
         "30",
-        "Campos: activo",
+        "Se cambió: estado",
         usuario=administrador,
     )
 
@@ -585,3 +585,14 @@ def test_editar_usuario_responde_aunque_falle_la_bitacora(administrador, analist
     analista.refresh_from_db()
     assert analista.nombre == "Juan Pablo Pérez"
     log.exception.assert_called_once()
+
+
+def test_editar_concepto_con_descripcion_y_activo_dice_se_cambio_en_espanol(administrador, bitacora):
+    with patch("parametros.views.servicios.actualizar_concepto", return_value=CONCEPTO):
+        respuesta = cliente_de(administrador).patch(
+            "/api/conceptos/30/",
+            {"descripcion": "Cuota de energía", "activo": True},
+            format="json",
+        )
+    assert respuesta.status_code == 200
+    assert bitacora.call_args.args[3] == "Se cambió: descripción y estado"

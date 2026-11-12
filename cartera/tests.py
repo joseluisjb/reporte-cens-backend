@@ -453,7 +453,7 @@ def test_post_409_borrador_otra_fecha():
         response = ExtraccionViewSet.as_view({"post": "create"})(request)
     assert response.status_code == 409
     assert response.data["detail"] == (
-        "Ya existe un corte en BORRADOR con fecha 2026-08-31. "
+        "Ya existe un corte en borrador con fecha 2026-08-31. "
         "Elimínelo o complételo antes de generar otro."
     )
     assert "/api/" not in response.data["detail"]
@@ -938,7 +938,7 @@ def test_destroy_409_no_es_borrador():
                side_effect=servicios.CorteNoEsBorrador):
         response = ExtraccionViewSet.as_view({"delete": "destroy"})(request, pk="1")
     assert response.status_code == 409
-    assert "BORRADOR" in response.data["detail"]
+    assert "en borrador" in response.data["detail"]
 
 
 def test_destroy_pk_no_numerico_404():

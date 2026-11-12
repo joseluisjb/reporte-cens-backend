@@ -29,7 +29,7 @@ class BorradorOtraFecha(Exception):
     def __init__(self, fecha, corte_id=None):
         self.fecha = fecha
         self.corte_id = corte_id
-        super().__init__(f"Ya existe un corte en BORRADOR con fecha {fecha}.")
+        super().__init__(f"Ya existe un corte en borrador con fecha {fecha}.")
 
 
 class CorteNoEncontrado(Exception):
@@ -256,7 +256,7 @@ def _arrastrar_abiertas_del_ultimo_enviado(corte_id):
             "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
             "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
             "SELECT %s, ant.OBLIGACION_ID, 'OMISION_VS_ULTIMO_CORTE', 'INFORMATIVA', "
-            "'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' ya no viene del SAC: se arrastro con "
+            "'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' ya no viene del sistema comercial: se arrastro con "
             "los datos del corte enviado del ' || TO_CHAR(ult.FECHA_CORTE, 'YYYY-MM-DD') || "
             "'. Revise si sigue abierta.', %s "
             + _SQL_ARRASTRE_CANDIDATAS,
@@ -289,8 +289,8 @@ def _registrar_estados_sin_homologar(corte_id):
             "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
             "SELECT %s, v.OBLIGACION_ID, 'ESTADO_SIN_HOMOLOGAR', 'CORRECTIVA', "
             "'Obligacion ' || NVL(o.NUMERO_OBLIGACION_TU, v.NUMERO_OBLIGACION_PROPUESTO) "
-            "|| ': el estado ' || NVL(v.ESTADO_SAC, '(vacio)') || ' del SAC no esta homologado "
-            "y la obligacion no entra al corte. Homologuelo y vuelva a generar el corte.', %s "
+            "|| ': el estado ' || NVL(v.ESTADO_SAC, '(vacio)') || ' del sistema comercial no tiene equivalencia "
+            "y la obligacion no entra al corte. Asignele una en Homologacion de Estados y vuelva a generar el corte.', %s "
             "FROM NEXOVOLT.V_CALCULO_CORTE v "
             "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = v.OBLIGACION_ID "
             "WHERE v.CORTE_ID = %s "
@@ -517,9 +517,9 @@ _REGLAS = {
     "FECHA_EXIGIBILIDAD_FUTURA": ("Fecha de exigibilidad no futura", ["RF49", "RF53"], "fecha_limite_pago"),
     "SIN_FECHA_LIMITE_PAGO": ("Fecha límite de pago", ["RF49", "RF53"], "fecha_limite_pago"),
     "ESTADO_SIN_HOMOLOGAR": ("Estado homologado en el catálogo TransUnion", ["RF48", "RF53"], "estado"),
-    "EDAD_SIN_VALOR_MORA": ("Edad de mora con valor de mora (regla 707)", ["RF19", "RF53"], "valor_mora"),
-    "PRIMER_REPORTE_INVALIDO": ("Primer reporte (regla 881)", ["RF10"], "estado"),
-    "CAMBIO_ESTADO_INVALIDO": ("Cambios de estado según la Matriz (regla 713)", ["RF53"], "estado"),
+    "EDAD_SIN_VALOR_MORA": ("Edad de mora con valor de mora", ["RF19", "RF53"], "valor_mora"),
+    "PRIMER_REPORTE_INVALIDO": ("Primer reporte", ["RF10"], "estado"),
+    "CAMBIO_ESTADO_INVALIDO": ("Cambios de estado permitidos", ["RF53"], "estado"),
     "CUOTAS_MORA_INCOHERENTE": ("Cuotas en mora y valor de mora", ["RF19"], "cuotas_mora"),
     "SALDO_MAYOR_VALOR_INICIAL": ("Saldo frente al valor inicial", ["RF52"], "valor_saldo"),
     "VALOR_FUERA_DE_RANGO": ("Valores entre $10.000 y $99 millones", ["RF51"], "valor_saldo"),
@@ -669,13 +669,13 @@ def _detalle(regla, items):
         if arrastradas:
             texto += (
                 f" {arrastradas} arrastrada(s) con los datos del último corte enviado "
-                "porque ya no vienen del SAC; revíselas."
+                "porque ya no vienen del sistema comercial; revíselas."
             )
         return texto
     if regla == "ESTADO_SIN_HOMOLOGAR" and items:
         return (
-            f"{len(items)} obligación(es) con un estado sin homologar: "
-            "homologue el estado del SAC y vuelva a generar el corte."
+            f"{len(items)} obligación(es) con un estado del sistema comercial sin equivalencia: "
+            "asígnela en Homologación de Estados y vuelva a generar el corte."
         )
     if not items:
         return "Sin observaciones."
@@ -880,7 +880,7 @@ def _detectar_tipo_archivo(nombre):
         if patron.match(nombre):
             return tipo
     raise EstructuraInvalida(
-        f"El archivo '{nombre}' no tiene un nombre reconocido (Manual, p. 43)."
+        f"El archivo '{nombre}' no tiene el nombre de un archivo de resultados de TransUnion."
     )
 
 
@@ -1215,14 +1215,14 @@ def obtener_resultados(archivo_id):
 class CamposInvalidos(Exception):
     """Algún campo no cabe en su posición o no es de su tipo: no se genera el archivo."""
     def __init__(self, errores):
-        super().__init__("Campos inválidos en el archivo plano")
+        super().__init__("Campos inválidos en el archivo para TransUnion")
         self.errores = errores
 
 
 # Longitud declarada por el Manual v34 para el registro tipo 2; sus campos suman 929.
 # Por confirmar con TransUnion: se toma de NV_PARAMETRO si existe la clave.
 LONGITUD_TIPO2_MANUAL = 930
-MOTIVO_NO_APTO = "La entidad tiene datos con relleno (XXX): TransUnion lo rechazaría."
+MOTIVO_NO_APTO = "Faltan los datos de la entidad ante TransUnion: el archivo sería rechazado."
 
 _COLUMNAS_TIPO2 = (
     "OBLIGACION_ID", "NUMERO_OBLIGACION_TU", "TIPO_ID_TU", "NUMERO_IDENTIFICACION",

@@ -53,7 +53,7 @@ class ExtraccionViewSet(viewsets.ViewSet):
         except servicios.BorradorOtraFecha as exc:
             return Response(
                 {"detail": (
-                    f"Ya existe un corte en BORRADOR con fecha {exc.fecha}. "
+                    f"Ya existe un corte en borrador con fecha {exc.fecha}. "
                     "Elimínelo o complételo antes de generar otro."
                 )},
                 status=status.HTTP_409_CONFLICT,
@@ -103,7 +103,7 @@ class ExtraccionViewSet(viewsets.ViewSet):
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEsBorrador:
             return Response(
-                {"detail": "El corte no está en estado BORRADOR."},
+                {"detail": "El corte no está en borrador."},
                 status=status.HTTP_409_CONFLICT,
             )
         except servicios.CorteConErroresCorrectivos as exc:
@@ -132,12 +132,12 @@ class ExtraccionViewSet(viewsets.ViewSet):
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEsValidado:
             return Response(
-                {"detail": "El corte no está en estado VALIDADO."},
+                {"detail": "El corte todavía no está validado."},
                 status=status.HTTP_409_CONFLICT,
             )
         except servicios.SinArchivo:
             return Response(
-                {"detail": "Primero genera el archivo plano del corte.", "code": "sin_archivo"},
+                {"detail": "Primero genera el archivo para TransUnion del corte.", "code": "sin_archivo"},
                 status=status.HTTP_409_CONFLICT,
             )
         except servicios.ArchivoNoApto:
@@ -182,7 +182,7 @@ class ExtraccionViewSet(viewsets.ViewSet):
             return Response({"detail": "Corte no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except servicios.CorteNoEsBorrador:
             return Response(
-                {"detail": "Solo se puede eliminar un corte en estado BORRADOR."},
+                {"detail": "Solo se puede eliminar un corte en borrador."},
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(status=status.HTTP_204_NO_CONTENT)

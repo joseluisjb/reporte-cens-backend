@@ -1,19 +1,13 @@
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 
+from config.estados_tu import nombre_estado
 from usuarios.permisos import EsAnalista
 from novedades import refinanciaciones
 from novedades.refinanciaciones_serializers import (
     RefinanciacionCreateSerializer,
     RefinanciacionSerializer,
 )
-
-_NOMBRES_ESTADO_TU = {
-    "01": "Vigente", "02": "Saldada", "03": "Dudoso Recaudo",
-    "04": "Suspendida", "06": "Castigada", "07": "Cartera Recuperada",
-    "08": "Inactivo", "10": "Estado 10", "11": "Estado 11", "12": "Estado 12",
-}
-
 
 class RefinanciacionesViewSet(viewsets.ViewSet):
     permission_classes = [EsAnalista]
@@ -60,14 +54,12 @@ class RefinanciacionesViewSet(viewsets.ViewSet):
         except refinanciaciones.TransicionNoPermitida as exc:
             estado = exc.estado_desde
             cierre = "07" if estado in ("03", "06") else "02"
-            nombre_estado = _NOMBRES_ESTADO_TU.get(estado, estado)
-            nombre_cierre = "Cartera Recuperada" if cierre == "07" else "Saldada"
             return Response(
                 {
                     "detail": (
-                        f"TransUnion no acepta pasar de {estado} · {nombre_estado} "
-                        f"a {cierre} · {nombre_cierre} (error 713). "
-                        "Define el tratamiento con CENS."
+                        f"TransUnion no acepta pasar de {nombre_estado(estado)} "
+                        f"a {nombre_estado(cierre)}. "
+                        "Consulta con CENS cómo tratar esta obligación antes de refinanciarla."
                     ),
                     "code": "transicion_no_permitida",
                 },
