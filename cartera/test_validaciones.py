@@ -398,3 +398,16 @@ def test_cp_b_55_evaluar_reglas_lee_los_estados_sin_homologar_de_nv_inconsistenc
     )
     assert "i.REGLA = 'ESTADO_SIN_HOMOLOGAR' AND i.SEVERIDAD = 'CORRECTIVA'" in sql
     assert "i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'" in sql
+
+
+def test_rf18_la_obligacion_nueva_no_entra_a_un_corte_anterior_a_su_refinanciacion():
+    """RF18: REFI-n comparte cliente y proceso con la original; antes de su fecha saldria duplicada."""
+    llamadas = _generar_corte_capturando_sql()
+    sql = next(
+        s for s, _ in llamadas
+        if "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE" in s and "V_CALCULO_CORTE v" in s
+    )
+    assert "WHERE v.INCLUIR = 'S'" in sql
+    assert "NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_REFINANCIACION r" in sql
+    assert "r.OBLIGACION_NUEVA_ID = v.OBLIGACION_ID AND r.FECHA > v.FECHA_CORTE" in sql
+    assert ":1" not in sql
