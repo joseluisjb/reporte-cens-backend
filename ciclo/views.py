@@ -88,7 +88,13 @@ class ObligacionesViewSet(viewsets.ViewSet):
 
         estado_tu = request.query_params.get("estado_tu")
         eliminada = request.query_params.get("eliminada", "false").lower() == "true"
-        abierta = request.query_params.get("abierta", "false").lower() == "true"
+        raw_abierta = request.query_params.get("abierta")
+        if raw_abierta is not None and raw_abierta.lower() not in ("true", "false"):
+            return Response(
+                {"abierta": ["Debe ser true o false."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        abierta = raw_abierta is not None and raw_abierta.lower() == "true"
         q = request.query_params.get("q")
 
         if q is not None and len(q) > 60:

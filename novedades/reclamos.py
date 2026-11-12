@@ -24,7 +24,9 @@ class TipologiaNoEncontrada(Exception):
 
 
 class ObligacionConReclamoAbierto(Exception):
-    pass
+    def __init__(self, numero_obligacion):
+        self.numero_obligacion = numero_obligacion
+        super().__init__(f"La obligación {numero_obligacion} ya tiene un reclamo abierto.")
 
 
 class InsumoCambiado(Exception):
@@ -220,7 +222,7 @@ def crear_reclamo(data, usuario=None):
                 [obligacion_id],
             )
             if cursor.fetchone() is not None:
-                raise ObligacionConReclamoAbierto()
+                raise ObligacionConReclamoAbierto(obligacion[0])
 
             cursor.execute("SELECT NEXOVOLT.SEQ_NV_RECLAMO.NEXTVAL FROM DUAL")
             reclamo_id = cursor.fetchone()[0]

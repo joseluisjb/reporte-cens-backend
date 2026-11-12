@@ -20,7 +20,7 @@ class ReclamoSerializer(serializers.Serializer):
     estado = serializers.ChoiceField(choices=["EN_RECLAMO", "CERRADO"])
     marcacion_generada = serializers.BooleanField()
     desmarcacion_generada = serializers.BooleanField()
-    fecha_limite_respuesta = serializers.CharField(allow_null=True)
+    fecha_limite_respuesta = serializers.CharField()
     vencido = serializers.BooleanField()
     resultado = serializers.CharField(allow_null=True)
     fecha_cierre = serializers.CharField(allow_null=True)

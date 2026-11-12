@@ -1117,6 +1117,31 @@ def obtener_ciclo(corte_id):
     return _fila_ciclo_a_detalle(row, nombres, transiciones, rechazos)
 
 
+# Transiciones posibles por estado para el próximo ciclo (RF → texto → por_confirmar).
+# Las reglas que dependen de CENS (C-29, C-53) o de TransUnion tienen por_confirmar=True.
+_POSIBLES_TRANSICIONES = {
+    "01": [
+        {"rf": "RF12", "texto": "Pago total → 02 · Saldada", "por_confirmar": False},
+        {"rf": "RF14", "texto": "Crédito caducado en el SAC y con mora → 03 · Dudoso Recaudo", "por_confirmar": True},
+        {"rf": "RF45", "texto": "Castigo contable → 06 · Castigada", "por_confirmar": True},
+        {"rf": "RF47", "texto": "Pago de la mora (sin cierre)", "por_confirmar": True},
+    ],
+    "08": [
+        {"rf": "RF12", "texto": "Pago total → 02 · Saldada", "por_confirmar": False},
+        {"rf": "RF14", "texto": "Crédito caducado en el SAC y con mora → 03 · Dudoso Recaudo", "por_confirmar": True},
+        {"rf": "RF45", "texto": "Castigo contable → 06 · Castigada", "por_confirmar": True},
+    ],
+    "03": [
+        {"rf": "RF15", "texto": "Pago total → 07 · Cartera Recuperada", "por_confirmar": False},
+        {"rf": "RF46", "texto": "Normalización → 01 · Vigente", "por_confirmar": True},
+    ],
+    "06": [
+        {"rf": "RF15", "texto": "Pago total → 07 · Cartera Recuperada", "por_confirmar": False},
+        {"rf": "RF46", "texto": "Normalización → 01 · Vigente", "por_confirmar": True},
+    ],
+}
+
+
 def obtener_matriz():
     with connection.cursor() as cursor:
         cursor.execute(_SQL_MATRIZ + " ORDER BY 1, 2, 3, 4")
@@ -1270,6 +1295,55 @@ def obtener_obligacion(obligacion_id):
         )
         cuotas_rows = cursor.fetchall()
 
+    # RF18: ¿es esta obligación la NUEVA de una refinanciación? → reestructuracion
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT r.OBLIGACION_ORIGEN_ID, o_orig.NUMERO_OBLIGACION_TU, "
+            "r.NATURALEZA, nat.DESCRIPCION, NVL(nat.CONFIRMADO, 'N'), "
+            "(SELECT COUNT(*) FROM NEXOVOLT.NV_REFINANCIACION r_cnt "
+            " START WITH r_cnt.OBLIGACION_NUEVA_ID = r.OBLIGACION_NUEVA_ID "
+            " CONNECT BY r_cnt.OBLIGACION_NUEVA_ID = PRIOR r_cnt.OBLIGACION_ORIGEN_ID) "
+            "FROM NEXOVOLT.NV_REFINANCIACION r "
+            "JOIN NEXOVOLT.NV_OBLIGACION o_orig ON o_orig.OBLIGACION_ID = r.OBLIGACION_ORIGEN_ID "
+            "LEFT JOIN NEXOVOLT.NV_NATURALEZA_REESTR nat ON nat.CODIGO = r.NATURALEZA "
+            "WHERE r.OBLIGACION_NUEVA_ID = %s",
+            [obligacion_id],
+        )
+        refi_nueva_row = cursor.fetchone()
+
+    # RF18: ¿fue esta obligación la ORIGEN de una refinanciación? → refinanciada_en
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT r.OBLIGACION_NUEVA_ID, o_nueva.NUMERO_OBLIGACION_TU "
+            "FROM NEXOVOLT.NV_REFINANCIACION r "
+            "JOIN NEXOVOLT.NV_OBLIGACION o_nueva ON o_nueva.OBLIGACION_ID = r.OBLIGACION_NUEVA_ID "
+            "WHERE r.OBLIGACION_ORIGEN_ID = %s",
+            [obligacion_id],
+        )
+        refi_origen_row = cursor.fetchone()
+
+    reestructuracion = None
+    if refi_nueva_row is not None:
+        reestructuracion = {
+            "numero_reestructuraciones": int(refi_nueva_row[5]) if refi_nueva_row[5] is not None else 1,
+            "naturaleza": {
+                "codigo": refi_nueva_row[2],
+                "descripcion": refi_nueva_row[3],
+                "confirmado": refi_nueva_row[4] == "S",
+            },
+            "obligacion_anterior": {
+                "obligacion_id": refi_nueva_row[0],
+                "numero_obligacion": refi_nueva_row[1],
+            },
+        }
+
+    refinanciada_en = None
+    if refi_origen_row is not None:
+        refinanciada_en = {
+            "obligacion_id": refi_origen_row[0],
+            "numero_obligacion": refi_origen_row[1],
+        }
+
     dias_mora = int(row[6]) if row[6] is not None else 0
     edad_mora = row[5] or "00"
     anios_mora = dias_mora // 365 if edad_mora == "14" else None
@@ -1362,12 +1436,12 @@ def obtener_obligacion(obligacion_id):
             } if tipo_pago_code else None,
             "valor_real_pagado": int(row[25]) if row[25] is not None else 0,
         } if estado_tu not in ("02", "07") and modo_ext_code is not None else None,
-        "reestructuracion": None,
-        "refinanciada_en": None,
+        "reestructuracion": reestructuracion,
+        "refinanciada_en": refinanciada_en,
         "movimiento_posterior_cierre": movimiento_posterior == "S",
         "cuotas_vencidas": cuotas_vencidas,
         "pagos": pagos,
-        "posibles_transiciones": [],
+        "posibles_transiciones": _POSIBLES_TRANSICIONES.get(estado_tu, []),
         # RF52: alerta informativa del Manual (p. 18), no bloquea.
         "advertencias": [{
             "regla": "SALDO_MAYOR_VALOR_INICIAL",

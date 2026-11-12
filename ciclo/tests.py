@@ -487,6 +487,8 @@ def test_rf11_obtener_obligacion_edad_14_anios_mora():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []  # cuotas_vencidas: none pending
 
@@ -782,6 +784,8 @@ def test_rf14_obtener_obligacion_caducado():
             None, None, None, "N", None,
             "S", 4, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []  # cuotas_vencidas: none pending
 
@@ -1134,6 +1138,8 @@ def test_rf17_obtener_obligacion_cuotas_vencidas_y_pagos():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 70000, "N", "N",
         ),
+        None,
+        None,
     ]
     # cuotas_vencidas desde V_MORA_OBLIGACION: 1 cuota pendiente
     mock_cursor.fetchall.return_value = [
@@ -1170,6 +1176,8 @@ def test_rf17_obtener_obligacion_sin_pagos_sin_cuotas():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []
 
@@ -1494,6 +1502,8 @@ def test_rf47_obtener_obligacion_expone_pago_mora():
             date(2026, 10, 12), "01", "01", "N", date(2026, 10, 31),
             "N", 0, 300000, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []
 
@@ -1523,6 +1533,8 @@ def test_rf47_obtener_obligacion_pago_mora_sin_fecha():
             None, "01", "01", "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []
 
@@ -1549,6 +1561,8 @@ def test_rf47_obtener_obligacion_sin_pago_mora_es_none():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []
 
@@ -1574,6 +1588,8 @@ def test_rf49_fecha_exigibilidad_cuota_antigua():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     # Dos cuotas vencidas; la primera (más antigua) vence el 14/08
     mock_cursor.fetchall.return_value = [
@@ -1602,6 +1618,8 @@ def test_rf49_anios_mora_edad_14_800_dias():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []
 
@@ -1627,6 +1645,8 @@ def test_rf49_al_dia_exigibilidad_nula():
             None, None, None, "N", date(2026, 10, 31),
             "N", 0, 0, "N", "N",
         ),
+        None,
+        None,
     ]
     mock_cursor.fetchall.return_value = []
 

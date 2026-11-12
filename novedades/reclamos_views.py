@@ -47,9 +47,9 @@ class ReclamosViewSet(viewsets.ViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except reclamos.ObligacionConReclamoAbierto:
+        except reclamos.ObligacionConReclamoAbierto as exc:
             return Response(
-                {"detail": "La obligación ya tiene un reclamo abierto."},
+                {"detail": f"La obligación {exc.numero_obligacion} ya tiene un reclamo abierto."},
                 status=status.HTTP_409_CONFLICT,
             )
         except ValueError as exc:
