@@ -326,3 +326,75 @@ def test_cp_c_08_evaluar_reglas_lee_las_omisiones_informativas_de_nv_inconsisten
     )
     assert "i.REGLA = 'CAMBIO_ESTADO_INVALIDO'" in sql
     assert "i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'" in sql
+
+
+# ── DF-05 · estados del SAC sin homologar (RF48, CP-B-55) ──────────────────────
+
+def _fila_sin_homologar(obligacion_id=None, numero=None):
+    return (
+        "ESTADO_SIN_HOMOLOGAR", "CORRECTIVA",
+        "Obligacion 2260-0001: el estado B del SAC no esta homologado y la obligacion no entra al corte. "
+        "Homologuelo (RF48) y vuelva a generar el corte.",
+        obligacion_id, numero,
+    )
+
+
+def test_cp_b_55_generar_corte_registra_los_estados_sin_homologar():
+    """CP-B-55 / DF-05: una inconsistencia CORRECTIVA por obligacion con estado sin homologar."""
+    llamadas = _generar_corte_capturando_sql()
+    sqls = [s for s, _ in llamadas]
+    i_arrastre = next(
+        i for i, s in enumerate(sqls) if "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE" in s and "ant." in s
+    )
+    i_sin = next(i for i, s in enumerate(sqls) if "'ESTADO_SIN_HOMOLOGAR'" in s)
+    i_total = next(i for i, s in enumerate(sqls) if "SET TOTAL_REGISTROS" in s)
+    assert i_arrastre < i_sin < i_total
+
+    sql, params = llamadas[i_sin]
+    assert "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA" in sql
+    assert "'ESTADO_SIN_HOMOLOGAR', 'CORRECTIVA'" in sql
+    assert "FROM NEXOVOLT.V_CALCULO_CORTE v" in sql
+    assert "NEXOVOLT.NV_HOMOLOGA_ESTADO h" in sql
+    assert "h.ACCION IS NOT NULL" in sql
+    assert "NVL(o.ELIMINADA, 'N') = 'N'" in sql
+    assert params[0] == 1 and params[2] == 1
+
+
+def test_cp_b_55_no_marca_por_estado_tu_nulo_ni_motivo_de_exclusion():
+    """DF-05 / OBS-06: F con ACCION = CIERRE (ESTADO_TU nulo) esta homologado y no se marca."""
+    llamadas = _generar_corte_capturando_sql()
+    sql = next(s for s, _ in llamadas if "'ESTADO_SIN_HOMOLOGAR'" in s)
+    assert "ESTADO_TU IS NULL" not in sql
+    assert "MOTIVO_EXCLUSION" not in sql
+
+
+def test_cp_b_55_obligacion_nueva_sin_homologar_bloquea_la_validacion():
+    """DF-05: la obligacion nunca registrada (sin id ni numero) igual bloquea."""
+    errores = _errores([_fila_sin_homologar()])
+    assert errores == [{
+        "regla": "ESTADO_SIN_HOMOLOGAR", "mensaje": _fila_sin_homologar()[2],
+        "obligacion_id": None, "numero_obligacion": None, "campo": "estado",
+    }]
+
+
+def test_cp_b_55_validaciones_cuenta_las_obligaciones_sin_homologar():
+    """DF-05: nivel correctiva, no deja generar y el detalle cuenta las obligaciones."""
+    resultado, reglas = _validaciones([_fila_sin_homologar(), _fila_sin_homologar(4, "2260-0002")],
+                                      estado="VALIDADO")
+    regla = reglas["ESTADO_SIN_HOMOLOGAR"]
+    assert regla["nivel"] == "correctiva"
+    assert resultado["puede_generar"] is False
+    assert regla["detalle"] == (
+        "2 obligación(es) con un estado sin homologar: "
+        "homologue el estado del SAC (RF48) y vuelva a generar el corte."
+    )
+
+
+def test_cp_b_55_evaluar_reglas_lee_los_estados_sin_homologar_de_nv_inconsistencia():
+    """DF-05: la lectura de NV_INCONSISTENCIA incluye ESTADO_SIN_HOMOLOGAR CORRECTIVA y conserva DF-04."""
+    _, cursor = _validar([])
+    sql = next(
+        c.args[0] for c in cursor.execute.call_args_list if "NEXOVOLT.NV_INCONSISTENCIA i" in c.args[0]
+    )
+    assert "i.REGLA = 'ESTADO_SIN_HOMOLOGAR' AND i.SEVERIDAD = 'CORRECTIVA'" in sql
+    assert "i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'" in sql

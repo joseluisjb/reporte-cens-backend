@@ -266,6 +266,37 @@ def _arrastrar_abiertas_del_ultimo_enviado(corte_id):
         )
 
 
+def _registrar_estados_sin_homologar(corte_id):
+    """
+    RF48 / DF-05 (CP-B-55): una obligacion del SAC cuyo estado no esta homologado
+    (sin fila en NV_HOMOLOGA_ESTADO para su tipo de cartera y estado, o con ACCION nula)
+    no llega a NV_REPORTE_DETALLE, asi que la regla 21 de la vista nunca la ve. Se deja
+    una inconsistencia CORRECTIVA por obligacion para que el corte quede bloqueado.
+
+    Es una foto a proposito, tomada al generar el corte: V_CALCULO_CORTE solo tiene el
+    corte en BORRADOR y, si alguien homologa sin regenerar, la obligacion seguiria
+    faltando. _limpiar_corte borra estas filas al regenerar y el ciclo solo borra 881/713.
+    Un estado con ACCION = 'CIERRE' y ESTADO_TU nulo (p. ej. F) esta homologado y no se marca.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
+            "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
+            "SELECT %s, v.OBLIGACION_ID, 'ESTADO_SIN_HOMOLOGAR', 'CORRECTIVA', "
+            "'Obligacion ' || NVL(o.NUMERO_OBLIGACION_TU, v.NUMERO_OBLIGACION_PROPUESTO) "
+            "|| ': el estado ' || NVL(v.ESTADO_SAC, '(vacio)') || ' del SAC no esta homologado "
+            "y la obligacion no entra al corte. Homologuelo (RF48) y vuelva a generar el corte.', %s "
+            "FROM NEXOVOLT.V_CALCULO_CORTE v "
+            "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = v.OBLIGACION_ID "
+            "WHERE v.CORTE_ID = %s "
+            "AND NVL(o.ELIMINADA, 'N') = 'N' "
+            "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_HOMOLOGA_ESTADO h "
+            "WHERE h.TIPO_CARTERA = v.TIPO_CARTERA AND h.ESTADO_SAC = v.ESTADO_SAC "
+            "AND h.ACCION IS NOT NULL)",
+            [corte_id, ahora_para_bd(), corte_id],
+        )
+
+
 def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por=None):
     with connection.cursor() as cursor:
         cursor.execute(
@@ -372,6 +403,7 @@ def generar_corte(fecha_corte, grupo_id=None, usuario=None):
         _insertar_obligaciones_nuevas()
         _insertar_reporte_detalle()
         _arrastrar_abiertas_del_ultimo_enviado(corte_id)
+        _registrar_estados_sin_homologar(corte_id)
         return _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por)
 
 
@@ -514,7 +546,8 @@ def _evaluar_reglas(corte_id):
     """Resultados de las reglas del Manual para el corte, sin cambiar nada (RF53).
 
     Une V_VALIDACION_CORTE, los cambios de estado que la Matriz rechazó en el ciclo (713),
-    las advertencias de arrastre de obligaciones del último corte (DF-04) y la
+    las advertencias de arrastre de obligaciones del último corte (DF-04), los estados
+    del SAC sin homologar registrados al generar el corte (DF-05) y la
     actualización mensual pendiente.
     """
     with connection.cursor() as cursor:
@@ -534,7 +567,8 @@ def _evaluar_reglas(corte_id):
             "FROM NEXOVOLT.NV_INCONSISTENCIA i "
             "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = i.OBLIGACION_ID "
             "WHERE i.CORTE_ID = %s AND (i.REGLA = 'CAMBIO_ESTADO_INVALIDO' "
-            "OR (i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'))",
+            "OR (i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA') "
+            "OR (i.REGLA = 'ESTADO_SIN_HOMOLOGAR' AND i.SEVERIDAD = 'CORRECTIVA'))",
             [corte_id, corte_id],
         )
         filas = cursor.fetchall()
@@ -634,6 +668,11 @@ def _detalle(regla, items):
                 "porque ya no vienen del SAC; revíselas."
             )
         return texto
+    if regla == "ESTADO_SIN_HOMOLOGAR" and items:
+        return (
+            f"{len(items)} obligación(es) con un estado sin homologar: "
+            "homologue el estado del SAC (RF48) y vuelva a generar el corte."
+        )
     if not items:
         return "Sin observaciones."
     if all(i["obligacion_id"] is None for i in items):
