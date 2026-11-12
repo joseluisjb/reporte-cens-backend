@@ -212,6 +212,60 @@ def _insertar_reporte_detalle():
         cursor.execute(sql)
 
 
+# Candidatas a arrastrar: abiertas en el ultimo corte enviado (misma definicion que la
+# regla 15 de V_VALIDACION_CORTE y que _activas_del_ultimo_enviado), sin fila en
+# V_CALCULO_CORTE para el corte nuevo y que aun no estan en el. Requiere 2 parametros: corte_id.
+_SQL_ARRASTRE_CANDIDATAS = (
+    "FROM NEXOVOLT.NV_REPORTE_DETALLE ant "
+    "JOIN (SELECT CORTE_ID, FECHA_CORTE FROM NEXOVOLT.NV_CORTE "
+    "WHERE ESTADO IN ('ENVIADO', 'ENVIADO_CON_INCONSISTENCIAS') "
+    "ORDER BY FECHA_CORTE DESC FETCH FIRST 1 ROW ONLY) ult ON ult.CORTE_ID = ant.CORTE_ID "
+    "JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = ant.OBLIGACION_ID "
+    "WHERE ant.ESTADO_TU NOT IN ('02', '07') "
+    "AND NVL(o.ELIMINADA, 'N') = 'N' "
+    "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v "
+    "WHERE v.CORTE_ID = %s AND v.OBLIGACION_ID = ant.OBLIGACION_ID) "
+    "AND NOT EXISTS (SELECT 1 FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
+    "WHERE rd.CORTE_ID = %s AND rd.OBLIGACION_ID = ant.OBLIGACION_ID)"
+)
+
+
+def _arrastrar_abiertas_del_ultimo_enviado(corte_id):
+    """
+    RF21 / DF-04 (CP-C-08): el corte incluye las obligaciones del ultimo corte enviado
+    que no estan cerradas ni eliminadas. Si una de ellas ya no viene del SAC (no tiene
+    ninguna fila en V_CALCULO_CORTE), se arrastra al corte nuevo con los datos del
+    reporte enviado, sin cambiar su estado, y deja una advertencia INFORMATIVA.
+
+    Las que siguen en V_CALCULO_CORTE, incluso con INCLUIR = 'N' (por ejemplo con estado
+    sin homologar), NO se arrastran: siguen bloqueando por OMISION_VS_ULTIMO_CORTE.
+    Una original refinanciada arrastrada aqui la cierra luego el ciclo, porque
+    _incluir_originales_refinanciadas omite las filas que ya estan en el corte.
+    """
+    from ciclo.servicios import _COLUMNAS_COPIADAS_ORIGINAL, _COLUMNAS_COPIADAS_ORIGINAL_2
+
+    columnas = _COLUMNAS_COPIADAS_ORIGINAL + ", " + _COLUMNAS_COPIADAS_ORIGINAL_2
+    columnas_ant = ", ".join(f"ant.{c.strip()}" for c in columnas.split(","))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_INCONSISTENCIA "
+            "(CORTE_ID, OBLIGACION_ID, REGLA, SEVERIDAD, MENSAJE, FECHA_REGISTRO) "
+            "SELECT %s, ant.OBLIGACION_ID, 'OMISION_VS_ULTIMO_CORTE', 'INFORMATIVA', "
+            "'Obligacion ' || o.NUMERO_OBLIGACION_TU || ' ya no viene del SAC: se arrastro con "
+            "los datos del corte enviado del ' || TO_CHAR(ult.FECHA_CORTE, 'YYYY-MM-DD') || "
+            "'. Revise si sigue abierta.', %s "
+            + _SQL_ARRASTRE_CANDIDATAS,
+            [corte_id, ahora_para_bd(), corte_id, corte_id],
+        )
+        cursor.execute(
+            "INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE "
+            f"(CORTE_ID, OBLIGACION_ID, {columnas}, VALOR_REAL_PAGADO, CADUCADO) "
+            f"SELECT %s, ant.OBLIGACION_ID, {columnas_ant}, 0, NVL(ant.CADUCADO, 'N') "
+            + _SQL_ARRASTRE_CANDIDATAS,
+            [corte_id, corte_id, corte_id],
+        )
+
+
 def _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por=None):
     with connection.cursor() as cursor:
         cursor.execute(
@@ -317,6 +371,7 @@ def generar_corte(fecha_corte, grupo_id=None, usuario=None):
 
         _insertar_obligaciones_nuevas()
         _insertar_reporte_detalle()
+        _arrastrar_abiertas_del_ultimo_enviado(corte_id)
         return _finalizar_y_resumir(corte_id, fecha_corte, grupo_id, grupo_nombre, ejecutada_por)
 
 
@@ -458,8 +513,9 @@ def _campo_de(regla, mensaje):
 def _evaluar_reglas(corte_id):
     """Resultados de las reglas del Manual para el corte, sin cambiar nada (RF53).
 
-    Une V_VALIDACION_CORTE, los cambios de estado que la Matriz rechazó en el ciclo (713)
-    y la actualización mensual pendiente.
+    Une V_VALIDACION_CORTE, los cambios de estado que la Matriz rechazó en el ciclo (713),
+    las advertencias de arrastre de obligaciones del último corte (DF-04) y la
+    actualización mensual pendiente.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -477,7 +533,8 @@ def _evaluar_reglas(corte_id):
             "SELECT i.REGLA, i.SEVERIDAD, i.MENSAJE, i.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU "
             "FROM NEXOVOLT.NV_INCONSISTENCIA i "
             "LEFT JOIN NEXOVOLT.NV_OBLIGACION o ON o.OBLIGACION_ID = i.OBLIGACION_ID "
-            "WHERE i.CORTE_ID = %s AND i.REGLA = 'CAMBIO_ESTADO_INVALIDO'",
+            "WHERE i.CORTE_ID = %s AND (i.REGLA = 'CAMBIO_ESTADO_INVALIDO' "
+            "OR (i.REGLA = 'OMISION_VS_ULTIMO_CORTE' AND i.SEVERIDAD = 'INFORMATIVA'))",
             [corte_id, corte_id],
         )
         filas = cursor.fetchall()
@@ -568,7 +625,15 @@ def _detalle(regla, items):
         return _DETALLE_MILES
     if regla == "OMISION_VS_ULTIMO_CORTE":
         activas = _activas_del_ultimo_enviado()
-        return f"{activas - len(items)} de {activas} obligaciones activas del último corte incluidas."
+        omitidas = sum(1 for i in items if i["severidad"] == "CORRECTIVA")
+        arrastradas = len(items) - omitidas
+        texto = f"{activas - omitidas} de {activas} obligaciones activas del último corte incluidas."
+        if arrastradas:
+            texto += (
+                f" {arrastradas} arrastrada(s) con los datos del último corte enviado "
+                "porque ya no vienen del SAC; revíselas."
+            )
+        return texto
     if not items:
         return "Sin observaciones."
     if all(i["obligacion_id"] is None for i in items):
@@ -583,7 +648,7 @@ def _nivel(regla, items):
         return "ok"
     if regla == "ENTIDAD_CON_MARCADOR":
         return "advertencia"
-    return "correctiva" if items[0]["severidad"] == "CORRECTIVA" else "informativa"
+    return "correctiva" if any(i["severidad"] == "CORRECTIVA" for i in items) else "informativa"
 
 
 def validaciones_corte(corte_id):
