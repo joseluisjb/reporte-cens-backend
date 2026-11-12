@@ -139,6 +139,75 @@ def test_anios_en_mora_solo_con_edad_14():
     assert _campo(_linea(VALOR_MORA=900_000, EDAD_MORA="12", ANIOS_MORA=1), "anios_mora") == "  "
 
 
+# ── RF18 · obligación reestructurada (campos 44, 45 y 46) ─────────────────────
+
+def test_reestructurada_reporta_01_naturaleza_y_numero():
+    linea = _linea(OBLIGACION_REFINANCIADA="01", NATURALEZA_REESTR="07", N_REESTRUCTURACIONES=1)
+    assert linea[289:291] == "01"      # campo 44, posición 290
+    assert linea[291:293] == "07"      # campo 45, posición 292
+    assert linea[293:296] == "001"     # campo 46, posición 294
+
+
+def test_no_reestructurada_deja_45_y_46_en_espacios():
+    linea = _linea(OBLIGACION_REFINANCIADA="02", NATURALEZA_REESTR="07", N_REESTRUCTURACIONES=0)
+    assert linea[289:291] == "02"
+    assert linea[291:293] == "  "
+    assert linea[293:296] == "   "
+
+
+def test_reestructurada_sin_numero_deja_45_y_46_en_espacios():
+    linea = _linea(OBLIGACION_REFINANCIADA="01", NATURALEZA_REESTR="07", N_REESTRUCTURACIONES=0)
+    assert linea[289:291] == "01"
+    assert linea[291:296] == "     "
+
+
+def test_reestructuraciones_cadena_de_una():
+    assert servicios._reestructuraciones([(1, 2, "07")]) == {2: ("07", 1)}
+
+
+def test_reestructuraciones_cadena_de_dos():
+    filas = [(1, 2, "07"), (2, 3, "08")]
+    assert servicios._reestructuraciones(filas) == {2: ("07", 1), 3: ("08", 2)}
+
+
+def test_reestructuraciones_sin_vinculo_no_aparece():
+    assert servicios._reestructuraciones([]) == {}
+    assert 9 not in servicios._reestructuraciones([(1, 2, "07")])
+
+
+def test_reestructuraciones_protege_contra_ciclos():
+    resultado = servicios._reestructuraciones([(1, 2, "07"), (2, 1, "07")])
+    assert resultado[1][1] == 2 and resultado[2][1] == 2
+
+
+def test_generar_archivo_completa_45_y_46_desde_nv_refinanciacion():
+    conexion, cursor = MagicMock(), MagicMock()
+    conexion.cursor.return_value.__enter__.return_value = cursor
+    cursor.fetchone.side_effect = [("VALIDADO", FECHA_CORTE), (5,)]
+    cursor.fetchall.return_value = [(1, 2, "07")]
+    parametros = {"CODIGO_PAQUETE": "11", "TIPO_REPORTE": "01",
+                  "CATEGORIA_SERVICIO": "04", "DIVISOR_VALORES": "1000"}
+    obligaciones = [_obligacion(1), _obligacion(2, OBLIGACION_REFINANCIADA="01")]
+    with patch("cartera.servicios.connection", conexion), \
+         patch("cartera.servicios.transaction.atomic", _sin_transaccion), \
+         patch("cartera.servicios._parametros", return_value=parametros), \
+         patch("cartera.servicios._leer_obligaciones_archivo", return_value=obligaciones), \
+         patch("parametros.servicios.datos_entidad", return_value=_entidad("001", "123")), \
+         patch("cartera.servicios.listar_archivos", return_value=[{"id": 5}]):
+        servicios.generar_archivo(2)
+    consulta = next(
+        c for c in cursor.execute.call_args_list if "NV_REFINANCIACION" in c.args[0]
+    )
+    assert "OBLIGACION_NUEVA_ID" in consulta.args[0]
+    assert obligaciones[0]["N_REESTRUCTURACIONES"] == 0
+    assert obligaciones[1]["NATURALEZA_REESTR"] == "07"
+    assert obligaciones[1]["N_REESTRUCTURACIONES"] == 1
+    insert = next(c for c in cursor.execute.call_args_list if "INSERT INTO" in c.args[0])
+    lineas = insert.args[1][10].datos.decode("cp1252").split("\r\n")
+    assert lineas[1][291:296] == "     "      # la 1 no es nueva de nada
+    assert lineas[2][289:296] == "0107001"    # campos 44, 45 y 46 de la 2
+
+
 def test_nombre_con_tildes_se_codifica_en_cp1252_sin_romper_el_largo():
     contenido, errores = armar_archivo(
         CABECERA, [_obligacion(NOMBRE_TITULAR="Ana Peña Álvarez")], 1000, 930
@@ -190,6 +259,7 @@ def _generar(estado="VALIDADO", entidad=None, obligaciones=None):
     conexion, cursor = MagicMock(), MagicMock()
     conexion.cursor.return_value.__enter__.return_value = cursor
     cursor.fetchone.side_effect = [(estado, FECHA_CORTE), (5,)]
+    cursor.fetchall.return_value = []  # NV_REFINANCIACION (RF18): sin vínculos
     parametros = {"CODIGO_PAQUETE": "11", "TIPO_REPORTE": "01",
                   "CATEGORIA_SERVICIO": "04", "DIVISOR_VALORES": "1000"}
     with patch("cartera.servicios.connection", conexion), \

@@ -74,8 +74,8 @@ REGISTRO_2 = (
     ("42", "tipo_garantia", 276, 2, "NUM", None),
     ("43", "valor_garantia", 278, 12, "NUM", None),
     ("44", "obligacion_reestructurada", 290, 2, "NUM", "OBLIGACION_REFINANCIADA"),
-    ("45", "naturaleza_reestructuracion", 292, 2, "NUM", None),
-    ("46", "numero_reestructuraciones", 294, 3, "NUM", None),
+    ("45", "naturaleza_reestructuracion", 292, 2, "NUM", "NATURALEZA_REESTR"),  # RF18: ver _datos_rf18
+    ("46", "numero_reestructuraciones", 294, 3, "NUM", "N_REESTRUCTURACIONES"),  # RF18: ver _datos_rf18
     ("47", "clase_tarjeta", 297, 2, "NUM", None),
     ("48", "cheques_devueltos", 299, 4, "NUM", None),
     ("49", "categoria_servicios", 303, 2, "NUM", "categoria_servicios"),
@@ -219,6 +219,22 @@ def _datos_rf49(obligacion):
     }
 
 
+def _datos_rf18(obligacion):
+    """Naturaleza y numero de reestructuraciones del registro tipo 2 (RF18, campos 45 y 46).
+
+    Solo se reportan cuando la obligacion esta reestructurada (campo 44 = 01) y el numero de
+    reestructuraciones es mayor que cero; en los demas casos van en espacios.
+    """
+    reestructurada = (
+        obligacion.get("OBLIGACION_REFINANCIADA") == "01"
+        and (obligacion.get("N_REESTRUCTURACIONES") or 0) > 0
+    )
+    return {
+        "NATURALEZA_REESTR": obligacion.get("NATURALEZA_REESTR") if reestructurada else None,
+        "N_REESTRUCTURACIONES": obligacion.get("N_REESTRUCTURACIONES") if reestructurada else None,
+    }
+
+
 def armar_registro(layout, datos, divisor=1000, longitud_total=None):
     """Una línea de longitud fija (sin CRLF). Rellena con espacios hasta `longitud_total`."""
     partes = [
@@ -240,7 +256,8 @@ def armar_archivo(cabecera, obligaciones, divisor, longitud_tipo2):
     errores = []
     lineas = [armar_registro(REGISTRO_1, {**cabecera, "tipo_registro": 1})]
     for obligacion in obligaciones:
-        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion), "tipo_registro": 2}
+        datos = {**cabecera, **obligacion, **_datos_rf49(obligacion),
+                 **_datos_rf18(obligacion), "tipo_registro": 2}
         try:
             lineas.append(armar_registro(REGISTRO_2, datos, divisor, longitud_tipo2))
         except CampoInvalido as exc:

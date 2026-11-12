@@ -156,6 +156,8 @@ def _setup_ciclo(
     mora_anterior=0,
     matriz=None,
     marcas_castigo=None,
+    refinanciaciones=None,
+    filas_agregadas=0,
 ):
     """
     Monta el mock_cursor con respuestas para ejecutar_ciclo.
@@ -166,7 +168,10 @@ def _setup_ciclo(
        valor_saldo, fecha_ultimo_pago)
 
     marcas_castigo: lista de obligacion_ids con marca de castigo (RF45).
+    refinanciaciones: lista de (obligacion_origen_id, fecha) de NV_REFINANCIACION (RF18).
+    filas_agregadas: rowcount del INSERT de originales refinanciadas (RF18 paso 2).
     """
+    mock_cursor.rowcount = filas_agregadas
     fecha_corte_bd = date(2026, 10, 31)
 
     mock_cursor.fetchone.side_effect = [
@@ -204,6 +209,7 @@ def _setup_ciclo(
         datos_previos,        # _cargar_datos_previos
         matriz or [],         # _cargar_transiciones_permitidas
         castigo_rows,         # _cargar_marcas_castigo (RF45)
+        list(refinanciaciones or []),  # _cargar_refinanciaciones (RF18)
         [],                   # RF13 MOVIMIENTO_POSTERIOR query
     ]
 
@@ -1812,3 +1818,141 @@ def test_df01_cierre_desde_02_y_07_se_conserva_sin_transicion(origen):
     assert resultado["cierres"] == 0
     assert resultado["rechazados"] == 0
     assert not _hay_713(sqls)
+
+
+# ── DF-03 · Refinanciación: cierre de la original y marca de la nueva (RF18) ──
+
+_FECHA_REFINANCIACION = date(2026, 10, 15)
+
+
+def _ciclo_refinanciada(
+    estado_anterior, mora_anterior, matriz=_MATRIZ_CIERRES,
+    refinanciaciones=((90, _FECHA_REFINANCIACION),), filas_agregadas=0,
+):
+    """Ejecuta el ciclo con una original refinanciada que sigue con saldo en el SAC."""
+    mock_conn, mock_cursor = _mock_conn_multiple()
+    obligaciones = [
+        (90, "01", 0, "00", "Titular Refi", "2250-9002",
+         0, None, 0, 500000, None, 'N', 0, 0),
+    ]
+    _setup_ciclo(
+        mock_conn, mock_cursor,
+        obligaciones=obligaciones,
+        es_primer_reporte=False,
+        edad_anterior="00",
+        estado_anterior=estado_anterior,
+        mora_anterior=mora_anterior,
+        matriz=matriz,
+        refinanciaciones=refinanciaciones,
+        filas_agregadas=filas_agregadas,
+    )
+    with _patch_ciclo(mock_conn):
+        resultado = servicios.ejecutar_ciclo(_FECHA_VALIDA)
+    return resultado, mock_cursor.execute.call_args_list
+
+
+def _sqls(llamadas):
+    return [str(c.args[0]) for c in llamadas if c.args]
+
+
+def test_df03_original_en_01_cierra_en_02_con_modo_16():
+    """CP-B-33: la original en 01 se cierra en 02 con modo de extinción 16."""
+    resultado, llamadas = _ciclo_refinanciada("01", 0)
+    assert resultado["cierres"] == 1
+    assert resultado["rechazados"] == 0
+    t = resultado["transiciones"][0]
+    assert (t["estado_anterior"], t["estado_nuevo"]) == ("01", "02")
+    assert t["reglas"][0]["rf"] == "RF18"
+    cierres = [
+        c for c in llamadas
+        if c.args and "MODO_EXTINCION = '16'" in str(c.args[0])
+    ]
+    assert len(cierres) == 1
+    sql, params = cierres[0].args
+    assert "VALOR_SALDO = 0" in sql
+    assert "FECHA_PAGO = %s" in sql
+    assert params == ["02", _FECHA_REFINANCIACION, 1, 90]
+
+
+def test_df03_original_en_03_en_mora_cierra_en_07_con_modo_16():
+    """CP-B-34 / CP-B-26: 03 en mora se cierra en 07 con modo 16."""
+    resultado, llamadas = _ciclo_refinanciada("03", 150000)
+    assert resultado["cierres"] == 1
+    t = resultado["transiciones"][0]
+    assert t["estado_nuevo"] == "07"
+    assert t["reglas"][0]["rf"] == "RF18"
+    cierres = [c for c in llamadas if c.args and "MODO_EXTINCION = '16'" in str(c.args[0])]
+    assert cierres[0].args[1][0] == "07"
+
+
+def test_df03_original_en_03_sin_mora_da_713():
+    resultado, llamadas = _ciclo_refinanciada("03", 0)
+    assert resultado["cierres"] == 0
+    assert resultado["rechazados"] == 1
+    r = resultado["rechazos"][0]
+    assert r["codigo"] == "713"
+    assert r["estado_calculado"] == "07"
+    assert "refinanciación" in r["motivo"]
+    assert _hay_713(_sqls(llamadas))
+    assert not any("MODO_EXTINCION = '16'" in s for s in _sqls(llamadas))
+
+
+def test_df03_refinanciacion_posterior_al_corte_no_cierra():
+    """Una refinanciación con FECHA > fecha de corte no entra en el dict: flujo normal."""
+    resultado, llamadas = _ciclo_refinanciada("01", 0, refinanciaciones=())
+    assert resultado["cierres"] == 0
+    assert not any("MODO_EXTINCION = '16'" in s for s in _sqls(llamadas))
+    consulta = [
+        c for c in llamadas
+        if c.args and "SELECT OBLIGACION_ORIGEN_ID, FECHA" in str(c.args[0])
+    ][0]
+    assert "FECHA <= %s" in consulta.args[0]
+    assert consulta.args[1] == [_FECHA_VALIDA]
+
+
+def test_df03_ciclo_incluye_la_original_que_falta_en_el_corte():
+    """MJ-08: se agrega la original aunque V_CALCULO_CORTE ya no la traiga."""
+    _, llamadas = _ciclo_refinanciada("01", 0, filas_agregadas=1)
+    inserts = [
+        c for c in llamadas
+        if c.args and str(c.args[0]).startswith("INSERT INTO NEXOVOLT.NV_REPORTE_DETALLE")
+    ]
+    assert len(inserts) == 1
+    sql, params = inserts[0].args
+    assert "V_ULTIMO_REPORTE" in sql
+    assert "NOT EXISTS" in sql
+    assert "NV_REFINANCIACION" in sql
+    assert "CIERRE_DEFINITIVO" not in sql
+    assert params == [1, _FECHA_VALIDA, 1]
+    assert any("UPDATE NEXOVOLT.NV_CORTE SET TOTAL_REGISTROS" in s for s in _sqls(llamadas))
+
+
+def test_df03_ciclo_sin_originales_nuevas_no_toca_total_registros():
+    _, llamadas = _ciclo_refinanciada("01", 0, filas_agregadas=0)
+    assert not any(
+        "UPDATE NEXOVOLT.NV_CORTE SET TOTAL_REGISTROS" in s for s in _sqls(llamadas)
+    )
+
+
+def test_df03_ciclo_marca_la_nueva_como_reestructurada():
+    """CP-B-37: la nueva lleva OBLIGACION_REFINANCIADA = '01' en cada corte."""
+    _, llamadas = _ciclo_refinanciada("01", 0)
+    marcas = [
+        c for c in llamadas
+        if c.args and "SET OBLIGACION_REFINANCIADA = '01'" in str(c.args[0])
+    ]
+    assert len(marcas) == 1
+    assert "OBLIGACION_NUEVA_ID" in marcas[0].args[0]
+    assert marcas[0].args[1] == [1]
+
+
+def test_df03_limpiar_no_anula_filas_fuera_de_v_calculo_corte():
+    _, llamadas = _ciclo_refinanciada("01", 0)
+    recalculo = [
+        c for c in llamadas
+        if c.args and "SET (rd.ESTADO_TU, rd.EDAD_MORA" in str(c.args[0])
+    ]
+    assert len(recalculo) == 1
+    sql, params = recalculo[0].args
+    assert "AND EXISTS (SELECT 1 FROM NEXOVOLT.V_CALCULO_CORTE v2" in sql
+    assert params == [1, 1, 1]

@@ -25,6 +25,16 @@
        como ' ' y 0 respectivamente hasta que se agreguen.
      - rd.ANIOS_MORA no existe en la tabla real: se calcula como TRUNC(DIAS_MORA/365).
 
+   Correcciones (DF-03, 2026-11-11):
+     - NATURALEZA_REESTR y N_REESTRUCTURACIONES ya no son constantes: se leen de
+       NV_REFINANCIACION (naturaleza de la refinanciacion y profundidad de la cadena
+       con START WITH / CONNECT BY, igual que novedades/refinanciaciones.py), y solo
+       cuando rd.OBLIGACION_REFINANCIADA = '01'. OBLIGACION_REESTRUCTURADA no cambia.
+     - NO esta verificado en Oracle. Hay que volver a aplicar este script
+       (CREATE OR REPLACE, repetible) y probar la consulta de verificacion.
+     - El archivo plano (cartera/servicios.py) calcula los mismos campos en Python;
+       esta vista debe quedar alineada con ese calculo.
+
    Reversa:
      DROP VIEW NEXOVOLT.V_REPORTE_TU;
 
@@ -75,8 +85,15 @@ SELECT
     '001'                                             AS ESTADO_CONTRATO,
     -- Campos de reestructuracion
     NVL(rd.OBLIGACION_REFINANCIADA, '02')             AS OBLIGACION_REESTRUCTURADA,
-    ' '                                               AS NATURALEZA_REESTR,
-    0                                                 AS N_REESTRUCTURACIONES,
+    CASE WHEN rd.OBLIGACION_REFINANCIADA = '01' THEN
+        (SELECT MAX(r.NATURALEZA) FROM NEXOVOLT.NV_REFINANCIACION r
+          WHERE r.OBLIGACION_NUEVA_ID = rd.OBLIGACION_ID)
+    END                                               AS NATURALEZA_REESTR,
+    CASE WHEN rd.OBLIGACION_REFINANCIADA = '01' THEN
+        (SELECT COUNT(*) FROM NEXOVOLT.NV_REFINANCIACION r_cnt
+          START WITH r_cnt.OBLIGACION_NUEVA_ID = rd.OBLIGACION_ID
+          CONNECT BY r_cnt.OBLIGACION_NUEVA_ID = PRIOR r_cnt.OBLIGACION_ORIGEN_ID)
+    ELSE 0 END                                        AS N_REESTRUCTURACIONES,
     -- Parametros de entidad (RF57)
     p_suc.VALOR                                       AS CODIGO_SUCURSAL,
     p_ent.VALOR                                       AS CODIGO_ENTIDAD,

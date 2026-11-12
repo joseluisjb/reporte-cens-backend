@@ -1170,6 +1170,45 @@ def _leer_obligaciones_archivo(corte_id):
         return [dict(zip(_COLUMNAS_TIPO2, fila)) for fila in cursor.fetchall()]
 
 
+def _reestructuraciones(filas):
+    """{obligacion_nueva_id: (naturaleza, n)} a partir de (origen_id, nueva_id, naturaleza).
+
+    n es la profundidad de la cadena de refinanciaciones (RF18, campo 46): la nueva de una
+    refinanciacion cuya original fue a su vez la nueva de otra cuenta 2, y asi. Se calcula en
+    Python y esta protegida contra ciclos. La naturaleza es la de la refinanciacion de la nueva.
+    """
+    origen_de = {}
+    for origen_id, nueva_id, naturaleza in filas:
+        origen_de.setdefault(nueva_id, (origen_id, naturaleza))
+    resultado = {}
+    for nueva_id, (_, naturaleza) in origen_de.items():
+        visitadas, actual, n = {nueva_id}, nueva_id, 0
+        while actual in origen_de:
+            origen_id = origen_de[actual][0]
+            n += 1
+            if origen_id in visitadas:
+                break
+            visitadas.add(origen_id)
+            actual = origen_id
+        resultado[nueva_id] = (naturaleza, n)
+    return resultado
+
+
+def _completar_reestructuraciones(filas):
+    """Agrega NATURALEZA_REESTR y N_REESTRUCTURACIONES (campos 45 y 46) a cada obligacion."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT OBLIGACION_ORIGEN_ID, OBLIGACION_NUEVA_ID, NATURALEZA "
+            "FROM NEXOVOLT.NV_REFINANCIACION ORDER BY REFINANCIACION_ID"
+        )
+        vinculos = _reestructuraciones(cursor.fetchall())
+    for fila in filas:
+        naturaleza, n = vinculos.get(fila["OBLIGACION_ID"], (None, 0))
+        fila["NATURALEZA_REESTR"] = naturaleza
+        fila["N_REESTRUCTURACIONES"] = n
+    return filas
+
+
 def _fila_a_archivo(fila, nombres, longitud_tipo2):
     (archivo_id, corte_id, fecha_corte, nombre, tipo_reporte, fecha_gen, usuario_id,
      n_registros, n_excluidas, saldo, apto, enviado, fecha_envio, estado, n_cargues) = fila
@@ -1243,7 +1282,7 @@ def generar_archivo(corte_id, usuario=None):
         "codigo_sucursal": entidad["codigo_sucursal"],
         "fecha_corte": fecha_corte,
     }
-    filas = _leer_obligaciones_archivo(corte_id)
+    filas = _completar_reestructuraciones(_leer_obligaciones_archivo(corte_id))
     reportadas = [f for f in filas if f["ELIMINADA"] != "S"]
     contenido, errores = armar_archivo(
         cabecera, reportadas, int(params.get("DIVISOR_VALORES") or 1000), _longitud_tipo2()
