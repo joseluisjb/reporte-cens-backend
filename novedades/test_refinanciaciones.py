@@ -33,13 +33,13 @@ def _mock_conn():
 #       9=o_nueva.NUMERO_OBLIGACION_TU, 10=NVL(rd_nueva.ESTADO_TU,'01'),
 #       11=NVL(N_REESTRUCTURACIONES,1), 12=SALDO_REFINANCIADO,
 #       13=NATURALEZA, 14=nat.DESCRIPCION, 15=nat.CONFIRMADO,
-#       16=N_CUOTAS, 17=u.NOMBRE
+#       16=N_CUOTAS, 17=u.NOMBRE, 18=corte del cierre de la original (o None)
 _FILA_REFINANCIACION = (
     1, date(2026, 9, 28), datetime(2026, 9, 28, 15, 20), "MANUAL",
     11, "2255-7788", "Inversiones Pamplona S.A.S.", "01",
     12, "REFI-1", "01", 1,
     4380000, "01", "LEY 550", "S",
-    36, "Juan Pérez",
+    36, "Juan Pérez", None,
 )
 
 _REFINANCIACION = {
@@ -54,6 +54,7 @@ _REFINANCIACION = {
         "nombre_titular": "Inversiones Pamplona S.A.S.",
         "estado_cierre": "02",
         "modo_extincion": {"codigo": "16", "descripcion": "Refinanciación"},
+        "fecha_corte_cierre": None,
     },
     "obligacion_nueva": {
         "obligacion_id": 12,
@@ -65,6 +66,18 @@ _REFINANCIACION = {
     "naturaleza": {"codigo": "01", "descripcion": "LEY 550", "confirmado": True},
     "numero_cuotas": 36,
 }
+
+
+def test_listar_refinanciaciones_dice_en_que_corte_se_cerro_la_original():
+    # Contrato 0.9.6: la original sigue abierta (None) hasta que un corte reporta su cierre con modo 16.
+    conn, cursor = _mock_conn()
+    cursor.fetchall.return_value = [_FILA_REFINANCIACION, (*_FILA_REFINANCIACION[:18], date(2026, 9, 30))]
+    with patch("novedades.refinanciaciones.connection", conn):
+        pendiente, cerrada = refinanciaciones.listar_refinanciaciones()
+    assert pendiente["obligacion_original"]["fecha_corte_cierre"] is None
+    assert cerrada["obligacion_original"]["fecha_corte_cierre"] == "2026-09-30"
+    sql = cursor.execute.call_args.args[0]
+    assert "rdc.MODO_EXTINCION = '16'" in sql and "cc.ESTADO != 'ANULADO'" in sql
 
 
 def test_listar_refinanciaciones_vacio():

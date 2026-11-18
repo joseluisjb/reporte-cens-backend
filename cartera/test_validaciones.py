@@ -83,6 +83,19 @@ def test_estado_sin_homologar_bloquea():
     assert (errores[0]["regla"], errores[0]["campo"]) == ("ESTADO_SIN_HOMOLOGAR", "estado")
 
 
+def test_entidad_con_marcadores_avisa_sin_jerga():
+    # La vista manda «Parametros … (inician por X) … NO APTO para envio»: se reemplaza antes de mostrarlo.
+    fila = ("ENTIDAD_CON_MARCADOR", "INFORMATIVA", "Parametros de la entidad (inician por X). NO APTO para envio.", None, None)
+    esperado = (
+        "Los datos de la entidad ante TransUnion todavía son provisionales: el archivo saldrá "
+        "no apto para envío hasta que el Administrador los cambie en «Datos de la Entidad»."
+    )
+    resultado, _ = _validar([fila])
+    assert resultado["advertencias"][0]["mensaje"] == esperado
+    _, reglas = _validaciones([fila])
+    assert reglas["ENTIDAD_CON_MARCADOR"]["detalle"] == esperado
+
+
 def test_entidad_con_marcadores_solo_advierte():
     resultado, _ = _validar([("ENTIDAD_CON_MARCADOR", "INFORMATIVA", "Marcadores XXX", None, None)])
     assert resultado["advertencias"][0]["regla"] == "ENTIDAD_CON_MARCADOR"
@@ -183,7 +196,7 @@ def test_get_validaciones_404():
 
 # ── RF52 · valores de la obligación ───────────────────────────────────────────
 
-def _detalle_obligacion(valor_inicial, saldo, mora):
+def _detalle_obligacion(valor_inicial, saldo, mora, atrasos=4, concepto=(None, None)):
     fila = (
         24, "2263-9004", "Titular de prueba", "1234567890",
         "01", "01", 47, 2,
@@ -191,7 +204,7 @@ def _detalle_obligacion(valor_inicial, saldo, mora):
         "N", "N", "N", None,
         date(2026, 1, 31), valor_inicial, 70_000, None,
         None, None, None, "N", FECHA_CORTE,
-        "N", 4, 0, "N", "N",
+        "N", atrasos, 0, "N", "N", *concepto,
     )
     conexion, _ = _conexion([(5,), fila, None, None], [])
     with patch("ciclo.servicios.connection", conexion):
@@ -204,6 +217,19 @@ def test_valor_inicial_saldo_mora_y_cuota_por_separado():
         1_500_000, 1_276_016, 140_000, 70_000,
     )
     assert detalle["advertencias"] == []
+
+
+def test_concepto_de_la_cuota_sale_del_credito_reportable():
+    detalle = _detalle_obligacion(1_500_000, 1_276_016, 0, concepto=(30, "CUOTA FINANCIACION ENERGIA"))
+    assert detalle["concepto"] == {"codigo": 30, "descripcion": "CUOTA FINANCIACION ENERGIA"}
+    # Concepto sin descripción en la base: descripción vacía, como GET /conceptos/.
+    assert _detalle_obligacion(1_500_000, 1_276_016, 0, concepto=(3419, None))["concepto"] == {"codigo": 3419, "descripcion": ""}
+    assert _detalle_obligacion(1_500_000, 1_276_016, 0)["concepto"] is None
+
+
+def test_atrasos_permitidos_sin_dato_no_se_vuelven_cero():
+    assert _detalle_obligacion(1_500_000, 1_276_016, 0, atrasos=None)["atrasos_permitidos"] is None
+    assert _detalle_obligacion(1_500_000, 1_276_016, 0, atrasos=4)["atrasos_permitidos"] == 4
 
 
 def test_saldo_mayor_al_valor_inicial_es_advertencia():
