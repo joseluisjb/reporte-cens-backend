@@ -43,7 +43,8 @@ _CIERRE_POR_ESTADO = {
 #       8=OBLIGACION_NUEVA_ID, 9=o_nueva.NUMERO_OBLIGACION_TU,
 #       10=NVL(rd_nueva.ESTADO_TU,'01'), 11=profundidad de cadena (N_REESTRUCTURACIONES),
 #       12=SALDO_REFINANCIADO, 13=NATURALEZA, 14=nat.DESCRIPCION,
-#       15=nat.CONFIRMADO, 16=N_CUOTAS, 17=u.NOMBRE
+#       15=nat.CONFIRMADO, 16=N_CUOTAS, 17=u.NOMBRE,
+#       18=corte en que se reportó el cierre de la original con modo 16 (o None)
 _SELECT_REFINANCIACION = (
     "r.REFINANCIACION_ID, r.FECHA, r.FECHA_REGISTRO, r.ORIGEN, "
     "r.OBLIGACION_ORIGEN_ID, o_orig.NUMERO_OBLIGACION_TU, "
@@ -56,7 +57,11 @@ _SELECT_REFINANCIACION = (
     "START WITH r_cnt.OBLIGACION_NUEVA_ID = r.OBLIGACION_NUEVA_ID "
     "CONNECT BY r_cnt.OBLIGACION_NUEVA_ID = PRIOR r_cnt.OBLIGACION_ORIGEN_ID), "
     "r.SALDO_REFINANCIADO, r.NATURALEZA, nat.DESCRIPCION, nat.CONFIRMADO, "
-    "r.N_CUOTAS, u.NOMBRE"
+    "r.N_CUOTAS, u.NOMBRE, "
+    "(SELECT MIN(cc.FECHA_CORTE) FROM NEXOVOLT.NV_REPORTE_DETALLE rdc "
+    "JOIN NEXOVOLT.NV_CORTE cc ON cc.CORTE_ID = rdc.CORTE_ID "
+    "WHERE rdc.OBLIGACION_ID = r.OBLIGACION_ORIGEN_ID AND rdc.MODO_EXTINCION = '16' "
+    "AND cc.ESTADO != 'ANULADO')"
 )
 _FROM_REFINANCIACION = (
     "FROM NEXOVOLT.NV_REFINANCIACION r "
@@ -90,6 +95,8 @@ def _fila_a_refinanciacion(row):
             "nombre_titular": row[6],
             "estado_cierre": estado_cierre,
             "modo_extincion": {"codigo": "16", "descripcion": "Refinanciación"},
+            # None mientras no corra la actualización mensual de un corte posterior a la refinanciación.
+            "fecha_corte_cierre": fecha_str(row[18]) if row[18] else None,
         },
         "obligacion_nueva": {
             "obligacion_id": row[8],

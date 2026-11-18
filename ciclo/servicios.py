@@ -1397,14 +1397,21 @@ def obtener_obligacion(obligacion_id):
             "rd.FECHA_INICIO, rd.VALOR_INICIAL, rd.VALOR_CUOTA, rd.FECHA_LIMITE_PAGO, "
             "rd.FECHA_PAGO, rd.MODO_EXTINCION, rd.TIPO_PAGO, "
             "NVL(rd.MOVIMIENTO_POSTERIOR, 'N'), c.FECHA_CORTE, "
-            "NVL(rd.CADUCADO, 'N'), NVL(rd.ATRASOS_PERMITIDOS, 0), "
+            "NVL(rd.CADUCADO, 'N'), rd.ATRASOS_PERMITIDOS, "
             "NVL(rd.VALOR_REAL_PAGADO, 0), NVL(o.ELIMINADA, 'N'), "
             "(SELECT CASE WHEN COUNT(*) > 0 THEN 'S' ELSE 'N' END "
             " FROM NEXOVOLT.NV_RECLAMO r "
-            " WHERE r.OBLIGACION_ID = o.OBLIGACION_ID AND r.ESTADO = 'EN_RECLAMO') "
+            " WHERE r.OBLIGACION_ID = o.OBLIGACION_ID AND r.ESTADO = 'EN_RECLAMO'), "
+            "cc.CODIGO_CONCEPTO, cr.DESCRIPCION "
             "FROM NEXOVOLT.NV_OBLIGACION o "
             "JOIN NEXOVOLT.NV_REPORTE_DETALLE rd ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
             "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID "
+            # RF52: concepto de la cuota. Sale de los créditos reportables de la financiación
+            # (cliente + proceso); si hay varios, el de menor código.
+            "LEFT JOIN (SELECT vc.CLIENTE_ID, vc.NUMERO_PROCESO, MIN(vc.CODIGO_CONCEPTO) CODIGO_CONCEPTO "
+            " FROM NEXOVOLT.V_CREDITO_REPORTABLE vc GROUP BY vc.CLIENTE_ID, vc.NUMERO_PROCESO) cc "
+            "ON cc.CLIENTE_ID = o.CLIENTE_ID AND cc.NUMERO_PROCESO = o.NUMERO_PROCESO "
+            "LEFT JOIN NEXOVOLT.NV_CONCEPTO_REPORTABLE cr ON cr.CODIGO_CONCEPTO = cc.CODIGO_CONCEPTO "
             "WHERE rd.OBLIGACION_ID = %s AND rd.CORTE_ID = %s",
             [obligacion_id, ultimo_corte],
         )
@@ -1485,7 +1492,9 @@ def obtener_obligacion(obligacion_id):
     movimiento_posterior = row[21]
     fecha_corte_bd = row[22]
     caducado = row[23] == "S"
-    atrasos_permitidos = int(row[24]) if row[24] is not None else 0
+    # None si el SAC no lo tiene: «Caduca a las 0 cuotas» no sería cierto (contrato 0.9.6).
+    atrasos_permitidos = int(row[24]) if row[24] is not None else None
+    concepto_codigo, concepto_descripcion = row[28], row[29]
 
     cuotas_vencidas = [
         {
@@ -1546,7 +1555,10 @@ def obtener_obligacion(obligacion_id):
         "requiere_revision": row[12] == "S",
         "motivo_revision": row[13],
         "anios_mora": anios_mora,
-        "concepto": None,
+        "concepto": {
+            "codigo": int(concepto_codigo),
+            "descripcion": concepto_descripcion or "",
+        } if concepto_codigo is not None else None,
         "fecha_ingreso": fecha_str(row[14]),
         "valor_inicial": int(row[15]) if row[15] is not None else None,
         "valor_cuota": int(row[16]) if row[16] is not None else 0,

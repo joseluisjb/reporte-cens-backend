@@ -14,6 +14,7 @@ class ObligacionOriginalSerializer(serializers.Serializer):
     nombre_titular = serializers.CharField(allow_null=True)
     estado_cierre = serializers.ChoiceField(choices=["02", "07"])
     modo_extincion = ModoExtincionSerializer()
+    fecha_corte_cierre = serializers.CharField(allow_null=True)
 
 
 class ObligacionNuevaSerializer(serializers.Serializer):

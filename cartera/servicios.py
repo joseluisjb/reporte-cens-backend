@@ -537,6 +537,13 @@ _REGLAS_DEL_CICLO = ("PRIMER_REPORTE_INVALIDO", "CAMBIO_ESTADO_INVALIDO")
 _DETALLE_MILES = (
     "Los valores se reportan en miles de pesos, como enteros."
 )
+# Mensajes de V_VALIDACION_CORTE que se reemplazan antes de mostrarlos (la vista vive en Oracle).
+_MENSAJES_FIJOS = {
+    "ENTIDAD_CON_MARCADOR": (
+        "Los datos de la entidad ante TransUnion todavía son provisionales: el archivo saldrá "
+        "no apto para envío hasta que el Administrador los cambie en «Datos de la Entidad»."
+    ),
+}
 
 
 def _campo_de(regla, mensaje):
@@ -579,7 +586,7 @@ def _evaluar_reglas(corte_id):
 
     resultados = [
         {
-            "regla": regla, "severidad": severidad, "mensaje": mensaje,
+            "regla": regla, "severidad": severidad, "mensaje": _MENSAJES_FIJOS.get(regla, mensaje),
             "obligacion_id": obligacion_id, "numero_obligacion": numero,
             "campo": _campo_de(regla, mensaje),
         }

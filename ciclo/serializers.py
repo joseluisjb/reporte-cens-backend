@@ -144,7 +144,7 @@ class ObligacionDetalleSerializer(ObligacionResumenSerializer):
     valor_cuota = serializers.IntegerField()
     valor_cuota_antes_cierre = serializers.IntegerField(allow_null=True)
     fecha_exigibilidad = serializers.CharField(allow_null=True)
-    atrasos_permitidos = serializers.IntegerField()
+    atrasos_permitidos = serializers.IntegerField(allow_null=True)
     cuotas_atrasadas = serializers.IntegerField()
     cierre = serializers.DictField(allow_null=True)
     pago_mora = serializers.DictField(allow_null=True)
