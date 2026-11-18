@@ -468,9 +468,10 @@ def _nombres_usuarios(ids):
 
 
 def _leer_homologaciones(estado_sac=None):
-    condicion, params = "", []
+    # La tabla tiene una fila por tipo de cartera y estado: sin este filtro cada estado sale repetido.
+    condicion, params = f" WHERE h.TIPO_CARTERA = {_TIPO_CARTERA}", []
     if estado_sac is not None:
-        condicion, params = " WHERE h.ESTADO_SAC = %s", [estado_sac]
+        condicion, params = condicion + " AND h.ESTADO_SAC = %s", [estado_sac]
     with connection.cursor() as cursor:
         cursor.execute(
             f"SELECT {_COLS_HOMOLOGACION} FROM NEXOVOLT.NV_HOMOLOGA_ESTADO h{condicion} "
@@ -573,7 +574,7 @@ def actualizar_homologacion(estado_sac, accion, estado_tu, confirmado=False, usu
             cursor.execute(
                 "UPDATE NEXOVOLT.NV_HOMOLOGA_ESTADO "
                 "SET ACCION = %s, ESTADO_TU = %s, CONFIRMADO = %s, USUARIO_ID = %s, FECHA_ACTUALIZACION = %s "
-                "WHERE ESTADO_SAC = %s",
+                f"WHERE ESTADO_SAC = %s AND TIPO_CARTERA = {_TIPO_CARTERA}",
                 [accion, estado_tu, "S" if confirmado else "N", usuario_id, ahora_para_bd(), estado_sac],
             )
         destino = estado_tu if accion == "ESTADO" else "cierre"

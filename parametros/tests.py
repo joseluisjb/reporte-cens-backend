@@ -1023,6 +1023,16 @@ def test_listar_homologaciones_pone_el_nombre_de_quien_la_cambio():
     assert filas[2]["accion"] is None  # sin homologar: RF53 bloquea sus obligaciones
 
 
+def test_listar_homologaciones_solo_el_tipo_de_cartera_de_cens():
+    # NV_HOMOLOGA_ESTADO tiene una fila por tipo de cartera y estado: sin filtro cada estado salía dos veces.
+    conn, cursor = _cursor_entidad([])
+    with patch("parametros.servicios.connection", conn), \
+         patch("parametros.servicios._nombres_usuarios", return_value={}):
+        servicios.listar_homologaciones()
+    sql = cursor.execute.call_args.args[0]
+    assert f"WHERE h.TIPO_CARTERA = {servicios._TIPO_CARTERA}" in sql
+
+
 @pytest.mark.parametrize("accion, estado_tu, esperado", [
     ("ESTADO", "01", {}),
     ("ESTADO", "03", {}),
@@ -1054,6 +1064,7 @@ def _actualizar(estado_sac, accion, estado_tu, confirmado=False, fila_existente=
 def test_actualizar_homologacion_guarda_y_deja_bitacora():
     _, cursor, bitacora = _actualizar("A", "ESTADO", "01", confirmado=True)
     update = next(c for c in cursor.execute.call_args_list if c.args[0].startswith("UPDATE"))
+    assert f"AND TIPO_CARTERA = {servicios._TIPO_CARTERA}" in update.args[0]  # no toca el otro tipo de cartera
     accion, estado_tu, confirmado, usuario_id, _, estado_sac = update.args[1]
     assert (accion, estado_tu, confirmado, usuario_id, estado_sac) == ("ESTADO", "01", "S", 1, "A")
     bitacora.assert_called_once()
