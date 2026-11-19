@@ -3,7 +3,9 @@ from datetime import date
 from django.db import connection, transaction, IntegrityError
 
 from config.bitacora import registrar_bitacora, tolerar_fallo_bitacora
-from config.formatos import ahora_para_bd, enmascarar_identificacion, fecha_str, hoy_bogota, timestamp_str
+from config.formatos import (
+    ahora_para_bd, enmascarar_correo, enmascarar_identificacion, fecha_str, hoy_bogota, timestamp_str,
+)
 from usuarios.models import Usuario
 
 
@@ -470,15 +472,27 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
         cursor.execute(
             "SELECT o.NUMERO_OBLIGACION_TU, rd.NOMBRE_TITULAR, rd.NUMERO_IDENTIFICACION, "
             "rd.ESTADO_TU, rd.EDAD_MORA, rd.DIAS_MORA, rd.CUOTAS_MORA, "
-            "rd.VALOR_MORA, rd.VALOR_SALDO, rd.N_CREDITOS "
+            "rd.VALOR_MORA, rd.VALOR_SALDO, rd.N_CREDITOS, "
+            # Campos de la plantilla de CENS (contrato 0.9.7), las mismas columnas del archivo plano.
+            "rd.TIPO_ID_TU, rd.FECHA_LIMITE_PAGO, rd.CALIDAD, c.FECHA_CORTE, rd.FECHA_INICIO, "
+            "rd.PERIODICIDAD, rd.VALOR_INICIAL, rd.VALOR_CUOTA, rd.OBLIGACION_REFINANCIADA, "
+            "rd.CORREO, rd.CELULAR, rd.VALOR_REAL_PAGADO "
             "FROM NEXOVOLT.NV_REPORTE_DETALLE rd "
             "JOIN NEXOVOLT.NV_OBLIGACION o ON rd.OBLIGACION_ID = o.OBLIGACION_ID "
+            "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID "
             "WHERE rd.CORTE_ID = %s "
             "ORDER BY rd.OBLIGACION_ID "
             "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
             [corte_id, desplazamiento, limite],
         )
         filas = cursor.fetchall()
+
+    # La sucursal del archivo sale del parámetro de la entidad, no de la fila (RF57).
+    sucursal = None
+    if filas:
+        from parametros.servicios import datos_entidad
+
+        sucursal = datos_entidad()["codigo_sucursal"]
 
     resultados = [
         {
@@ -492,10 +506,47 @@ def listar_obligaciones(corte_id, limite=20, desplazamiento=0):
             "valor_mora":           int(row[7]) if row[7] is not None else None,
             "valor_saldo":          int(row[8]) if row[8] is not None else None,
             "n_creditos":           row[9],
+            "campos_reporte":       _campos_reporte(row, sucursal),
         }
         for row in filas
     ]
     return {"total": total, "resultados": resultados}
+
+
+def _pesos(valor):
+    return int(valor) if valor is not None else None
+
+
+def _campos_reporte(row, sucursal):
+    """Los 22 campos de la plantilla de CENS, en su orden (contrato 0.9.7, RF5).
+
+    Lo mismo que lleva el registro tipo 2, pero en pesos (el archivo los lleva en miles) y con los
+    datos personales enmascarados. La línea de crédito no va: en Servicios no aplica.
+    """
+    return {
+        "tipo_identificacion": row[10],
+        "numero_identificacion": enmascarar_identificacion(row[2]),
+        "nombre_titular": row[1],
+        "fecha_limite_pago": fecha_str(row[11]) if row[11] else None,
+        "numero_obligacion": row[0],
+        "codigo_sucursal": sucursal,
+        "calidad": row[12],
+        "estado_tu": row[3],
+        "edad_mora": row[4],
+        "fecha_corte": fecha_str(row[13]),
+        "fecha_inicio": fecha_str(row[14]) if row[14] else None,
+        "periodicidad": row[15],
+        "cuotas_mora": row[6] or 0,
+        "valor_inicial": _pesos(row[16]),
+        "valor_mora": _pesos(row[7]),
+        "valor_saldo": _pesos(row[8]),
+        "valor_cuota": _pesos(row[17]),
+        # Como en el archivo (V_REPORTE_TU v2): sin dato, 02.
+        "obligacion_refinanciada": "01" if row[18] == "01" else "02",
+        "correo": enmascarar_correo(row[19]),
+        "celular": enmascarar_identificacion(row[20]) if row[20] else None,
+        "valor_real_pagado": _pesos(row[21]),
+    }
 
 
 # ── RF21 / RF22 / RF52 / RF53 — Reglas del Manual sobre el corte ─────────────
@@ -537,6 +588,13 @@ _REGLAS_DEL_CICLO = ("PRIMER_REPORTE_INVALIDO", "CAMBIO_ESTADO_INVALIDO")
 _DETALLE_MILES = (
     "Los valores se reportan en miles de pesos, como enteros."
 )
+# Mensajes de V_VALIDACION_CORTE que se reemplazan antes de mostrarlos (la vista vive en Oracle).
+_MENSAJES_FIJOS = {
+    "ENTIDAD_CON_MARCADOR": (
+        "Los datos de la entidad ante TransUnion todavía son provisionales: el archivo saldrá "
+        "no apto para envío hasta que el Administrador los cambie en «Datos de la Entidad»."
+    ),
+}
 
 
 def _campo_de(regla, mensaje):
@@ -579,7 +637,7 @@ def _evaluar_reglas(corte_id):
 
     resultados = [
         {
-            "regla": regla, "severidad": severidad, "mensaje": mensaje,
+            "regla": regla, "severidad": severidad, "mensaje": _MENSAJES_FIJOS.get(regla, mensaje),
             "obligacion_id": obligacion_id, "numero_obligacion": numero,
             "campo": _campo_de(regla, mensaje),
         }

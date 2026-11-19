@@ -47,6 +47,16 @@ def hoy_bogota():
     return dj_tz.localdate()
 
 
+def enmascarar_correo(valor):
+    """Correo con solo la primera letra del usuario y el dominio: j***@example.com. None si no hay."""
+    if not valor:
+        return None
+    usuario, arroba, dominio = str(valor).strip().partition("@")
+    if not arroba or not usuario:
+        return "****"
+    return f"{usuario[0]}***@{dominio}"
+
+
 def enmascarar_identificacion(valor):
     # TODO: Definir si algún rol (p. ej. ADMINISTRADOR) puede consultar la identificación completa.
     if not valor:

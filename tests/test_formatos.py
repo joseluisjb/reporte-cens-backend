@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from config.formatos import enmascarar_identificacion, fecha_str, timestamp_str
+from config.formatos import enmascarar_correo, enmascarar_identificacion, fecha_str, timestamp_str
 
 _BOGOTA = ZoneInfo("America/Bogota")
 
@@ -70,3 +70,11 @@ def test_ahora_para_bd_sin_zona():
     from config.formatos import ahora_para_bd
     resultado = ahora_para_bd()
     assert resultado.tzinfo is None
+
+# ── enmascarar_correo ──────────────────────────────────────────────────────────
+
+def test_enmascarar_correo():
+    assert enmascarar_correo("deudor.uno@example.com") == "d***@example.com"
+    assert enmascarar_correo(None) is None
+    assert enmascarar_correo("") is None
+    assert enmascarar_correo("sin-arroba") == "****"

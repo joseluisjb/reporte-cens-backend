@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: NexoVolt — API REST (Iteraciones 1 y 2)
-  version: 0.9.5-borrador
+  version: 0.9.7-borrador
   description: |
     Contrato entre el frontend (React) y el backend (Django REST Framework) de NexoVolt.
     Cubre la **Iteración 1**: HU-A (extracción, consolidación y trazabilidad) y HU-D (seguridad,
@@ -967,6 +967,9 @@ paths:
         dice "solo vigentes".
 
         **Dato personal:** `numero_identificacion` llega enmascarado (`NumeroIdentificacion`).
+
+        **0.9.7:** cada fila trae `campos_reporte`, los 22 campos de la plantilla de CENS en su
+        orden (`CamposReporte`), para que la pantalla de Extracción los muestre por obligación.
       operationId: extraccionesObligaciones
       x-roles: [Analista de Cartera, Administrador]
       parameters:
@@ -999,6 +1002,28 @@ paths:
                     valor_mora: 0
                     valor_saldo: 500000
                     n_creditos: 1
+                    campos_reporte:
+                      tipo_identificacion: '01'
+                      numero_identificacion: '******0001'
+                      nombre_titular: TITULAR FICTICIO UNO
+                      fecha_limite_pago: '2026-11-15'
+                      numero_obligacion: OBL0001
+                      codigo_sucursal: XXXXXX
+                      calidad: P
+                      estado_tu: '01'
+                      edad_mora: '00'
+                      fecha_corte: '2026-10-31'
+                      fecha_inicio: '2026-01-15'
+                      periodicidad: '05'
+                      cuotas_mora: 0
+                      valor_inicial: 1200000
+                      valor_mora: 0
+                      valor_saldo: 500000
+                      valor_cuota: 100000
+                      obligacion_refinanciada: '02'
+                      correo: 't***@example.com'
+                      celular: '******4567'
+                      valor_real_pagado: 100000
                   - numero_obligacion: OBL0002
                     nombre_titular: TITULAR FICTICIO DOS
                     numero_identificacion: '******0002'
@@ -1009,6 +1034,28 @@ paths:
                     valor_mora: 0
                     valor_saldo: 0
                     n_creditos: 1
+                    campos_reporte:
+                      tipo_identificacion: '01'
+                      numero_identificacion: '******0002'
+                      nombre_titular: TITULAR FICTICIO DOS
+                      fecha_limite_pago: null
+                      numero_obligacion: OBL0002
+                      codigo_sucursal: XXXXXX
+                      calidad: P
+                      estado_tu: '02'
+                      edad_mora: '00'
+                      fecha_corte: '2026-10-31'
+                      fecha_inicio: '2025-06-30'
+                      periodicidad: '05'
+                      cuotas_mora: 0
+                      valor_inicial: 900000
+                      valor_mora: 0
+                      valor_saldo: 0
+                      valor_cuota: 0
+                      obligacion_refinanciada: '02'
+                      correo: null
+                      celular: null
+                      valor_real_pagado: null
         '400':
           description: '`limite` o `desplazamiento` no son enteros, o están fuera de rango (`limite` menor que 1 o `desplazamiento` negativo).'
           content:
@@ -2057,6 +2104,7 @@ paths:
                     nombre_titular: Inversiones Pamplona S.A.S.
                     estado_cierre: '02'
                     modo_extincion: { codigo: '16', descripcion: Refinanciación }
+                    fecha_corte_cierre: '2026-09-30'
                   obligacion_nueva:
                     obligacion_id: 12
                     numero_obligacion: 2271-5502
@@ -2102,6 +2150,7 @@ paths:
                   nombre_titular: Hotel Mirador Cúcuta
                   estado_cierre: '07'
                   modo_extincion: { codigo: '16', descripcion: Refinanciación }
+                  fecha_corte_cierre: null
                 obligacion_nueva:
                   obligacion_id: 16
                   numero_obligacion: 2272-6101
@@ -3970,7 +4019,7 @@ components:
         verlo completo (pendiente anotado en el backend).
     ObligacionCorte:
       type: object
-      required: [numero_obligacion, nombre_titular, numero_identificacion, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, n_creditos]
+      required: [numero_obligacion, nombre_titular, numero_identificacion, estado_tu, edad_mora, dias_mora, cuotas_mora, valor_mora, valor_saldo, n_creditos, campos_reporte]
       description: |
         Una **obligación = una financiación (proceso)**. Un mismo deudor puede tener varias, y una
         misma obligación puede tener varios titulares; el corte muestra un titular por fila. Puede
@@ -3988,6 +4037,40 @@ components:
         valor_mora: { type: integer, example: 0, description: Valor vencido en COP. Cero si no hay mora. }
         valor_saldo: { type: integer, example: 500000, description: "Saldo neto en COP (RF4). El archivo de TransUnion lo exige en miles de pesos; esa conversión la hace el generador (Iteración 2), no la API." }
         n_creditos: { type: integer, minimum: 0, example: 1, description: Cantidad de créditos que componen la obligación. }
+        campos_reporte: { $ref: '#/components/schemas/CamposReporte' }
+
+    CamposReporte:
+      type: object
+      description: |
+        0.9.7. Los 22 campos de la plantilla de CENS para el reporte a TransUnion, en su orden,
+        con lo mismo que lleva el registro tipo 2 del archivo (Manual v34, Tabla 2). Sirven para
+        validar una obligación campo por campo contra la plantilla (RF5). Diferencias con el
+        archivo: los valores van en **pesos** (el archivo los lleva en miles) y los datos
+        personales llegan **enmascarados**. La línea de crédito no viene: en el sector Servicios
+        no aplica.
+      required: [tipo_identificacion, numero_identificacion, nombre_titular, fecha_limite_pago, numero_obligacion, codigo_sucursal, calidad, estado_tu, edad_mora, fecha_corte, fecha_inicio, periodicidad, cuotas_mora, valor_inicial, valor_mora, valor_saldo, valor_cuota, obligacion_refinanciada, correo, celular, valor_real_pagado]
+      properties:
+        tipo_identificacion: { type: string, nullable: true, example: '01', description: Tabla 2 del Manual (01 = cédula de ciudadanía). }
+        numero_identificacion: { $ref: '#/components/schemas/NumeroIdentificacion' }
+        nombre_titular: { type: string }
+        fecha_limite_pago: { type: string, format: date, nullable: true }
+        numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
+        codigo_sucursal: { type: string, nullable: true, example: XXXXXX, description: 'La del parámetro de la entidad (RF57), la misma que va en el archivo.' }
+        calidad: { type: string, nullable: true, example: P, description: 'P = principal.' }
+        estado_tu: { $ref: '#/components/schemas/EstadoObligacion' }
+        edad_mora: { $ref: '#/components/schemas/CodigoEdadMora' }
+        fecha_corte: { type: string, format: date }
+        fecha_inicio: { type: string, format: date, nullable: true }
+        periodicidad: { type: string, nullable: true, example: '05', description: 'Tabla 7 del Manual (05 = Mensual).' }
+        cuotas_mora: { type: integer, minimum: 0 }
+        valor_inicial: { type: integer, nullable: true, description: En pesos. }
+        valor_mora: { type: integer, nullable: true, description: En pesos. }
+        valor_saldo: { type: integer, nullable: true, description: En pesos. }
+        valor_cuota: { type: integer, nullable: true, description: En pesos. }
+        obligacion_refinanciada: { type: string, enum: ['01', '02'], description: '01 = sí, 02 = no. Si la base no lo trae, 02, como en el archivo.' }
+        correo: { type: string, nullable: true, example: 't***@example.com', description: Enmascarado. }
+        celular: { type: string, nullable: true, example: '******4567', description: Enmascarado (últimos 4 dígitos). }
+        valor_real_pagado: { type: integer, nullable: true, description: 'En pesos. `null` si la base no lo trae: el archivo lo deja en espacios.' }
 
     # ── Historial ──
     ReporteEnviado:
@@ -4272,7 +4355,7 @@ components:
             valor_cuota_antes_cierre: { type: integer, minimum: 0, nullable: true, description: "Cuota que tenía antes de cerrar («al cerrar se reporta en $0», RF52). `null` si no está cerrada." }
             fecha_exigibilidad: { type: string, format: date, nullable: true, example: '2026-08-14', description: Fecha límite de la cuota impaga más antigua (RF49). `null` si está al día. }
             anios_mora: { type: integer, minimum: 0, nullable: true, example: null, description: Solo con edad `14` (RF49). }
-            atrasos_permitidos: { type: integer, minimum: 0, example: 4, description: "Atrasos con los que caduca el crédito en el SAC (`CREDITOS.ATRASOS_PERMITIDOS`, RF14)." }
+            atrasos_permitidos: { type: integer, minimum: 0, nullable: true, example: 4, description: "Atrasos con los que caduca el crédito en el SAC (`CREDITOS.ATRASOS_PERMITIDOS`, RF14). 0.9.6: `null` si el SAC no lo tiene (la columna admite nulos); no se convierte en 0." }
             cuotas_atrasadas: { type: integer, minimum: 0, example: 2, description: "`CREDITOS.CONTATRASOS`." }
             cierre: { $ref: '#/components/schemas/Cierre' }
             pago_mora: { $ref: '#/components/schemas/PagoMora' }
@@ -4422,13 +4505,14 @@ components:
         origen: { type: string, enum: [SAC, MANUAL] }
         obligacion_original:
           type: object
-          required: [obligacion_id, numero_obligacion, nombre_titular, estado_cierre, modo_extincion]
+          required: [obligacion_id, numero_obligacion, nombre_titular, estado_cierre, modo_extincion, fecha_corte_cierre]
           properties:
             obligacion_id: { type: integer }
             numero_obligacion: { $ref: '#/components/schemas/NumeroObligacion' }
             nombre_titular: { type: string }
-            estado_cierre: { type: string, enum: ['02', '07'] }
+            estado_cierre: { type: string, enum: ['02', '07'], description: Estado con el que se cierra (o se cerró) la original. }
             modo_extincion: { $ref: '#/components/schemas/CodigoDescripcion' }
+            fecha_corte_cierre: { type: string, format: date, nullable: true, example: '2026-09-30', description: "0.9.6. Corte en que se reportó el cierre de la original con modo 16. `null` mientras no se haya ejecutado la actualización mensual de un corte posterior a la refinanciación: la original sigue abierta hasta entonces." }
         obligacion_nueva:
           type: object
           required: [obligacion_id, numero_obligacion, estado_tu, numero_reestructuraciones]
