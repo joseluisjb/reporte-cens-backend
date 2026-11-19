@@ -317,3 +317,13 @@ def test_administrador_no_puede_acceder_a_refinanciaciones():
     force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = RefinanciacionesViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 403
+
+
+def test_listar_sin_titular_en_nv_titular_usa_el_nombre_reportado():
+    # En Render la original de REFI-2 salía con nombre_titular null: el contrato lo pide como texto.
+    conn, cursor = _mock_conn()
+    cursor.fetchall.return_value = [(*_FILA_REFINANCIACION[:6], None, *_FILA_REFINANCIACION[7:])]
+    with patch("novedades.refinanciaciones.connection", conn):
+        [refi] = refinanciaciones.listar_refinanciaciones()
+    assert refi["obligacion_original"]["nombre_titular"] == ""
+    assert "rd_orig.NOMBRE_TITULAR) NOMBRE_TITULAR" in cursor.execute.call_args.args[0]

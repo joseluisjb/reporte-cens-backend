@@ -52,8 +52,12 @@ _MES_DIA_FESTIVOS_FIJOS = (
 
 _SELECT_RECLAMO = (
     "r.RECLAMO_ID, r.OBLIGACION_ID, o.NUMERO_OBLIGACION_TU, "
-    "TRIM(tit.NOMBRES || ' ' || tit.PRIMER_APELLIDO || ' ' || "
-    "NVL(tit.SEGUNDO_APELLIDO, '')) NOMBRE_TITULAR, "
+    # Si NV_TITULAR no tiene al titular, el nombre con que se reportó en el último corte.
+    "NVL(TRIM(tit.NOMBRES || ' ' || tit.PRIMER_APELLIDO || ' ' || "
+    "NVL(tit.SEGUNDO_APELLIDO, '')), "
+    "(SELECT rdn.NOMBRE_TITULAR FROM NEXOVOLT.NV_REPORTE_DETALLE rdn "
+    "WHERE rdn.OBLIGACION_ID = o.OBLIGACION_ID AND rdn.NOMBRE_TITULAR IS NOT NULL "
+    "ORDER BY rdn.CORTE_ID DESC FETCH FIRST 1 ROW ONLY)) NOMBRE_TITULAR, "
     "tip.CODIGO, tip.DESCRIPCION, tip.CONFIRMADO, r.FECHA_RADICACION, "
     "r.OBSERVACION, r.ESTADO, r.MARCACION_GENERADA, r.DESMARCACION_GENERADA, "
     "r.FECHA_LIMITE_RESPUESTA, r.RESULTADO, r.FECHA_CIERRE, "
@@ -136,7 +140,7 @@ def _fila_a_reclamo(row):
         "id": row[0],
         "obligacion_id": row[1],
         "numero_obligacion": row[2],
-        "nombre_titular": row[3],
+        "nombre_titular": row[3] or "",  # el contrato lo pide como texto, nunca null
         "tipologia": {
             "codigo": row[4],
             "descripcion": row[5],
