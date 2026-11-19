@@ -794,6 +794,11 @@ def test_obligaciones_pk_no_numerico_404():
 
 # ── Corrección 2 — NULL safety en valor_mora / valor_saldo ───────────────────
 
+# Columnas 10-21: los campos de la plantilla de CENS (contrato 0.9.7).
+_CAMPOS_VACIOS = (None,) * 3 + (date(2026, 9, 30),) + (None,) * 8
+_ENTIDAD = {"codigo_sucursal": "XXXXXX"}
+
+
 def test_listar_obligaciones_valor_none():
     mock_conn, mock_cursor = _mock_conn()
     mock_cursor.fetchone.side_effect = [
@@ -801,9 +806,10 @@ def test_listar_obligaciones_valor_none():
         (1,),   # total
     ]
     mock_cursor.fetchall.return_value = [
-        ("OBL001", "Juan", "12345", "01", "00", 0, 0, None, None, 1),
+        ("OBL001", "Juan", "12345", "01", "00", 0, 0, None, None, 1, *_CAMPOS_VACIOS),
     ]
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("parametros.servicios.datos_entidad", return_value=_ENTIDAD):
         resultado = servicios.listar_obligaciones(1)
     fila = resultado["resultados"][0]
     assert fila["valor_mora"] is None
@@ -837,11 +843,49 @@ def test_listar_obligaciones_enmascara_identificacion():
         (1,),   # total
     ]
     mock_cursor.fetchall.return_value = [
-        ("OBL001", "Juan", "12345678", "01", "00", 0, 0, 100, 500000, 1),
+        ("OBL001", "Juan", "12345678", "01", "00", 0, 0, 100, 500000, 1, *_CAMPOS_VACIOS),
     ]
-    with patch("cartera.servicios.connection", mock_conn):
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("parametros.servicios.datos_entidad", return_value=_ENTIDAD):
         resultado = servicios.listar_obligaciones(1)
     assert resultado["resultados"][0]["numero_identificacion"] == "******5678"
+    assert resultado["resultados"][0]["campos_reporte"]["numero_identificacion"] == "******5678"
+
+
+def test_listar_obligaciones_trae_los_22_campos_de_la_plantilla():
+    # Contrato 0.9.7: lo mismo que el registro tipo 2, en pesos y con datos personales enmascarados.
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(1,), (1,)]
+    mock_cursor.fetchall.return_value = [(
+        "1001001", "DEUDOR PRUEBA UNO", "1090000001", "01", "00", 0, 0, 0, 50000, 1,
+        "01", date(2026, 11, 15), "P", date(2026, 10, 31), date(2026, 1, 15),
+        "05", 100000, 10000, None, "deudor.uno@example.com", "3001234567", 10000,
+    )]
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("parametros.servicios.datos_entidad", return_value=_ENTIDAD):
+        campos = servicios.listar_obligaciones(1)["resultados"][0]["campos_reporte"]
+    assert campos == {
+        "tipo_identificacion": "01", "numero_identificacion": "******0001",
+        "nombre_titular": "DEUDOR PRUEBA UNO", "fecha_limite_pago": "2026-11-15",
+        "numero_obligacion": "1001001", "codigo_sucursal": "XXXXXX", "calidad": "P",
+        "estado_tu": "01", "edad_mora": "00", "fecha_corte": "2026-10-31", "fecha_inicio": "2026-01-15",
+        "periodicidad": "05", "cuotas_mora": 0, "valor_inicial": 100000, "valor_mora": 0,
+        "valor_saldo": 50000, "valor_cuota": 10000, "obligacion_refinanciada": "02",
+        "correo": "d***@example.com", "celular": "******4567", "valor_real_pagado": 10000,
+    }
+    assert "1090000001" not in str(campos) and "3001234567" not in str(campos)
+    sql = next(c.args[0] for c in mock_cursor.execute.call_args_list if "rd.CORREO" in c.args[0])
+    assert "JOIN NEXOVOLT.NV_CORTE c ON c.CORTE_ID = rd.CORTE_ID" in sql
+
+
+def test_listar_obligaciones_sin_filas_no_lee_la_entidad():
+    mock_conn, mock_cursor = _mock_conn()
+    mock_cursor.fetchone.side_effect = [(1,), (0,)]
+    mock_cursor.fetchall.return_value = []
+    with patch("cartera.servicios.connection", mock_conn), \
+         patch("parametros.servicios.datos_entidad") as entidad:
+        assert servicios.listar_obligaciones(1) == {"total": 0, "resultados": []}
+    entidad.assert_not_called()
 
 
 # ── C3 — validar_corte filtra por CORTE_ID ───────────────────────────────────
