@@ -1937,6 +1937,8 @@ def test_df03_original_en_01_cierra_en_02_con_modo_16():
     sql, params = cierres[0].args
     assert "VALOR_SALDO = 0" in sql
     assert "FECHA_PAGO = %s" in sql
+    # Manual v34 p. 17: el modo 16 no es Voluntario, así que el tipo de pago es 02 (No voluntario).
+    assert "TIPO_PAGO = '02'" in sql
     assert params == ["02", _FECHA_REFINANCIACION, 1, 90]
 
 
