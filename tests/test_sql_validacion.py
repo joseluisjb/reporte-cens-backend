@@ -50,3 +50,12 @@ def test_vista_18_calcula_la_exigibilidad_con_dias_de_mora():
     assert "rd.VALOR_MORA" in texto and "rd.EDAD_MORA > '00'" in texto
     assert not re.search(r"rd\.FECHA_LIMITE_PAGO\s+AS FECHA_EXIGIBILIDAD", sql)
     assert "Correcciones (DF-02, 2026-11-11)" in sql
+
+
+def test_regla_14_tipo_voluntario_solo_con_modo_voluntario():
+    # Manual v34 p. 17: «si el tipo de pago es Voluntario, el modo de extinción debe ser voluntario».
+    from pathlib import Path
+    for ruta in ("config/sql/17_v_validacion_corte_v2.sql", "novedades/sql/17_v_validacion_corte_v2.sql"):
+        sql = (Path(__file__).resolve().parent.parent / ruta).read_text(encoding="utf-8")
+        assert "NOT IN ('01', '16')" not in sql, ruta
+        assert sql.count("rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION <> '01'") == 2, ruta
