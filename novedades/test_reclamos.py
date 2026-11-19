@@ -265,3 +265,14 @@ def test_usuario_administrador_no_puede_acceder_a_reclamos():
     force_authenticate(request, user=usuario_con_rol("ADMINISTRADOR"))
     response = ReclamosViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 403
+
+
+def test_listado_sin_titular_en_nv_titular_usa_el_nombre_reportado():
+    # En Render el reclamo de 1001001 salía con nombre_titular null: el contrato lo pide como texto.
+    conn, cursor = _mock_conn()
+    cursor.fetchall.return_value = [(*_FILA_RECLAMO[:3], None, *_FILA_RECLAMO[4:])]
+    with patch("novedades.reclamos.connection", conn):
+        [reclamo] = reclamos.listar_reclamos()
+    assert reclamo["nombre_titular"] == ""
+    sql = cursor.execute.call_args.args[0]
+    assert "NVL(TRIM(tit.NOMBRES" in sql and "rdn.NOMBRE_TITULAR FROM NEXOVOLT.NV_REPORTE_DETALLE rdn" in sql

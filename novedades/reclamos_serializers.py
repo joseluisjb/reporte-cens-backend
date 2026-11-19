@@ -13,7 +13,7 @@ class ReclamoSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     obligacion_id = serializers.IntegerField()
     numero_obligacion = serializers.CharField()
-    nombre_titular = serializers.CharField(allow_null=True)
+    nombre_titular = serializers.CharField(allow_blank=True)  # "" si no hay nombre en la base
     tipologia = TipologiaReclamoSerializer()
     fecha_radicacion = serializers.CharField()
     observacion = serializers.CharField(allow_null=True)

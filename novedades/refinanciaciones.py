@@ -48,8 +48,9 @@ _CIERRE_POR_ESTADO = {
 _SELECT_REFINANCIACION = (
     "r.REFINANCIACION_ID, r.FECHA, r.FECHA_REGISTRO, r.ORIGEN, "
     "r.OBLIGACION_ORIGEN_ID, o_orig.NUMERO_OBLIGACION_TU, "
-    "TRIM(tit.NOMBRES || ' ' || tit.PRIMER_APELLIDO || ' ' || "
-    "NVL(tit.SEGUNDO_APELLIDO, '')) NOMBRE_TITULAR, "
+    # Si NV_TITULAR no tiene al titular, el nombre con que se reportó la original en su último corte.
+    "NVL(TRIM(tit.NOMBRES || ' ' || tit.PRIMER_APELLIDO || ' ' || "
+    "NVL(tit.SEGUNDO_APELLIDO, '')), rd_orig.NOMBRE_TITULAR) NOMBRE_TITULAR, "
     "NVL(rd_orig.ESTADO_TU, '01') ESTADO_TU_ORIG, "
     "r.OBLIGACION_NUEVA_ID, o_nueva.NUMERO_OBLIGACION_TU, "
     "NVL(rd_nueva.ESTADO_TU, '01') ESTADO_TU_NUEVA, "
@@ -92,7 +93,7 @@ def _fila_a_refinanciacion(row):
         "obligacion_original": {
             "obligacion_id": row[4],
             "numero_obligacion": row[5],
-            "nombre_titular": row[6],
+            "nombre_titular": row[6] or "",  # el contrato lo pide como texto, nunca null
             "estado_cierre": estado_cierre,
             "modo_extincion": {"codigo": "16", "descripcion": "Refinanciación"},
             # None mientras no corra la actualización mensual de un corte posterior a la refinanciación.
