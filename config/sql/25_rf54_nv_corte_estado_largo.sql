@@ -10,6 +10,10 @@
    contra Oracle del 18/11/2026.
 
    Que hace: amplia ESTADO a VARCHAR2(30 CHAR), como el DDL de referencia.
+   Oracle no deja ampliar una columna con un indice basado en funcion
+   (ORA-30556), y ESTADO tiene UK_NV_CORTE_UN_BORRADOR (un solo corte en
+   BORRADOR). Por eso el script quita ese indice, amplia la columna y lo vuelve
+   a crear igual; si la ampliacion falla, lo recrea antes de propagar el error.
    Solo amplia: ningun valor guardado cambia. Es repetible: si la columna ya
    tiene 30 o mas, no hace nada.
 
@@ -18,14 +22,41 @@
    ============================================================================= */
 
 DECLARE
-    v_largo NUMBER;
+    v_largo  NUMBER;
+    v_indice NUMBER;
+
+    PROCEDURE crear_indice IS
+    BEGIN
+        EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX NEXOVOLT.UK_NV_CORTE_UN_BORRADOR ON NEXOVOLT.NV_CORTE '
+                       || '(CASE ESTADO WHEN ''BORRADOR'' THEN 1 END)';
+    END;
 BEGIN
     SELECT CHAR_LENGTH INTO v_largo
     FROM ALL_TAB_COLUMNS
     WHERE OWNER = 'NEXOVOLT' AND TABLE_NAME = 'NV_CORTE' AND COLUMN_NAME = 'ESTADO';
+    IF v_largo >= 30 THEN
+        RETURN;
+    END IF;
 
-    IF v_largo < 30 THEN
+    SELECT COUNT(*) INTO v_indice
+    FROM ALL_INDEXES
+    WHERE OWNER = 'NEXOVOLT' AND INDEX_NAME = 'UK_NV_CORTE_UN_BORRADOR';
+    IF v_indice > 0 THEN
+        EXECUTE IMMEDIATE 'DROP INDEX NEXOVOLT.UK_NV_CORTE_UN_BORRADOR';
+    END IF;
+
+    BEGIN
         EXECUTE IMMEDIATE 'ALTER TABLE NEXOVOLT.NV_CORTE MODIFY (ESTADO VARCHAR2(30 CHAR))';
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF v_indice > 0 THEN
+                crear_indice;
+            END IF;
+            RAISE;
+    END;
+
+    IF v_indice > 0 THEN
+        crear_indice;
     END IF;
 END;
 /
