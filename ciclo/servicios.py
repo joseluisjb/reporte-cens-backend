@@ -369,13 +369,17 @@ def _cerrar_obligacion(corte_id, obligacion_id, estado_cierre, fecha_pago, modo_
 
 
 def _cerrar_por_refinanciacion(corte_id, obligacion_id, destino, fecha_refinanciacion):
-    """RF18: cierra la original con modo de extincion 16 (Refinanciacion) y saldo en cero."""
+    """RF18: cierra la original con modo de extincion 16 (Refinanciacion) y saldo en cero.
+
+    Tipo de pago 02 (No voluntario): el Manual v34 (p. 17) pide que un pago Voluntario (01) lleve
+    modo de extincion Voluntario (01), asi que el modo 16 va con tipo de pago 02.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
             "UPDATE NEXOVOLT.NV_REPORTE_DETALLE "
             "SET ESTADO_TU = %s, EDAD_MORA = '00', VALOR_MORA = 0, "
             "CUOTAS_MORA = 0, VALOR_CUOTA = 0, VALOR_SALDO = 0, "
-            "FECHA_PAGO = %s, MODO_EXTINCION = '16', TIPO_PAGO = '01' "
+            "FECHA_PAGO = %s, MODO_EXTINCION = '16', TIPO_PAGO = '02' "
             "WHERE CORTE_ID = %s AND OBLIGACION_ID = %s",
             [destino, fecha_refinanciacion, corte_id, obligacion_id],
         )

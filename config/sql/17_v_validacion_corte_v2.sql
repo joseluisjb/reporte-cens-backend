@@ -45,6 +45,12 @@
      - NO esta verificado en Oracle. Hay que volver a aplicar este script
        (CREATE OR REPLACE, repetible) y probar la consulta de verificacion.
 
+   Correccion (RF22, 2026-11-18):
+     - Regla 14 CIERRE_INCOMPLETO: con tipo de pago Voluntario (01) el modo de extincion
+       debe ser Voluntario (01), sin excepcion (Manual v34 p. 17). Antes admitia tambien
+       el 16 (Refinanciacion), que no sale del Manual: el cierre por refinanciacion lleva
+       tipo de pago 02. Hay que volver a aplicar este script.
+
    Reversa:
      DROP VIEW NEXOVOLT.V_VALIDACION_CORTE;
 
@@ -270,7 +276,7 @@ SELECT
         WHEN rd.FECHA_PAGO > c.FECHA_CORTE                             THEN 'Fecha de pago posterior al corte'
         WHEN rd.FECHA_PAGO < o.FECHA_INICIO                            THEN 'Fecha de pago anterior al inicio'
         WHEN rd.MODO_EXTINCION IS NULL OR rd.TIPO_PAGO IS NULL         THEN 'Modo o tipo de extincion no diligenciados'
-        WHEN rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION NOT IN ('01', '16') THEN 'Incoherencia entre tipo y modo de pago'
+        WHEN rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION <> '01' THEN 'Incoherencia entre tipo y modo de pago'
         ELSE 'Inconsistencia en cierre'
     END AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
@@ -288,7 +294,7 @@ WHERE rd.ESTADO_TU IN ('02', '07')
       OR rd.FECHA_PAGO < o.FECHA_INICIO
       OR rd.MODO_EXTINCION IS NULL
       OR rd.TIPO_PAGO IS NULL
-      OR (rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION NOT IN ('01', '16'))
+      OR (rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION <> '01')
   )
 
 UNION ALL

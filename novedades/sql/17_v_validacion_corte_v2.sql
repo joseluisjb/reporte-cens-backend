@@ -230,7 +230,7 @@ SELECT
         WHEN rd.FECHA_PAGO > c.FECHA_CORTE THEN 'Fecha de pago posterior al corte'
         WHEN rd.FECHA_PAGO < o.FECHA_INICIO THEN 'Fecha de pago anterior al inicio'
         WHEN rd.MODO_EXTINCION IS NULL OR rd.TIPO_PAGO IS NULL THEN 'Modo o tipo de extincion no diligenciados'
-        WHEN rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION NOT IN ('01', '16') THEN 'Incoherencia entre tipo y modo de pago'
+        WHEN rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION <> '01' THEN 'Incoherencia entre tipo y modo de pago'
         ELSE 'Inconsistencia en cierre'
     END AS MENSAJE
 FROM NEXOVOLT.NV_REPORTE_DETALLE rd
@@ -249,7 +249,7 @@ WHERE rd.ESTADO_TU IN ('02', '07')
       OR rd.FECHA_PAGO < o.FECHA_INICIO
       OR rd.MODO_EXTINCION IS NULL
       OR rd.TIPO_PAGO IS NULL
-      OR (rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION NOT IN ('01', '16'))
+      OR (rd.TIPO_PAGO = '01' AND rd.MODO_EXTINCION <> '01')
   )
 
 UNION ALL
